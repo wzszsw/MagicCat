@@ -129,17 +129,19 @@ class MainWindow(QMainWindow):
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
         self.editor_tabs.currentChanged.connect(self._on_query_tab_changed)
 
-        # 「对象」页 = 领域浏览栈：查询、表、视图三个领域子页；其余领域后续逐个加入
+        # 「对象」页 = 领域浏览栈：查询、表、视图、函数四个领域子页；其余后续逐个加入
         self.domain_stack = QStackedWidget()
         self._build_query_browse()
         self._build_table_browse()
         self._build_view_browse()
+        self._build_routine_browse()
         self.domain_stack.addWidget(self.browse_page)
         self.domain_stack.addWidget(self.table_page)
         self.domain_stack.addWidget(self.view_page)
+        self.domain_stack.addWidget(self.routine_page)
         self._domain_pages: dict[str, QWidget] = {
             "queries": self.browse_page, "tables": self.table_page,
-            "views": self.view_page}
+            "views": self.view_page, "routines": self.routine_page}
         self.editor_tabs.addTab(self.domain_stack, "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
@@ -191,6 +193,28 @@ class MainWindow(QMainWindow):
         self.view_page.new_view.connect(lambda: self._quick_create_object("view"))
         self.view_page.delete_view.connect(self._delete_view)
 
+    def _build_routine_browse(self) -> None:
+        """函数领域「对象」子页：打开/新建/删除函数 + 当前库函数/过程列表。"""
+        from magiccat.ui.routine_browse import RoutineBrowseView
+
+        self.routine_page = RoutineBrowseView()
+        self.routine_page.open_routine.connect(self._open_routine)
+        self.routine_page.new_routine.connect(lambda: self._on_create_routine_entry())
+        self.routine_page.delete_routine.connect(self._delete_routine)
+
+    def _on_create_routine_entry(self, profile_id: str | None = None,
+                                 schema: str | None = None) -> None:
+        """新建函数（对象页动作）：需要连接/库上下文，复用打开向导。"""
+        profile = self._current_profile()
+        if profile is None:
+            QMessageBox.information(self, "新建函数", "请先在工具栏选择连接。")
+            return
+        schema = schema or (self.schema_combo.currentText() or profile.database)
+        if not schema:
+            QMessageBox.information(self, "新建函数", "请先选择库。")
+            return
+        self._on_create_routine(profile.id, schema)
+
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
         """顶部动作行随当前激活标签类型切换：
@@ -227,6 +251,8 @@ class MainWindow(QMainWindow):
             self._reload_table_browse()
         elif page is self.view_page:
             self._reload_view_browse()
+        elif page is self.routine_page:
+            self._reload_routine_browse()
         else:
             page.clear() if hasattr(page, "clear") else None
 
@@ -282,6 +308,26 @@ class MainWindow(QMainWindow):
 
         run_async(fetch, done, lambda err: self.view_page.ctx_label.setText(
             f"读取视图失败：{err}"))
+
+    def _reload_routine_browse(self, profile=None, schema: str = "") -> None:
+        """按当前连接/库刷新「函数」对象页列表（一次批查，无 N+1）。"""
+        profile = profile or self._current_profile()
+        if profile is None:
+            self.routine_page.clear()
+            self.routine_page.ctx_label.setText("")
+            return
+        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        self.routine_page.ctx_label.setText(
+            f"{profile.display_name} · {schema or '默认'}")
+
+        def fetch():
+            return self._metadata.routines(profile, schema)
+
+        def done(rows: list[dict]) -> None:
+            self.routine_page.load_routines(profile.id, schema, rows)
+
+        run_async(fetch, done, lambda err: self.routine_page.ctx_label.setText(
+            f"读取函数失败：{err}"))
 
     def _query_btn(self, text: str, handler, bar: QHBoxLayout):
         from PySide6.QtWidgets import QPushButton
@@ -347,12 +393,11 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         quick("表", "table", lambda: self._show_domain("tables"))
         quick("视图", "view", lambda: self._show_domain("views"))
-        quick("函数", "function", lambda: self._quick_create_object("routine"))
+        quick("函数", "function", lambda: self._show_domain("routines"))
         toolbar.addSeparator()
         quick("用户", "user", self._quick_user)
         toolbar.addSeparator()
         quick("查询", "query", self._show_query_domain)
-        quick("备份", "backup", self._open_backup_dialog)
         quick("自动运行", "auto_run", self._open_task_dialog)
         quick("模型", "model", self._quick_model)
 
@@ -1084,6 +1129,62 @@ class MainWindow(QMainWindow):
         self._status(
             f"已打开例程「{name}」定义：可查看/修改；改动后需先删除再执行创建"
             "（或用编辑器结合删除动作）, 双击即可再次查看", 8000)
+
+    def _open_routine(self, profile_id: str, name: str, kind: str) -> None:
+        """打开函数（对象页动作）：取 SHOW CREATE 定义，开到一个编辑器标签。"""
+        from magiccat.services.ddl_service import DdlService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        schema = self.schema_combo.currentText() or profile.database or ""
+        ddl = DdlService(self._connections)
+
+        def fetch() -> str:
+            return ddl.show_create_routine(profile, schema, name, kind)
+
+        def done(sql_text: str) -> None:
+            self._open_routine_sql(profile_id, name, sql_text)
+
+        run_async(fetch, done,
+                  lambda err: QMessageBox.warning(self, "打开函数", f"失败：{err}"))
+
+    def _delete_routine(self, profile_id: str, schema: str, name: str) -> None:
+        """删除函数/过程（对象页动作）：确认后 DROP，并刷新「函数」对象页。"""
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+
+        def fetch_type() -> str:
+            # 依据 routines 列表判定类型，决定 DROP 词
+            for r in self._metadata.routines(profile, schema):
+                if r.get("name") == name:
+                    return r.get("type", "FUNCTION").upper()
+            return "FUNCTION"
+
+        def ask(rtype: str) -> None:
+            word = "FUNCTION" if rtype == "FUNCTION" else "PROCEDURE"
+            sql = f"DROP {word} IF EXISTS `{schema}`.`{name}`"
+            if QMessageBox.question(
+                    self, "删除对象",
+                    f"确定删除 {word} `{schema}`.{name}？\n\n{sql}",
+                    QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+                return
+            from magiccat.services.query_service import QueryService
+
+            def done(results: list[dict]) -> None:
+                errors = [r for r in results if r.get("kind") == "error"]
+                if errors:
+                    QMessageBox.warning(self, "删除对象", errors[0]["message"])
+                    return
+                self._reload_routine_browse(profile, schema)
+                self._status(f"已删除 {word}：{schema}.{name}", 4000)
+
+            run_async(lambda: QueryService(self._connections).execute(profile, sql),
+                      done, lambda err: QMessageBox.critical(self, "删除对象", err))
+
+        run_async(fetch_type, ask,
+                  lambda err: QMessageBox.warning(self, "删除对象", f"失败：{err}"))
 
     def _on_selection_info(self, desc: dict) -> None:
         self.info_panel.show_object(desc)
