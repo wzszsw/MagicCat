@@ -180,15 +180,22 @@ class MainWindow(QMainWindow):
         stub("BI", "bi")
 
     def _quick_user(self) -> None:
-        """用户：快捷列出当前连接用户（MySQL 便捷查询模板）。"""
-        if self._current_profile() is None:
+        """用户：打开用户管理面板（对标 Navicat）。"""
+        profile = self._current_profile()
+        if profile is None:
             QMessageBox.information(self, "用户", "请先选择连接。")
             return
-        editor = self._new_editor()
-        editor.setPlainText("SELECT User, Host FROM mysql.user ORDER BY User, Host;")
-        index = self.editor_tabs.indexOf(editor)
-        self.editor_tabs.setTabText(index, "用户")
-        self._status("已生成用户列表查询：执行后查看结果", 6000)
+        for i in range(self.editor_tabs.count()):
+            w = self.editor_tabs.widget(i)
+            if getattr(w, "tab_key", None) == "user-manager" and w.profile.id == profile.id:
+                self.editor_tabs.setCurrentIndex(i)
+                return
+        from magiccat.ui.user_manager import UserManagerWidget
+
+        widget = UserManagerWidget(profile, self._connections)
+        index = self.editor_tabs.addTab(widget, f"用户 · {profile.display_name}")
+        self.editor_tabs.setCurrentIndex(index)
+        self._status(f"已打开用户管理（{profile.display_name}）")
 
     def _quick_model(self) -> None:
         """模型：当前库的 ER 图。"""
