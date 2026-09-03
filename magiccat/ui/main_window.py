@@ -24,12 +24,14 @@ from magiccat.services.connection_service import ConnectionService
 from magiccat.services.history import HistoryStore
 from magiccat.services.metadata_service import MetadataService
 from magiccat.services.query_service import QueryService
+from magiccat.services.settings import AppSettings
 from magiccat.services.sql_text import format_sql
 from magiccat.ui.dialogs import ConnectionEditDialog
 from magiccat.ui.editor import SqlEditorWidget
 from magiccat.ui.job import run_async
 from magiccat.ui.object_explorer import ObjectExplorer
 from magiccat.ui.result_panel import ResultPanel
+from magiccat.ui.theme import apply_theme
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ class MainWindow(QMainWindow):
         self._metadata = metadata or MetadataService(connections)
         self._query = QueryService(connections)
         self._history = HistoryStore.default()
+        self._settings = AppSettings.default()
         self._busy = False
         self._tab_seq = 0
 
@@ -56,6 +59,7 @@ class MainWindow(QMainWindow):
         self._reload_connection_combo()
         self._new_editor()
         self.statusBar().showMessage("就绪")
+        apply_theme(self, self._settings.get("theme", "light"))
 
     # ---- 布局 ----
     def _build_central(self) -> None:
@@ -74,6 +78,7 @@ class MainWindow(QMainWindow):
         self.explorer = ObjectExplorer(self._connections, self._metadata)
         self.explorer.open_table_requested.connect(self._on_open_table)
         self.explorer.design_table_requested.connect(self._on_design_table)
+        self.explorer.er_database_requested.connect(self._on_er_database)
         dock = QDockWidget("对象浏览器", self)
         dock.setWidget(self.explorer)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
@@ -108,6 +113,16 @@ class MainWindow(QMainWindow):
         menu_tools = self.menuBar().addMenu("工具(&T)")
         act_import = menu_tools.addAction("导入 CSV 到表…")
         act_import.triggered.connect(self._open_import_dialog)
+        act_backup = menu_tools.addAction("备份数据库为 SQL…")
+        act_backup.triggered.connect(self._open_backup_dialog)
+        act_restore = menu_tools.addAction("执行 SQL 脚本（恢复）…")
+        act_restore.triggered.connect(self._open_restore_dialog)
+
+        menu_view = self.menuBar().addMenu("视图(&V)")
+        self.act_dark = menu_view.addAction("深色主题")
+        self.act_dark.setCheckable(True)
+        self.act_dark.setChecked(self._settings.get("theme", "light") == "dark")
+        self.act_dark.triggered.connect(self._toggle_theme)
 
         toolbar = self.addToolBar("查询")
         toolbar.addAction(act_add)
@@ -318,6 +333,30 @@ class MainWindow(QMainWindow):
 
         dialog = ImportCsvDialog(self._connections, self._metadata, self)
         dialog.exec()
+
+    def _open_backup_dialog(self) -> None:
+        from magiccat.ui.backup_dialogs import BackupDialog
+
+        BackupDialog(self._connections, self._metadata, self).exec()
+
+    def _open_restore_dialog(self) -> None:
+        from magiccat.ui.backup_dialogs import run_restore_script
+
+        run_restore_script(self, self._connections, self._metadata)
+
+    def _toggle_theme(self, checked: bool) -> None:
+        theme = "dark" if checked else "light"
+        apply_theme(self, theme)
+        self._settings.set("theme", theme)
+        self._status(f"主题已切换为：{theme}")
+
+    def _on_er_database(self, profile_id: str, schema: str) -> None:
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        from magiccat.ui.er_view import ErDialog
+
+        ErDialog(profile, schema, self._connections, self).exec()
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)
