@@ -12,6 +12,7 @@ from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -97,17 +98,53 @@ class MainWindow(QMainWindow):
     # ---- 布局 ----
     def _build_central(self) -> None:
         splitter = QSplitter(Qt.Vertical)
+
+        # 查询工作区：顶部一行“查询”操作（仅查询区可见，不占全局按钮栏）+ 编辑器标签
+        work = QWidget()
+        work_lay = QVBoxLayout(work)
+        work_lay.setContentsMargins(0, 0, 0, 0)
+        work_lay.setSpacing(0)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(4, 2, 4, 2)
+        bar.addWidget(QLabel(" 连接: "))
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumWidth(170)
+        self.profile_combo.currentIndexChanged.connect(self._on_profile_selected)
+        bar.addWidget(self.profile_combo)
+        bar.addWidget(QLabel(" 库: "))
+        self.schema_combo = QComboBox()
+        self.schema_combo.setMinimumWidth(150)
+        bar.addWidget(self.schema_combo)
+        bar.addSpacing(8)
+        self._query_btn("保存查询", self._save_query_dialog, bar)
+        self._query_btn("美化", self._format_sql, bar)
+        self._query_btn("运行", self._run_current, bar)
+        self._query_btn("全部", self._run_all, bar)
+        self._query_btn("停止", self._cancel_execution, bar)
+        self._query_btn("解释", self._explain_current, bar)
+        bar.addStretch(1)
+        work_lay.addLayout(bar)
+
         self.editor_tabs = QTabWidget()
         self.editor_tabs.setTabsClosable(True)
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
+        work_lay.addWidget(self.editor_tabs, 1)
+
         self.result_panel = ResultPanel()
-        splitter.addWidget(self.editor_tabs)
+        splitter.addWidget(work)
         splitter.addWidget(self.result_panel)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         self.setCentralWidget(splitter)
         # Navicat：消息窗默认不显示，有消息/结果时自动出现
         self.result_panel.setVisible(False)
+
+    def _query_btn(self, text: str, handler, bar: QHBoxLayout) -> None:
+        from PySide6.QtWidgets import QPushButton
+
+        btn = QPushButton(text)
+        btn.clicked.connect(handler)
+        bar.addWidget(btn)
 
     def _build_explorer_dock(self) -> None:
         self.explorer = ObjectExplorer(self._connections, self._metadata)
@@ -306,29 +343,6 @@ class MainWindow(QMainWindow):
         act_logdir.triggered.connect(self._open_log_dir)
         act_about = menu_help.addAction("关于 MagicCat…")
         act_about.triggered.connect(self._about)
-
-        # 查询工具栏（对标 Navicat：查询编辑区上方 连接/库 + 保存/美化/运行/停止/解释）
-        qtb = QToolBar("查询工具")
-        qtb.setObjectName("query_toolbar")
-        self.addToolBar(qtb)
-        qtb.addWidget(QLabel(" 连接: "))
-        self.profile_combo = QComboBox()
-        self.profile_combo.setMinimumWidth(180)
-        self.profile_combo.currentIndexChanged.connect(self._on_profile_selected)
-        qtb.addWidget(self.profile_combo)
-        qtb.addWidget(QLabel(" 库: "))
-        self.schema_combo = QComboBox()
-        self.schema_combo.setMinimumWidth(160)
-        self.schema_combo.currentIndexChanged.connect(
-            lambda _: None)  # 主要用于选择执行目标库（存入 _current_schema 供保存位置）
-        qtb.addWidget(self.schema_combo)
-        qtb.addSeparator()
-        qtb.addAction(self.act_save_query)
-        qtb.addAction(self.act_format)
-        qtb.addAction(self.act_run)
-        qtb.addAction(self.act_run_all)
-        qtb.addAction(self.act_cancel)
-        qtb.addAction(self.act_explain)
 
     # ---- 连接选择 ----
     def _reload_connection_combo(self) -> None:
