@@ -223,7 +223,7 @@ class ObjectExplorer(QTreeWidget):
                 return
 
     def _load_database(self, item: QTreeWidgetItem) -> None:
-        """展开库：只建分类骨架（表/视图/函数/触发器/查询/备份），数据懒加载到各分类展开时。"""
+        """展开库：只建分类骨架（表/视图/函数/触发器/查询），数据懒加载到各分类展开时。"""
         info = _info(item)
         schema = info[DATA_KEY]["schema"]
         profile = self._profile_of(item)
@@ -244,8 +244,6 @@ class ObjectExplorer(QTreeWidget):
             if (q.get("schema") or "") == schema:
                 cat.addChild(_make_item(q["name"], "saved_query", profile_id=profile.id,
                                         name=q["name"], schema=q.get("schema", "")))
-        # 备份：骨架节点（Navicat 同）
-        children.append(_make_item("备份", "category", schema=schema, cat_type="backup"))
         _replace_children(item, children)
 
     def _schema_of(self, item: QTreeWidgetItem) -> str | None:
