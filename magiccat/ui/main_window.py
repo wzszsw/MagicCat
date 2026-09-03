@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
@@ -73,6 +73,15 @@ class MainWindow(QMainWindow):
         self._new_editor()
         self.statusBar().showMessage("就绪")
         apply_theme(self, self._settings.get("theme", "light"))
+
+        # 计划任务调度（应用运行期间每 60s 检查一次）
+        from magiccat.services.tasks import TaskLock, TaskStore
+
+        self._task_store = TaskStore.default()
+        self._task_lock = TaskLock()
+        self._task_timer = QTimer(self)
+        self._task_timer.timeout.connect(self._scan_due_tasks)
+        self._task_timer.start(60_000)
 
     def closeEvent(self, event) -> None:
         try:
@@ -152,6 +161,8 @@ class MainWindow(QMainWindow):
         act_import.triggered.connect(self._open_import_dialog)
         act_backup = menu_tools.addAction("备份数据库为 SQL…")
         act_backup.triggered.connect(self._open_backup_dialog)
+        act_tasks = menu_tools.addAction("计划任务…")
+        act_tasks.triggered.connect(self._open_task_dialog)
         act_copy = menu_tools.addAction("复制表（数据传输）…")
         act_copy.triggered.connect(self._open_copy_dialog)
         act_restore = menu_tools.addAction("执行 SQL 脚本（恢复）…")
@@ -449,6 +460,38 @@ class MainWindow(QMainWindow):
         from magiccat.ui.er_view import ErDialog
 
         ErDialog(profile, schema, self._connections, self).exec()
+
+    def _open_task_dialog(self) -> None:
+        from magiccat.ui.task_dialog import TaskDialog
+
+        TaskDialog(self._connections, self._metadata, self._task_store, self).exec()
+
+    def _scan_due_tasks(self) -> None:
+        """到期任务在后台执行（任务间隔≥1 分钟，不阻塞 UI）。"""
+        from magiccat.services.tasks import _due, _now_iso, run_backup_task
+
+        due_tasks = [t for t in self._task_store.load()
+                     if _due(t) and self._task_lock.try_acquire(t.id)]
+        for task in due_tasks:
+            profile = self._connections.get(task.profile_id)
+            if profile is None:
+                self._task_lock.release(task.id)
+                continue
+
+            def run(t=task, p=profile) -> None:
+                try:
+                    status = run_backup_task(t, p, self._connections)
+                except Exception as exc:  # noqa: BLE001
+                    status = f"失败：{exc}"
+                finally:
+                    self._task_lock.release(t.id)
+                t.last_run = _now_iso()
+                t.last_status = status
+                self._task_store.save([x for x in self._task_store.load()
+                                       if x.id != t.id] + [t])
+                self._status(f"计划任务「{t.name}」：{status}", 8000)
+
+            run_async(run, lambda _none: None, lambda err: None)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)
