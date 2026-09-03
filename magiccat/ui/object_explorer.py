@@ -64,6 +64,7 @@ class ObjectExplorer(QTreeWidget):
     open_saved_query = Signal(str, str)  # profile_id, name
     create_routine_requested = Signal(str, str, str, str)  # profile_id, schema, kind, name
     create_routine_entry = Signal(str, str)  # profile_id, schema（弹向导）
+    open_routine_sql = Signal(str, str, str)  # profile_id, name, sql_text
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -301,6 +302,8 @@ class ObjectExplorer(QTreeWidget):
             item.setExpanded(not item.isExpanded())
         elif kind == "saved_query":
             self._open_saved_query_item(item)
+        elif kind == "routine":
+            self._open_routine_sql(item)
         elif kind in ("table", "view"):
             profile = self._profile_of(item)
             if profile is not None:
@@ -618,6 +621,25 @@ class ObjectExplorer(QTreeWidget):
 
         run_async(lambda: query.execute(profile, sql), done,
                   lambda err: QMessageBox.critical(self, "删除对象", err))
+
+    def _open_routine_sql(self, item: QTreeWidgetItem) -> None:
+        """双击“函数”节点：取 SHOW CREATE 的例程定义 SQL，交由主窗口打开编辑器。"""
+        from magiccat.services.ddl_service import DdlService
+
+        info = _info(item)
+        data = info.get(DATA_KEY, {})
+        profile = self._profile_of(item)
+        if profile is None or not data.get("name"):
+            return
+        schema, name = data.get("schema"), data.get("name")
+        kind = data.get("type", "PROCEDURE")
+        ddl = DdlService(self._connections)
+
+        def done(sql_text: str) -> None:
+            self.open_routine_sql.emit(profile.id, name, sql_text)
+
+        run_async(lambda: ddl.show_create_routine(profile, schema, name, kind), done,
+                  lambda err: logger.warning("读取函数定义失败: %s", err))
 
     def _open_saved_query_item(self, item: QTreeWidgetItem) -> None:
         info = _info(item)

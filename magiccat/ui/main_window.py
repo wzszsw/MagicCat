@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         self.explorer.create_table_requested.connect(self._on_create_table)
         self.explorer.open_saved_query.connect(self._open_saved_query)
         self.explorer.create_routine_entry.connect(self._on_create_routine)
+        self.explorer.open_routine_sql.connect(self._open_routine_sql)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -663,6 +664,21 @@ class MainWindow(QMainWindow):
         self._status(
             f"已生成「{verb} {schema}.{name}」模板：填写内容后「执行全部」即可创建"
             "（体含分号，编辑器支持 DELIMITER 语法）", 8000)
+
+    def _open_routine_sql(self, profile_id: str, name: str, sql_text: str) -> None:
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        editor = self._new_editor()
+        editor.setPlainText(sql_text)
+        index = self.editor_tabs.indexOf(editor)
+        self.editor_tabs.setTabText(index, name + "（函数）")
+        idx = self.profile_combo.findData(profile_id)
+        if idx >= 0:
+            self.profile_combo.setCurrentIndex(idx)
+        self._status(
+            f"已打开例程「{name}」定义：可查看/修改；改动后需先删除再执行创建"
+            "（或用编辑器结合删除动作）, 双击即可再次查看", 8000)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)
