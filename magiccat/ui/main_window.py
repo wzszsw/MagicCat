@@ -106,6 +106,8 @@ class MainWindow(QMainWindow):
         act_format.triggered.connect(self._format_sql)
         act_history = menu_query.addAction("最近执行的 SQL…")
         act_history.triggered.connect(self._insert_history)
+        act_snippets = menu_query.addAction("SQL 收藏…")
+        act_snippets.triggered.connect(self._open_snippets)
         act_close = menu_query.addAction("关闭当前标签\tCtrl+W")
         act_close.setShortcut("Ctrl+W")
         act_close.triggered.connect(lambda: self._close_editor_tab(self.editor_tabs.currentIndex()))
@@ -123,6 +125,10 @@ class MainWindow(QMainWindow):
         self.act_dark.setCheckable(True)
         self.act_dark.setChecked(self._settings.get("theme", "light") == "dark")
         self.act_dark.triggered.connect(self._toggle_theme)
+
+        menu_help = self.menuBar().addMenu("帮助(&H)")
+        act_about = menu_help.addAction("关于 MagicCat…")
+        act_about.triggered.connect(self._about)
 
         toolbar = self.addToolBar("查询")
         toolbar.addAction(act_add)
@@ -275,6 +281,25 @@ class MainWindow(QMainWindow):
         sql, ok = QInputDialog.getItem(self, "最近执行的 SQL", "选择插入：", recent, 0, False)
         if ok and sql:
             editor.insertPlainText(("\n" if editor.toPlainText().strip() else "") + sql)
+
+    def _open_snippets(self) -> None:
+        from magiccat.services.snippets import SnippetStore
+        from magiccat.ui.snippet_dialog import SnippetDialog
+
+        def insert(sql: str) -> None:
+            editor = self._active_editor()
+            if editor is not None:
+                editor.insertPlainText(("\n" if editor.toPlainText().strip() else "") + sql)
+
+        SnippetDialog(SnippetStore.default(), insert, self).exec()
+
+    def _about(self) -> None:
+        QMessageBox.about(
+            self, "关于 MagicCat",
+            f"<h3>MagicCat {__import__('magiccat').__version__}</h3>"
+            "<p>对标 Navicat 的跨数据库桌面管理工具（开发版）。</p>"
+            "<p>技术栈：PySide6 · JPype(内嵌 JVM) · JDBC(HikariCP + mysql-connector-j)<br>"
+            "首发支持：MySQL / MariaDB（Windows）</p>")
 
     def _add_connection(self) -> None:
         dialog = ConnectionEditDialog(self, groups=self._connections.groups)

@@ -49,4 +49,23 @@ uv run python -m magiccat
 
 ## 里程碑
 
-见设计方案 §10：M0 方案 ✔ → M1 技术验证（本阶段）→ M2 连接与对象浏览 → M3 SQL 开发闭环 → … → M7 打包发布。
+见设计方案 §10。当前进度（自动化测试 23+ 项，另含打包产物 `--selftest`）：
+
+| 里程碑 | 内容 | 状态 |
+|---|---|---|
+| M1 | 技术验证：PySide6→JPype→HikariCP→MySQL 全链路 POC | ✅ |
+| M2 | 连接管理（DPAPI 加密）+ 对象浏览 | ✅ |
+| M3 | SQL 编辑器（高亮/补全/多标签/历史/美化）+ 多结果集 | ✅ |
+| M4 | 数据页（分页/主键编辑/增删行）+ 表设计器（ALTER 预览） | ✅ |
+| M5 | 导入导出 CSV/Excel/JSON/SQL | ✅ |
+| M6a | 主题、ER 图、SQL 备份/恢复、收藏/复制打磨 | ✅ |
+| M7a | Windows 打包：PyInstaller + jlink 内嵌 JRE（`--selftest` 通过，免装 Java） | ✅ |
+| 剩余 | Inno 安装器实编、计划任务/i18n、更多细节 | 后续 |
+
+## 打包
+
+```powershell
+.\scripts\build_package.ps1              # 全量（jar + jlink JRE + PyInstaller）
+.\scripts\build_package.ps1 -SkipJlink   # 复用已有内嵌 JRE 快速重打
+.\dist\MagicCat\MagicCat.exe --selftest  # 打包自检（无需系统 Java）
+```
