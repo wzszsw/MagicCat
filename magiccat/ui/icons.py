@@ -207,6 +207,78 @@ def _save() -> QImage:
     return image
 
 
+def _user() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(QColor("#E8A33D")))
+    p.drawEllipse(QRectF(5, 2, 6, 6))
+    p.drawChord(QRectF(3, 9, 10, 9), 0, 180 * 16)
+    p.end()
+    return image
+
+
+def _other() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#4B5563"), 1.0))
+    p.setBrush(QBrush(QColor("#9CA3AF")))
+    p.drawRoundedRect(QRectF(2, 5, 12, 8.5), 2, 2)
+    p.drawRect(QRectF(5, 3, 6, 3))
+    p.setBrush(QBrush(QColor("#3B82F6")))
+    p.drawEllipse(QRectF(7, 8, 2.5, 2.5))
+    p.end()
+    return image
+
+
+def _backup() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#2B5F2E"), 1.0))
+    p.setBrush(QBrush(QColor(_COLORS["green"])))
+    p.drawEllipse(QRectF(2, 2, 12, 4.5))
+    p.drawRect(QRectF(2, 3.5, 12, 8))
+    p.setBrush(QBrush(QColor("#76C97A")))
+    p.drawEllipse(QRectF(2, 9.5, 12, 4.5))
+    p.end()
+    return image
+
+
+def _auto_run() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#2E5A77"), 1.4))
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(2, 2, 12, 12))
+    p.drawLine(8, 8, 8, 4.5)
+    p.drawLine(8, 8, 11, 9.5)
+    p.end()
+    return image
+
+
+def _model() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#5B2E7A"), 1.0))
+    p.setBrush(QBrush(QColor("#9B59B6")))
+    for x, y in ((2, 2), (9, 2), (2, 9), (9, 9)):
+        p.drawRoundedRect(QRectF(x, y, 5, 5), 1, 1)
+    p.end()
+    return image
+
+
+def _bi() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(QColor("#7C3AED")))
+    p.drawRect(QRectF(2, 8, 3, 6))
+    p.drawRect(QRectF(6.5, 5, 3, 9))
+    p.drawRect(QRectF(11, 2, 3, 12))
+    p.end()
+    return image
+
+
 @cache
 def _icon_image(kind: str, subtype: str = "") -> QImage | None:
     if kind == "function" or (kind == "routine" and subtype != "PROCEDURE"):
@@ -233,6 +305,18 @@ def _icon_image(kind: str, subtype: str = "") -> QImage | None:
         return _new_query()
     if kind == "save":
         return _save()
+    if kind == "user":
+        return _user()
+    if kind == "other":
+        return _other()
+    if kind == "backup":
+        return _backup()
+    if kind == "auto_run":
+        return _auto_run()
+    if kind == "model":
+        return _model()
+    if kind == "bi":
+        return _bi()
     if kind in ("query_folder", "category"):
         return _folder(_COLORS["cream"])
     if kind == "group":

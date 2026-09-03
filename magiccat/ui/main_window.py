@@ -140,7 +140,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
     def _build_quick_toolbar(self) -> None:
-        """对标 Navicat 顶部快速访问栏：连接/新建查询/表/视图/函数。"""
+        """对标 Navicat 顶部快速访问栏（图标+文字在下）：
+        连接/新建查询 | 表/视图/函数 | 用户/其它 | 查询/备份/自动运行/模型/BI。"""
         from magiccat.ui.icons import icon
 
         toolbar = QToolBar("快速访问")
@@ -151,16 +152,53 @@ class MainWindow(QMainWindow):
 
         def quick(text: str, kind: str, handler) -> None:
             act = QAction(icon(kind), text, self)
+            act.setToolTip(text)
             act.triggered.connect(handler)
             toolbar.addAction(act)
 
-        quick("新建连接", "connection", self._add_connection)
-        toolbar.addSeparator()
-        quick("新建查询", "query", self._new_editor)
+        def stub(text: str, kind: str) -> None:
+            def info() -> None:
+                QMessageBox.information(
+                    self, text, f"「{text}」为专业模块，当前版本规划中。")
+
+            quick(text, kind, info)
+
+        quick("连接", "connection", self._add_connection)
+        quick("新建查询", "new_query", self._new_editor)
         toolbar.addSeparator()
         quick("表", "table", lambda: self._quick_create_object("table"))
         quick("视图", "view", lambda: self._quick_create_object("view"))
         quick("函数", "function", lambda: self._quick_create_object("routine"))
+        toolbar.addSeparator()
+        quick("用户", "user", self._quick_user)
+        stub("其它", "other")
+        toolbar.addSeparator()
+        quick("查询", "query", self._new_editor)
+        quick("备份", "backup", self._open_backup_dialog)
+        quick("自动运行", "auto_run", self._open_task_dialog)
+        quick("模型", "model", self._quick_model)
+        stub("BI", "bi")
+
+    def _quick_user(self) -> None:
+        """用户：快捷列出当前连接用户（MySQL 便捷查询模板）。"""
+        if self._current_profile() is None:
+            QMessageBox.information(self, "用户", "请先选择连接。")
+            return
+        editor = self._new_editor()
+        editor.setPlainText("SELECT User, Host FROM mysql.user ORDER BY User, Host;")
+        index = self.editor_tabs.indexOf(editor)
+        self.editor_tabs.setTabText(index, "用户")
+        self._status("已生成用户列表查询：执行后查看结果", 6000)
+
+    def _quick_model(self) -> None:
+        """模型：当前库的 ER 图。"""
+        schema = self._resolve_current_schema()
+        if not schema:
+            return
+        profile = self._current_profile()
+        from magiccat.ui.er_view import ErDialog
+
+        ErDialog(profile, schema, self._connections, self).exec()
 
     def _resolve_current_schema(self) -> str | None:
         """取当前连接的默认库；无则让用户从库列表选。返回 schema 或 None。"""
