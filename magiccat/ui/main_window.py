@@ -106,6 +106,8 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         self.setCentralWidget(splitter)
+        # Navicat：消息窗默认不显示，有消息/结果时自动出现
+        self.result_panel.setVisible(False)
 
     def _build_explorer_dock(self) -> None:
         self.explorer = ObjectExplorer(self._connections, self._metadata)

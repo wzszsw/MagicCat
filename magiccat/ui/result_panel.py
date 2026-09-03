@@ -30,6 +30,7 @@ class ResultPanel(QTabWidget):
         self._result_tab_indexes: list[int] = []
 
     def append_message(self, text: str) -> None:
+        self.setVisible(True)  # Navicat：消息窗默认隐藏，有消息自动出现
         self._log.appendPlainText(text)
         if not self._result_tab_indexes:
             self.setCurrentWidget(self._log)
@@ -40,6 +41,7 @@ class ResultPanel(QTabWidget):
         self._result_tab_indexes = []
 
     def show_results(self, results: list[dict]) -> None:
+        self.setVisible(True)
         self.clear_results()
         query_count = 0
         for result in results:
