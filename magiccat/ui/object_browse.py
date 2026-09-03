@@ -71,15 +71,18 @@ class ObjectBrowseView(QWidget):
     # ---- 子类/领域配置 ----
     def configure(self, columns: list[str], name_column: int = 0,
                   new_text: str = "新建", open_text: str = "打开",
-                  delete_text: str = "删除", keys: list[str] | None = None) -> None:
+                  delete_text: str = "删除", keys: list[str] | None = None,
+                  show_new: bool = True) -> None:
         """由领域页设置：列标题、名称列下标、操作按钮文案、行键名。
 
         keys：每列对应的数据字典键（缺省与 columns 同值，即直接用列标题取键）。
+        show_new：是否显示“新建”按钮（如触发器由表内创建，无需新建入口）。
         """
         self._name_column = name_column
         self._columns = list(columns)
         self._keys = list(keys) if keys is not None else list(columns)
         self.btn_new.setText(new_text)
+        self.btn_new.setVisible(show_new)
         self.btn_open.setText(open_text)
         self.btn_del.setText(delete_text)
         self.table.clear()

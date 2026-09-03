@@ -129,19 +129,22 @@ class MainWindow(QMainWindow):
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
         self.editor_tabs.currentChanged.connect(self._on_query_tab_changed)
 
-        # 「对象」页 = 领域浏览栈：查询、表、视图、函数四个领域子页；其余后续逐个加入
+        # 「对象」页 = 领域浏览栈：查询、表、视图、函数、触发器五个领域子页
         self.domain_stack = QStackedWidget()
         self._build_query_browse()
         self._build_table_browse()
         self._build_view_browse()
         self._build_routine_browse()
+        self._build_trigger_browse()
         self.domain_stack.addWidget(self.browse_page)
         self.domain_stack.addWidget(self.table_page)
         self.domain_stack.addWidget(self.view_page)
         self.domain_stack.addWidget(self.routine_page)
+        self.domain_stack.addWidget(self.trigger_page)
         self._domain_pages: dict[str, QWidget] = {
             "queries": self.browse_page, "tables": self.table_page,
-            "views": self.view_page, "routines": self.routine_page}
+            "views": self.view_page, "routines": self.routine_page,
+            "triggers": self.trigger_page}
         self.editor_tabs.addTab(self.domain_stack, "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
@@ -202,6 +205,14 @@ class MainWindow(QMainWindow):
         self.routine_page.new_routine.connect(lambda: self._on_create_routine_entry())
         self.routine_page.delete_routine.connect(self._delete_routine)
 
+    def _build_trigger_browse(self) -> None:
+        """触发器领域「对象」子页：打开/删除触发器 + 当前库触发器列表（无新建入口）。"""
+        from magiccat.ui.trigger_browse import TriggerBrowseView
+
+        self.trigger_page = TriggerBrowseView()
+        self.trigger_page.open_trigger.connect(self._open_trigger)
+        self.trigger_page.delete_trigger.connect(self._delete_trigger)
+
     def _on_create_routine_entry(self, profile_id: str | None = None,
                                  schema: str | None = None) -> None:
         """新建函数（对象页动作）：需要连接/库上下文，复用打开向导。"""
@@ -253,6 +264,8 @@ class MainWindow(QMainWindow):
             self._reload_view_browse()
         elif page is self.routine_page:
             self._reload_routine_browse()
+        elif page is self.trigger_page:
+            self._reload_trigger_browse()
         else:
             page.clear() if hasattr(page, "clear") else None
 
@@ -329,6 +342,26 @@ class MainWindow(QMainWindow):
         run_async(fetch, done, lambda err: self.routine_page.ctx_label.setText(
             f"读取函数失败：{err}"))
 
+    def _reload_trigger_browse(self, profile=None, schema: str = "") -> None:
+        """按当前连接/库刷新「触发器」对象页列表（一次批查，无 N+1）。"""
+        profile = profile or self._current_profile()
+        if profile is None:
+            self.trigger_page.clear()
+            self.trigger_page.ctx_label.setText("")
+            return
+        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        self.trigger_page.ctx_label.setText(
+            f"{profile.display_name} · {schema or '默认'}")
+
+        def fetch():
+            return self._metadata.triggers(profile, schema)
+
+        def done(rows: list[dict]) -> None:
+            self.trigger_page.load_triggers(profile.id, schema, rows)
+
+        run_async(fetch, done, lambda err: self.trigger_page.ctx_label.setText(
+            f"读取触发器失败：{err}"))
+
     def _query_btn(self, text: str, handler, bar: QHBoxLayout):
         from PySide6.QtWidgets import QPushButton
 
@@ -398,8 +431,6 @@ class MainWindow(QMainWindow):
         quick("用户", "user", self._quick_user)
         toolbar.addSeparator()
         quick("查询", "query", self._show_query_domain)
-        quick("自动运行", "auto_run", self._open_task_dialog)
-        quick("模型", "model", self._quick_model)
 
     def _quick_user(self) -> None:
         """用户：打开用户管理面板（对标 Navicat）。"""
@@ -418,16 +449,6 @@ class MainWindow(QMainWindow):
         index = self.editor_tabs.addTab(widget, f"用户 · {profile.display_name}")
         self.editor_tabs.setCurrentIndex(index)
         self._status(f"已打开用户管理（{profile.display_name}）")
-
-    def _quick_model(self) -> None:
-        """模型：当前库的 ER 图。"""
-        schema = self._resolve_current_schema()
-        if not schema:
-            return
-        profile = self._current_profile()
-        from magiccat.ui.er_view import ErDialog
-
-        ErDialog(profile, schema, self._connections, self).exec()
 
     def _resolve_current_schema(self) -> str | None:
         """取当前连接的默认库；无则让用户从库列表选。返回 schema 或 None。"""
@@ -514,8 +535,7 @@ class MainWindow(QMainWindow):
         act_import.triggered.connect(self._open_import_dialog)
         act_backup = menu_tools.addAction("备份数据库为 SQL…")
         act_backup.triggered.connect(self._open_backup_dialog)
-        act_tasks = menu_tools.addAction("计划任务…")
-        act_tasks.triggered.connect(self._open_task_dialog)
+        # 计划任务入口已暂隐（对应 Navicat 自动运行，本轮隐藏）
         act_copy = menu_tools.addAction("复制表（数据传输）…")
         act_copy.triggered.connect(self._open_copy_dialog)
         act_restore = menu_tools.addAction("执行 SQL 脚本（恢复）…")
@@ -1185,6 +1205,56 @@ class MainWindow(QMainWindow):
 
         run_async(fetch_type, ask,
                   lambda err: QMessageBox.warning(self, "删除对象", f"失败：{err}"))
+
+    def _open_trigger(self, profile_id: str, schema: str, name: str) -> None:
+        """打开触发器（对象页动作）：取 SHOW CREATE TRIGGER 定义，开到一个编辑器标签。"""
+        from magiccat.services.ddl_service import DdlService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        ddl = DdlService(self._connections)
+
+        def fetch() -> str:
+            return ddl.show_create_trigger(profile, schema, name)
+
+        def done(sql_text: str) -> None:
+            editor = self._new_editor()
+            editor.setPlainText(sql_text)
+            self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor),
+                                        f"{name}（触发器）")
+            idx = self.profile_combo.findData(profile_id)
+            if idx >= 0:
+                self.profile_combo.setCurrentIndex(idx)
+            self._status(f"已打开触发器「{name}」", 4000)
+
+        run_async(fetch, done,
+                  lambda err: QMessageBox.warning(self, "打开触发器", f"失败：{err}"))
+
+    def _delete_trigger(self, profile_id: str, schema: str, name: str) -> None:
+        """删除触发器（对象页动作）：确认后 DROP TRIGGER，并刷新「触发器」对象页。"""
+        from magiccat.services.query_service import QueryService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        sql = f"DROP TRIGGER IF EXISTS `{schema}`.`{name}`"
+        if QMessageBox.question(
+                self, "删除触发器",
+                f"确定删除触发器 `{schema}`.{name}？\n\n{sql}",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, "删除触发器", errors[0]["message"])
+                return
+            self._reload_trigger_browse(profile, schema)
+            self._status(f"触发器已删除：{schema}.{name}", 4000)
+
+        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+                  done, lambda err: QMessageBox.critical(self, "删除触发器", err))
 
     def _on_selection_info(self, desc: dict) -> None:
         self.info_panel.show_object(desc)
