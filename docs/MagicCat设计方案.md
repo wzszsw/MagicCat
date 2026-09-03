@@ -332,6 +332,7 @@ MagicCat/
 | M7 | Windows 打包：PyInstaller + jlink 内嵌 JRE + 图标 | ✅ | `MagicCat.exe --selftest` 在无系统 Java 下 `jre_bundled:true` |
 | M8 | 打磨：收藏/复制/关于/图标/README | ✅ | 25 项自动化测试全绿 |
 | M9 | DELIMITER 支持（存储过程/函数多语句脚本执行） | ✅ | 建过程→CALL→DROP 端到端 |
+| M10 | 数据传输（库间/表间复制：结构+数据、进度/取消） | ✅ | 结构复制+数据追加双路径验证 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

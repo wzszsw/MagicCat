@@ -170,6 +170,72 @@ def import_csv(profile: ConnectionProfile, schema: str, table: str, path: str | 
         return {"rows": rows_done, "cancelled": False, "first_error": first_error}
 
 
+# ---- 库间/表间复制（同服务器） ----
+def copy_table_data(profile: ConnectionProfile, src_schema: str, src_table: str,
+                    dst_schema: str, dst_table: str, query: QueryService,
+                    data: DataService, metadata: MetadataService,
+                    with_structure: bool = True, progress: ProgressCb | None = None,
+                    cancel: threading.Event | None = None) -> dict:
+    """把源表复制为 目标表（同连接内跨库/跨表）。
+
+    with_structure=True 时先 CREATE TABLE IF NOT EXISTS dst LIKE src；
+    之后流式分页读源表并按块 INSERT 到目标表。
+    """
+    _check(cancel)
+    if with_structure:
+        res = query.execute(profile,
+                            f"CREATE TABLE IF NOT EXISTS {_qname(dst_schema, dst_table)} "
+                            f"LIKE {_qname(src_schema, src_table)}")[0]
+        if res.get("kind") == "error":
+            raise RuntimeError(f"创建目标表失败：{res['message']}")
+    columns_meta = metadata.columns(profile, src_schema, src_table)
+    headers = [c["name"] for c in columns_meta]
+    total = int(data.load_page(profile, src_schema, src_table, offset=0, limit=1)["total"])
+    col_sql = ", ".join(f"`{c.replace('`', '``')}`" for c in headers)
+    dst_q = _qname(dst_schema, dst_table)
+
+    buffer: list[str] = []
+    rows_done = 0
+
+    def flush() -> None:
+        nonlocal rows_done
+        if not buffer:
+            return
+        stmt = (f"INSERT INTO {dst_q} ({col_sql}) VALUES {', '.join(buffer)}")
+        res = query.execute(profile, stmt)[0]
+        if res.get("kind") == "error":
+            raise RuntimeError(f"复制数据失败：{res['message']}")
+        rows_done += len(buffer)
+        buffer.clear()
+
+    try:
+        if progress:
+            progress(0, total, "开始复制…")
+        offset = 0
+        while True:
+            _check(cancel)
+            page = data.load_page(profile, src_schema, src_table, offset=offset, limit=1000)
+            for row in page["rows"]:
+                values = []
+                for v in row:
+                    values.append("NULL" if v is None else _sql_string(v))
+                buffer.append("(" + ", ".join(values) + ")")
+                if len(buffer) >= CHUNK:
+                    flush()
+            if progress:
+                progress(offset + len(page["rows"]), total,
+                         f"已复制 {offset + len(page['rows'])}/{total} 行")
+            if len(page["rows"]) < 1000:
+                break
+            offset += 1000
+        flush()
+    except TransferCancelled:
+        return {"rows": rows_done, "cancelled": True}
+    if progress:
+        progress(total, total, "完成")
+    return {"rows": rows_done, "cancelled": False}
+
+
 # ---- 各格式 writer（上下文管理器，流式落盘） ----
 class _CsvWriter:
     def __init__(self, path: Path, headers: list[str]) -> None:

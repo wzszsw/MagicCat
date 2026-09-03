@@ -120,6 +120,8 @@ class MainWindow(QMainWindow):
         act_import.triggered.connect(self._open_import_dialog)
         act_backup = menu_tools.addAction("备份数据库为 SQL…")
         act_backup.triggered.connect(self._open_backup_dialog)
+        act_copy = menu_tools.addAction("复制表（数据传输）…")
+        act_copy.triggered.connect(self._open_copy_dialog)
         act_restore = menu_tools.addAction("执行 SQL 脚本（恢复）…")
         act_restore.triggered.connect(self._open_restore_dialog)
 
@@ -366,6 +368,11 @@ class MainWindow(QMainWindow):
         from magiccat.ui.backup_dialogs import BackupDialog
 
         BackupDialog(self._connections, self._metadata, self).exec()
+
+    def _open_copy_dialog(self) -> None:
+        from magiccat.ui.transfer_dialogs import CopyTableDialog
+
+        CopyTableDialog(self._connections, self._metadata, self).exec()
 
     def _open_restore_dialog(self) -> None:
         from magiccat.ui.backup_dialogs import run_restore_script

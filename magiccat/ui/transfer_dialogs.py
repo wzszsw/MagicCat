@@ -254,3 +254,152 @@ class ImportCsvDialog(QDialog):
         self.btn_start.setEnabled(True)
         self.progress_bar.setRange(0, 1)
         QMessageBox.critical(self, "导入失败", err)
+
+
+class CopyTableDialog(QDialog):
+    """数据传输：同连接内复制表（结构 + 数据）。"""
+
+    def __init__(self, connections: ConnectionService,
+                 metadata: MetadataService, parent=None) -> None:
+        super().__init__(parent)
+        self._connections = connections
+        self._metadata = metadata
+        self.setWindowTitle("复制表（数据传输）")
+        self.setMinimumWidth(500)
+        self._bus = _Bus()
+        self._cancel = threading.Event()
+        self._bus.progress.connect(self._on_progress)
+        self._bus.finished.connect(self._on_finished)
+        self._bus.error.connect(self._on_error)
+        self._build_ui()
+        self._populate_profiles()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        form = QFormLayout()
+        self.profile_combo = QComboBox()
+        self.src_schema_combo = QComboBox()
+        self.src_table_combo = QComboBox()
+        self.dst_schema_combo = QComboBox()
+        self.dst_table_edit = QLineEdit()
+        self.dst_table_edit.setPlaceholderText("目标表名（默认同源表名）")
+        self.structure_check = QCheckBox("同时复制结构（CREATE TABLE IF NOT EXISTS dst LIKE src）")
+        self.structure_check.setChecked(True)
+        for c in (self.src_schema_combo, self.src_table_combo,
+                  self.dst_schema_combo):
+            c.setEnabled(False)
+        form.addRow("连接", self.profile_combo)
+        form.addRow("源数据库", self.src_schema_combo)
+        form.addRow("源表", self.src_table_combo)
+        form.addRow("目标数据库", self.dst_schema_combo)
+        form.addRow("目标表", self.dst_table_edit)
+        form.addRow("", self.structure_check)
+        root.addLayout(form)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.status_label = QLabel("")
+        root.addWidget(self.progress_bar)
+        root.addWidget(self.status_label)
+
+        buttons = QDialogButtonBox()
+        self.btn_start = buttons.addButton("开始复制", QDialogButtonBox.AcceptRole)
+        buttons.addButton(QDialogButtonBox.Close)
+        buttons.accepted.connect(self._start)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+        self.profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+        self.src_schema_combo.currentIndexChanged.connect(self._on_schema_changed)
+
+    def _populate_profiles(self) -> None:
+        self.profile_combo.clear()
+        for p in self._connections.profiles:
+            self.profile_combo.addItem(p.display_name, p.id)
+
+    def _current_profile(self):
+        pid = self.profile_combo.currentData()
+        return self._connections.get(pid) if pid else None
+
+    def _on_profile_changed(self) -> None:
+        profile = self._current_profile()
+        for combo in (self.src_schema_combo, self.dst_schema_combo):
+            combo.clear()
+            combo.setEnabled(False)
+        self.src_table_combo.clear()
+        self.src_table_combo.setEnabled(False)
+        if profile is None:
+            return
+        try:
+            dbs = [d["name"] for d in self._metadata.databases(profile)
+                   if d["name"] not in _SYSTEM_SCHEMAS]
+        except Exception as exc:  # noqa: BLE001
+            self.status_label.setText(f"读取数据库失败：{exc}")
+            return
+        self.src_schema_combo.addItems(dbs)
+        self.dst_schema_combo.addItems(dbs)
+        for combo in (self.src_schema_combo, self.dst_schema_combo):
+            combo.setEnabled(True)
+
+    def _on_schema_changed(self) -> None:
+        profile = self._current_profile()
+        schema = self.src_schema_combo.currentText()
+        self.src_table_combo.clear()
+        self.src_table_combo.setEnabled(False)
+        if profile is None or not schema:
+            return
+        try:
+            tables = [t["name"] for t in self._metadata.tables(profile, schema)
+                      if t["type"] == "BASE TABLE"]
+        except Exception as exc:  # noqa: BLE001
+            self.status_label.setText(f"读取表失败：{exc}")
+            return
+        self.src_table_combo.addItems(tables)
+        self.src_table_combo.setEnabled(True)
+
+    def _start(self) -> None:
+        profile = self._current_profile()
+        src_schema = self.src_schema_combo.currentText()
+        src_table = self.src_table_combo.currentText()
+        dst_schema = self.dst_schema_combo.currentText()
+        dst_table = self.dst_table_edit.text().strip() or src_table
+        if not (profile and src_schema and src_table and dst_schema and dst_table):
+            self.status_label.setText("请选择 源库/源表 与 目标库/目标表")
+            return
+        from magiccat.services.data_service import DataService
+        from magiccat.services.query_service import QueryService
+
+        self.btn_start.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self.status_label.setText("正在复制…")
+        data = DataService(self._connections)
+        query = QueryService(self._connections)
+        run_async(
+            lambda: transfer.copy_table_data(
+                profile, src_schema, src_table, dst_schema, dst_table,
+                query, data, self._metadata,
+                with_structure=self.structure_check.isChecked(),
+                progress=self._bus.progress.emit, cancel=self._cancel),
+            lambda result: self._bus.finished.emit(result),
+            lambda err: self._bus.error.emit(err))
+
+    def _on_progress(self, done: int, total: int, msg: str) -> None:
+        self.status_label.setText(msg)
+        if total > 0:
+            self.progress_bar.setRange(0, max(total, 1))
+            self.progress_bar.setValue(done)
+
+    def _on_finished(self, result: dict) -> None:
+        self.btn_start.setEnabled(True)
+        self.progress_bar.setRange(0, 1)
+        if result.get("cancelled"):
+            QMessageBox.information(self, "复制", f"已取消（已复制 {result['rows']} 行）。")
+        else:
+            QMessageBox.information(self, "复制", f"复制完成：{result['rows']} 行")
+            self.accept()
+
+    def _on_error(self, err: str) -> None:
+        self.btn_start.setEnabled(True)
+        self.progress_bar.setRange(0, 1)
+        QMessageBox.critical(self, "复制失败", err)
