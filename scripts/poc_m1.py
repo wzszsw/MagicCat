@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from magiccat.bridge.jvm import BridgeRuntime  # noqa: E402
+from magiccat.bridge.jvm import BridgeRuntime
 
 # ---- 本机开发库参数（数据不重要） ----
 HOST = "127.0.0.1"
@@ -32,7 +32,7 @@ def cell(v) -> str:
 def main() -> int:
     bridge = BridgeRuntime()
     bridge.start()
-    print(f"[1/3] JVM 已启动，classpath 就绪")
+    print("[1/3] JVM 已启动，classpath 就绪")
     try:
         Facade = bridge.jclass("com.magiccat.bridge.Facade")
 
