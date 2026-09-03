@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self._history = HistoryStore.default()
         self._settings = AppSettings.default()
         self._tab_seq = 0
+        self._running = 0
 
         self.setWindowTitle("MagicCat")
         self.setWindowIcon(QIcon(app_icon_png()))
@@ -104,6 +105,9 @@ class MainWindow(QMainWindow):
         self.act_run_all = menu_query.addAction("执行全部\tCtrl+Shift+Enter")
         self.act_run_all.setShortcut("Ctrl+Shift+Enter")
         self.act_run_all.triggered.connect(self._run_all)
+        self.act_cancel = menu_query.addAction("取消执行")
+        self.act_cancel.setEnabled(False)
+        self.act_cancel.triggered.connect(self._cancel_execution)
         menu_query.addSeparator()
         act_format = menu_query.addAction("美化 SQL")
         act_format.triggered.connect(self._format_sql)
@@ -146,6 +150,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(self.act_run)
         toolbar.addAction(self.act_run_all)
+        toolbar.addAction(self.act_cancel)
 
     # ---- 连接选择 ----
     def _reload_connection_combo(self) -> None:
@@ -229,16 +234,29 @@ class MainWindow(QMainWindow):
         self._status(f"正在执行（{profile.name}）…")
         self.result_panel.append_message(f"──── 执行 · {profile.name} · {sql}")
         # 支持多标签并行：每次执行独立入池，结果完成时刷新下方结果区
+        self._running += 1
+        self.act_cancel.setEnabled(True)
         run_async(
             lambda: self._query.execute(profile, sql),
             lambda results: self._on_executed(results),
             lambda err: self._on_exec_error(err))
 
+    def _cancel_execution(self) -> None:
+        count = self._query.cancel_all()
+        self._status(f"正在取消 {count} 个执行中的查询…")
+        if count == 0:
+            self.act_cancel.setEnabled(False)
+
     def _on_executed(self, results: list[dict]) -> None:
+        self._running = max(0, self._running - 1)
+        self.act_cancel.setEnabled(self._running > 0)
         self.result_panel.show_results(results)
+        cancelled = any(r.get("cancelled") for r in results)
         errors = [r for r in results if r.get("kind") == "error"]
         total = round(sum(float(r.get("time_ms", 0)) for r in results), 1)
-        if errors:
+        if cancelled:
+            self._status(f"执行已取消（{total} ms）", 5000)
+        elif errors:
             self._status(f"完成，{len(errors)}/{len(results)} 条语句失败（共 {total} ms）", 8000)
         else:
             self._status(f"完成：{len(results)} 条语句全部成功（共 {total} ms）", 5000)
@@ -247,6 +265,8 @@ class MainWindow(QMainWindow):
             self._history.push(editor.all_text())
 
     def _on_exec_error(self, err: str) -> None:
+        self._running = max(0, self._running - 1)
+        self.act_cancel.setEnabled(self._running > 0)
         self.result_panel.append_message(f"[执行失败] {err}")
         self._status("执行失败", 8000)
 

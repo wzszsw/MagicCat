@@ -21,6 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ConnectionRegistry {
 
     private static final ConcurrentHashMap<String, HikariDataSource> POOLS = new ConcurrentHashMap<>();
+    /** 可取消执行的活跃语句表（令牌 → Statement）。 */
+    private static final ConcurrentHashMap<String, Statement> ACTIVE = new ConcurrentHashMap<>();
 
     private ConnectionRegistry() {}
 
@@ -95,6 +97,31 @@ public final class ConnectionRegistry {
      * 更新类（INSERT/UPDATE/DDL…）→ {"kind":"update","affected":N}。
      */
     public static String execute(String configId, String sql, int maxRows) {
+        return run(configId, sql, maxRows, null);
+    }
+
+    /** 可取消执行：注册令牌 → 其他线程可调 cancelToken 中断当前语句。 */
+    public static String executeCancelable(String configId, String sql, int maxRows,
+                                           String token) {
+        return run(configId, sql, maxRows, token);
+    }
+
+    /** 中断某令牌正在执行的语句（无令牌或已结束则空操作）。 */
+    public static void cancelToken(String token) {
+        if (token == null) {
+            return;
+        }
+        Statement st = ACTIVE.get(token);
+        if (st != null) {
+            try {
+                st.cancel();
+            } catch (SQLException ignored) {
+                // 语句可能已自然结束
+            }
+        }
+    }
+
+    private static String run(String configId, String sql, int maxRows, String token) {
         List<String[]> rows = new ArrayList<>();
         String[] columns;
         try (Connection conn = requirePool(configId).getConnection();
@@ -102,26 +129,35 @@ public final class ConnectionRegistry {
             if (maxRows > 0) {
                 st.setMaxRows(maxRows);
             }
-            boolean hasResult = st.execute(sql);
-            if (!hasResult) {
-                return Json.updateResult(st.getUpdateCount());
+            if (token != null) {
+                ACTIVE.put(token, st);
             }
-            try (ResultSet rs = st.getResultSet()) {
-                ResultSetMetaData md = rs.getMetaData();
-                int n = md.getColumnCount();
-                columns = new String[n];
-                for (int i = 1; i <= n; i++) {
-                    columns[i - 1] = md.getColumnLabel(i);
+            try {
+                boolean hasResult = st.execute(sql);
+                if (!hasResult) {
+                    return Json.updateResult(st.getUpdateCount());
                 }
-                while (rs.next()) {
-                    String[] row = new String[n];
+                try (ResultSet rs = st.getResultSet()) {
+                    ResultSetMetaData md = rs.getMetaData();
+                    int n = md.getColumnCount();
+                    columns = new String[n];
                     for (int i = 1; i <= n; i++) {
-                        row[i - 1] = Facade.cellToString(rs.getObject(i));
+                        columns[i - 1] = md.getColumnLabel(i);
                     }
-                    rows.add(row);
+                    while (rs.next()) {
+                        String[] row = new String[n];
+                        for (int i = 1; i <= n; i++) {
+                            row[i - 1] = Facade.cellToString(rs.getObject(i));
+                        }
+                        rows.add(row);
+                    }
+                }
+                return Json.queryResult(columns, rows);
+            } finally {
+                if (token != null) {
+                    ACTIVE.remove(token);
                 }
             }
-            return Json.queryResult(columns, rows);
         } catch (SQLException e) {
             throw new IllegalStateException("执行失败: " + e.getMessage(), e);
         }

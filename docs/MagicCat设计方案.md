@@ -336,6 +336,7 @@ MagicCat/
 | M12 | 对象管理：新建库/新建表/清空表/删除表（设计器新建模式） | ✅ | 新建表流端到端 |
 | M13 | 结果导出 CSV/导出跟随筛选/窗口标题联动 | ✅ | 网格回读+筛选行数验证 |
 | M14 | 多标签并行执行 + 表右键复制 CREATE | ✅ | 并行双查询均完成 |
+| M15 | 运行中查询取消（Statement.cancel，KILL 语义） | ✅ | SLEEP(30) 取消后 <10s 返回 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
