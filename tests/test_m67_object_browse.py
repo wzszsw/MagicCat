@@ -163,15 +163,13 @@ def test_reload_table_and_routine_pages(qtbot, mysql_env, connection_service):
     win.show()
     win.profile_combo.setCurrentIndex(win.profile_combo.findData(profile.id))
     qtbot.waitUntil(lambda: win.schema_combo.count() > 0, timeout=25_000)
-    idx = win.schema_combo.findText(db)
-    if idx >= 0:
-        win.schema_combo.setCurrentIndex(idx)
 
-    win._show_domain("tables")
+    # 回归：树选 db 分类 → 对象页按该库加载（即使 combo 停在其它库也不串库）
+    win._on_domain_selected(profile.id, db, "tables")
     qtbot.waitUntil(lambda: win.table_page.table.rowCount() >= 1, timeout=25_000)
     assert win.table_page.table.item(0, 0).text() == "books"
 
-    win._show_domain("routines")
+    win._on_domain_selected(profile.id, db, "routines")
     qtbot.waitUntil(lambda: win.routine_page.table.rowCount() >= 1, timeout=25_000)
     assert win.routine_page.table.item(0, 0).text() == "f_one"
     assert win.routine_page.table.item(0, 1).text() == "FUNCTION"

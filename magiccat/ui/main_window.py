@@ -255,25 +255,25 @@ class MainWindow(QMainWindow):
         self.editor_tabs.setCurrentIndex(0)
         self._reload_query_browse()
 
-    def _show_domain(self, cat_type: str) -> None:
+    def _show_domain(self, cat_type: str, schema: str = "") -> None:
         """对象树选中某分类 → 对象页切到对应领域子页并展示列表。"""
         page = self._domain_pages.get(cat_type)
         if page is None:
             return
         self.domain_stack.setCurrentWidget(page)
         self.editor_tabs.setCurrentIndex(0)
-        self._reload_current_domain()
+        self._reload_current_domain(schema=schema)
 
-    def _reload_current_domain(self) -> None:
+    def _reload_current_domain(self, schema: str = "") -> None:
         page = self.domain_stack.currentWidget()
         if page is self.browse_page:
             self._reload_query_browse()
         elif page is self.table_page:
-            self._reload_table_browse()
+            self._reload_table_browse(schema=schema)
         elif page is self.view_page:
-            self._reload_view_browse()
+            self._reload_view_browse(schema=schema)
         elif page is self.routine_page:
-            self._reload_routine_browse()
+            self._reload_routine_browse(schema=schema)
         elif page is self.trigger_page:
             self._reload_trigger_browse()
         else:
@@ -1274,8 +1274,12 @@ class MainWindow(QMainWindow):
         self.info_panel.show_object(desc)
 
     def _on_domain_selected(self, profile_id: str, schema: str, cat_type: str) -> None:
-        """对象树选中某分类 → 「对象」页切到该领域子页并展示列表。"""
-        self._show_domain(cat_type)
+        """对象树选中某分类 → 「对象」页切到该领域子页并按选中库展示列表。"""
+        # 同步连接下拉，保证「对象」页展示所选中库的对象（避免用错库）
+        idx = self.profile_combo.findData(profile_id)
+        if idx >= 0 and self.profile_combo.currentData() != profile_id:
+            self.profile_combo.setCurrentIndex(idx)
+        self._show_domain(cat_type, schema=schema)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)
