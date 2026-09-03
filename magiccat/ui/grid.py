@@ -1,7 +1,8 @@
-"""结果网格（M3 起点）：QTableView + 只读模型；分页/编辑在 M4 增强。
+"""结果网格：QTableView + 只读模型（超长文本显示截断，复制/导出保留全文）。
 
 - NULL 单元格灰显 “NULL”
-- 行数截断提示由 ResultPanel 处理
+- DisplayRole：超过 DISPLAY_LIMIT 字符的单元格截断显示；
+  ToolTipRole 与 复制/导出（走原始行）仍取完整值。
 """
 
 from __future__ import annotations
@@ -11,6 +12,17 @@ from pathlib import Path
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QTableView
+
+DISPLAY_LIMIT = 1200
+
+
+def _display_text(value) -> str:
+    if value is None:
+        return "NULL"
+    text = str(value)
+    if len(text) > DISPLAY_LIMIT:
+        return text[:DISPLAY_LIMIT - 1] + "…"
+    return text
 
 
 class ResultTableModel(QAbstractTableModel):
@@ -30,9 +42,9 @@ class ResultTableModel(QAbstractTableModel):
             return None
         value = self._rows[index.row()][index.column()]
         if role == Qt.DisplayRole:
-            if value is None:
-                return "NULL"
-            return str(value)
+            return _display_text(value)
+        if role == Qt.ToolTipRole and isinstance(value, str) and len(value) > DISPLAY_LIMIT:
+            return value
         if role == Qt.ForegroundRole and value is None:
             return QColor("#909090")
         if role == Qt.TextAlignmentRole:
@@ -128,11 +140,15 @@ class ResultView(QTableView):
             rows = list(range(model.rowCount()))
         cols = list(range(model.columnCount()))
         lines: list[list] = []
+        raw_rows: list[list] | None = getattr(model, "_rows", None)
         if include_header:
             lines.append([model.headerData(c, Qt.Horizontal) or "" for c in cols])
         for r in rows:
-            # DisplayRole 已把 None 渲染为 "NULL"，其余原样（含空串）
-            lines.append([model.index(r, c).data(Qt.DisplayRole) for c in cols])
+            if raw_rows is not None and 0 <= r < len(raw_rows) and len(raw_rows[r]) == len(cols):
+                # 原始行：NULL→"NULL"（与既有显示语义一致），超长文本保持完整
+                lines.append(["NULL" if v is None else str(v) for v in raw_rows[r]])
+            else:
+                lines.append([model.index(r, c).data(Qt.DisplayRole) or "" for c in cols])
         text = "\n".join("\t".join(str(v) for v in line) for line in lines)
         QGuiApplication.clipboard().setText(text)
         return text

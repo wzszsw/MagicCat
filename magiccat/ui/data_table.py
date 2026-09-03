@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from magiccat.models.profile import ConnectionProfile
 from magiccat.services.data_service import DataService
 from magiccat.services.metadata_service import MetadataService
-from magiccat.ui.grid import ResultView
+from magiccat.ui.grid import DISPLAY_LIMIT, ResultView, _display_text
 from magiccat.ui.job import run_async
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,9 @@ class EditableTableModel(QAbstractTableModel):
         r, c = index.row(), index.column()
         value = self._rows[r][c]
         if role == Qt.DisplayRole:
-            return "NULL" if value is None else str(value)
+            return _display_text(value)
+        if role == Qt.ToolTipRole and isinstance(value, str) and len(value) > DISPLAY_LIMIT:
+            return value
         if role == Qt.ForegroundRole:
             if value is None:
                 return QColor("#909090")

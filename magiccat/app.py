@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import sys
 
@@ -17,8 +16,10 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--selftest" in args:
         return _selftest()
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from magiccat.services.profile_store import ProfileStore
+    from magiccat.utils.logging_setup import configure_logging
+
+    configure_logging(ProfileStore.default().root)
 
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
