@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QSplitter,
+    QStackedWidget,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -99,12 +100,9 @@ class MainWindow(QMainWindow):
     def _build_central(self) -> None:
         splitter = QSplitter(Qt.Vertical)
 
-        # 查询工作区：顶部一行“查询”操作（仅查询区可见，不占全局按钮栏）+ 编辑器标签
-        work = QWidget()
-        work_lay = QVBoxLayout(work)
-        work_lay.setContentsMargins(0, 0, 0, 0)
-        work_lay.setSpacing(0)
-        bar = QHBoxLayout()
+        # 查询领域工作区：连接/库（两个状态共用）+ 编辑态动作按钮（仅在编辑器标签激活时）
+        self.edit_bar = QWidget()
+        bar = QHBoxLayout(self.edit_bar)
         bar.setContentsMargins(4, 2, 4, 2)
         bar.addWidget(QLabel(" 连接: "))
         self.profile_combo = QComboBox()
@@ -114,23 +112,43 @@ class MainWindow(QMainWindow):
         bar.addWidget(QLabel(" 库: "))
         self.schema_combo = QComboBox()
         self.schema_combo.setMinimumWidth(150)
+        self.schema_combo.currentIndexChanged.connect(self._reload_query_browse)
         bar.addWidget(self.schema_combo)
         bar.addSpacing(8)
-        # 查询领域“编辑态”专属操作：保存 + 基本执行（美化/全部/解释在菜单+快捷键）
-        self._query_btn("保存查询", self._save_query_dialog, bar)
-        self._query_btn("运行", self._run_current, bar)
+        # 编辑态专属动作：保存 + 基本执行（美化/全部/解释在菜单+快捷键）
+        self.btn_save_query = self._query_btn("保存查询", self._save_query_dialog, bar)
+        self.btn_run = self._query_btn("运行", self._run_current, bar)
         self.query_stop_btn = self._query_btn("停止", self._cancel_execution, bar)
         self.query_stop_btn.setEnabled(False)
+        self._edit_actions = (self.btn_save_query, self.btn_run, self.query_stop_btn)
         bar.addStretch(1)
-        work_lay.addLayout(bar)
 
+        # 中央工作区标签页：第 1 页固定「对象」（各功能领域的列表/浏览态占位）
         self.editor_tabs = QTabWidget()
         self.editor_tabs.setTabsClosable(True)
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
+        self.editor_tabs.currentChanged.connect(self._on_query_tab_changed)
+
+        # 「对象」页 = 领域浏览栈：本轮只实现“查询”领域子页，其余领域后续逐个加入
+        self.domain_stack = QStackedWidget()
+        self._build_query_browse()
+        self.domain_stack.addWidget(self.browse_page)
+        self.editor_tabs.addTab(self.domain_stack, "对象")
+        # 「对象」为固定占位页，不显示关闭按钮
+        from PySide6.QtWidgets import QTabBar
+
+        self.editor_tabs.tabBar().setTabButton(0, QTabBar.RightSide, None)
+
+        work = QWidget()
+        work_lay = QVBoxLayout(work)
+        work_lay.setContentsMargins(0, 0, 0, 0)
+        work_lay.setSpacing(0)
+        work_lay.addWidget(self.edit_bar)
         work_lay.addWidget(self.editor_tabs, 1)
+        self.edit_page = work
 
         self.result_panel = ResultPanel()
-        splitter.addWidget(work)
+        splitter.addWidget(self.edit_page)
         splitter.addWidget(self.result_panel)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -138,12 +156,49 @@ class MainWindow(QMainWindow):
         # Navicat：消息窗默认不显示，有消息/结果时自动出现
         self.result_panel.setVisible(False)
 
-    def _query_btn(self, text: str, handler, bar: QHBoxLayout) -> None:
+    def _build_query_browse(self) -> None:
+        """查询领域「对象」子页：新建/删除查询 + 已存查询表格（不做“设计查询”）。"""
+        from magiccat.ui.query_browse import QueryBrowseView
+
+        self.browse_page = QueryBrowseView()
+        self.browse_page.new_query.connect(self._new_editor)
+        self.browse_page.open_query.connect(self._open_saved_query)
+        self.browse_page.delete_query.connect(self._delete_saved_query)
+
+    # ---- 中央工作区状态 ----
+    def _on_query_tab_changed(self, index: int) -> None:
+        """「对象」页显示浏览态（编辑动作按钮隐藏）；编辑器标签显示编辑态。"""
+        is_browse = self.editor_tabs.widget(index) is self.domain_stack
+        for btn in self._edit_actions:
+            btn.setVisible(not is_browse)
+        if is_browse:
+            self._reload_query_browse()
+
+    def _show_query_domain(self) -> None:
+        """顶部「查询」领域图标：切到「对象」页并选中查询浏览子页。"""
+        self.domain_stack.setCurrentWidget(self.browse_page)
+        self.editor_tabs.setCurrentIndex(0)
+        self._reload_query_browse()
+
+    def _reload_query_browse(self) -> None:
+        """按当前连接/库刷新「查询」对象页列表。"""
+        profile = self._current_profile()
+        if profile is None:
+            self.browse_page.clear()
+            self.browse_page.ctx_label.setText("")
+            return
+        schema = self.schema_combo.currentText() or profile.database or ""
+        self.browse_page.load_queries(profile.id, schema)
+        self.browse_page.ctx_label.setText(
+            f"{profile.display_name} · {schema or '默认'}")
+
+    def _query_btn(self, text: str, handler, bar: QHBoxLayout):
         from PySide6.QtWidgets import QPushButton
 
         btn = QPushButton(text)
         btn.clicked.connect(handler)
         bar.addWidget(btn)
+        return btn
 
     def _build_explorer_dock(self) -> None:
         self.explorer = ObjectExplorer(self._connections, self._metadata)
@@ -204,7 +259,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         quick("用户", "user", self._quick_user)
         toolbar.addSeparator()
-        quick("查询", "query", self._new_editor)
+        quick("查询", "query", self._show_query_domain)
         quick("备份", "backup", self._open_backup_dialog)
         quick("自动运行", "auto_run", self._open_task_dialog)
         quick("模型", "model", self._quick_model)
@@ -364,6 +419,7 @@ class MainWindow(QMainWindow):
         self._status(f"当前连接：{profile.name if profile else '未选择'}")
         self.info_panel.show_profile(self.profile_combo.currentData() if profile else None)
         self._reload_schema_combo(profile)
+        self._reload_query_browse()
 
     def _reload_schema_combo(self, profile) -> None:
         self.schema_combo.blockSignals(True)
@@ -385,6 +441,7 @@ class MainWindow(QMainWindow):
             if profile.database and profile.database in dbs:
                 self.schema_combo.setCurrentText(profile.database)
             self.schema_combo.blockSignals(False)
+            self._reload_query_browse()
 
         run_async(fetch, done, lambda err: logger.warning("加载库下拉失败: %s", err))
         if profile is not None:
@@ -427,6 +484,8 @@ class MainWindow(QMainWindow):
         return widget if isinstance(widget, SqlEditorWidget) else None
 
     def _close_editor_tab(self, index: int) -> None:
+        if index <= 0:  # 第 0 页「对象」为固定占位，不可关闭
+            return
         if self.editor_tabs.count() <= 1:
             return
         self.editor_tabs.removeTab(index)
@@ -759,6 +818,7 @@ class MainWindow(QMainWindow):
         lib.save(profile.id, name, editor.toPlainText(), schema=schema)
         if schema:
             self.explorer.refresh_schema_queries(profile.id, schema)
+        self._reload_query_browse()
         self._status(f"查询已保存：{name}（{profile.display_name} · {schema or '默认'}）", 5000)
 
     def _open_saved_query(self, profile_id: str, name: str) -> None:
@@ -776,6 +836,23 @@ class MainWindow(QMainWindow):
             self.profile_combo.setCurrentIndex(idx)
         self._status(f"已打开查询「{name}」（{profile.display_name}"
                      f"{' · ' + record['schema'] if record.get('schema') else ''}）", 5000)
+
+    def _delete_saved_query(self, profile_id: str, name: str) -> None:
+        """删除查询：确认后从收藏库移除，并刷新浏览态 + 树。"""
+        from magiccat.services.query_library import QueryLibrary
+
+        if not name:
+            return
+        if QMessageBox.question(self, "删除查询", f"删除查询「{name}」？"
+                                ) != QMessageBox.Yes:
+            return
+        QueryLibrary.default().delete(profile_id, name)
+        self._reload_query_browse()
+        profile = self._connections.get(profile_id)
+        schema = profile.database if profile else ""
+        if schema:
+            self.explorer.refresh_schema_queries(profile_id, schema)
+        self._status(f"查询已删除：{name}", 4000)
 
     def _on_create_routine(self, profile_id: str, schema: str) -> None:
         """函数向导：选 过程/函数 + 名称 → 编辑器生成模板 SQL。"""
