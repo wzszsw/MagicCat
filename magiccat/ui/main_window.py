@@ -342,13 +342,16 @@ class MainWindow(QMainWindow):
 
     def _update_completion_words(self, profile: ConnectionProfile) -> None:
         def fetch() -> list[str]:
-            words: list[str] = []
-            for db in self._metadata.databases(profile):
-                name = db["name"]
-                if name in _SYSTEM_SCHEMAS:
-                    continue
-                words.extend(t["name"] for t in self._metadata.tables(profile, name))
-            return words
+            from magiccat.services.query_service import QueryService
+
+            # 一次批查所有用户库的表名（消除“每库一次查询”的 N+1）
+            excluded = "', '".join(sorted(_SYSTEM_SCHEMAS))
+            res = QueryService(self._connections).execute(profile, (
+                "SELECT TABLE_NAME AS name FROM information_schema.TABLES "
+                f"WHERE TABLE_TYPE = 'BASE TABLE' "
+                f"AND TABLE_SCHEMA NOT IN ('{excluded}')"))[0]
+            cols = res.get("columns", [])
+            return [row[cols.index("name")] for row in res.get("rows", []) if cols]
 
         def done(words: list[str]) -> None:
             editor = self._active_editor()
