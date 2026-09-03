@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
@@ -34,7 +34,6 @@ from magiccat.services.settings import AppSettings
 from magiccat.services.sql_text import format_sql
 from magiccat.ui.dialogs import ConnectionEditDialog
 from magiccat.ui.editor import SqlEditorWidget
-from magiccat.ui.icons import icon
 from magiccat.ui.job import run_async
 from magiccat.ui.object_explorer import ObjectExplorer
 from magiccat.ui.result_panel import ResultPanel
@@ -146,6 +145,8 @@ class MainWindow(QMainWindow):
 
         toolbar = QToolBar("快速访问")
         toolbar.setObjectName("quick_toolbar")
+        toolbar.setIconSize(QSize(24, 24))
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         self.addToolBar(toolbar)
 
         def quick(text: str, kind: str, handler) -> None:
@@ -208,26 +209,21 @@ class MainWindow(QMainWindow):
     def _build_actions(self) -> None:
         menu_conn = self.menuBar().addMenu("连接(&C)")
         act_add = menu_conn.addAction("新增连接…")
-        act_add.setIcon(icon("connection"))
         act_add.triggered.connect(self._add_connection)
         act_test = menu_conn.addAction("测试连接…")
         act_test.triggered.connect(self._test_prompt)
 
         menu_query = self.menuBar().addMenu("查询(&Q)")
         self.act_new = menu_query.addAction("新建查询\tCtrl+T")
-        self.act_new.setIcon(icon("new_query"))
         self.act_new.setShortcut("Ctrl+T")
         self.act_new.triggered.connect(self._new_editor)
         self.act_run = menu_query.addAction("执行(当前/选中)\tF5")
-        self.act_run.setIcon(icon("run"))
         self.act_run.setShortcut("F5")
         self.act_run.triggered.connect(self._run_current)
         self.act_run_all = menu_query.addAction("执行全部\tCtrl+Shift+Enter")
-        self.act_run_all.setIcon(icon("run"))
         self.act_run_all.setShortcut("Ctrl+Shift+Enter")
         self.act_run_all.triggered.connect(self._run_all)
         self.act_cancel = menu_query.addAction("取消执行")
-        self.act_cancel.setIcon(icon("stop"))
         self.act_cancel.setEnabled(False)
         self.act_cancel.triggered.connect(self._cancel_execution)
         menu_query.addSeparator()
@@ -240,7 +236,6 @@ class MainWindow(QMainWindow):
         act_snippets = menu_query.addAction("SQL 收藏…")
         act_snippets.triggered.connect(self._open_snippets)
         act_save_query = menu_query.addAction("保存查询…\tCtrl+Shift+S")
-        act_save_query.setIcon(icon("save"))
         act_save_query.setShortcut("Ctrl+Shift+S")
         act_save_query.triggered.connect(self._save_query_dialog)
         act_close = menu_query.addAction("关闭当前标签\tCtrl+W")
