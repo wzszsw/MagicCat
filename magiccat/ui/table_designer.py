@@ -41,20 +41,35 @@ _COL_HEADERS = ["列名", "类型", "可空(NO/YES)", "默认值", "注释"]
 
 class TableDesignerDialog(QDialog):
     def __init__(self, profile: ConnectionProfile, schema: str, table: str,
-                 connections: ConnectionService, parent=None) -> None:
+                 connections: ConnectionService, parent=None,
+                 new_table: bool = False) -> None:
         super().__init__(parent)
         self.profile = profile
         self.schema = schema
         self.table = table
+        self.new_table = new_table
         self._connections = connections
         self._ddl = DdlService(connections)
         self._query = QueryService(connections)
         self._snapshot: dict = {}
         self._orig_columns: list[dict] = []
-        self.setWindowTitle(f"设计表 · {schema}.{table}（{profile.name}）")
+        title = f"新建表 · {schema}.{table}" if new_table else f"设计表 · {schema}.{table}"
+        self.setWindowTitle(f"{title}（{profile.name}）")
         self.resize(860, 620)
         self._build_ui()
-        self._load()
+        if new_table:
+            self._init_new()
+        else:
+            self._load()
+
+    def _init_new(self) -> None:
+        """新建表模式：无需元数据快照，直接给出空列行等待填写。"""
+        self._snapshot = {"create_sql": ""}
+        self.status_label.setText(
+            "新建表：逐行填写列定义（列名/类型/可空/默认值/注释），"
+            "然后点「生成 SQL 预览」并「应用变更」")
+        self.sql_preview.setPlainText("# 填写列后点「生成 SQL 预览」生成 CREATE TABLE")
+        self._add_column_row()
 
     # ---- UI ----
     def _build_ui(self) -> None:
@@ -200,6 +215,12 @@ class TableDesignerDialog(QDialog):
 
     # ---- SQL 生成与执行 ----
     def _build_sql(self, edited: list[dict]) -> str | None:
+        if self.new_table:
+            if not edited:
+                return None
+            from magiccat.services.ddl_builder import build_create
+
+            return build_create(self.schema, self.table, edited)
         frags = alter_fragments(self._orig_columns, edited)
         if not frags:
             return None
@@ -212,15 +233,23 @@ class TableDesignerDialog(QDialog):
         edited = self._read_columns()
         sql = self._build_sql(edited)
         if sql is None:
+            if self.new_table:
+                self.status_label.setText("请至少填写一列（列名 + 类型）")
+            else:
+                self.sql_preview.setPlainText(
+                    "# 服务器当前 DDL：\n" + self._snapshot.get("create_sql", "")
+                    + "\n\n# 未检测到列变更")
+                self.status_label.setText("未检测到列变更")
+            return
+        if self.new_table:
+            self.sql_preview.setPlainText("# CREATE TABLE 预览（将执行）：\n" + sql + ";")
+            self.status_label.setText(f"预览就绪：{len(edited)} 列")
+        else:
             self.sql_preview.setPlainText(
                 "# 服务器当前 DDL：\n" + self._snapshot.get("create_sql", "")
-                + "\n\n# 未检测到列变更")
-            self.status_label.setText("未检测到列变更")
-            return
-        self.sql_preview.setPlainText(
-            "# 服务器当前 DDL：\n" + self._snapshot.get("create_sql", "")
-            + "\n\n# 变更预览（将执行）：\n" + sql + ";")
-        self.status_label.setText(f"预览就绪：{len(edited)} 列，{sql.count('COLUMN')} 处变更")
+                + "\n\n# 变更预览（将执行）：\n" + sql + ";")
+            self.status_label.setText(
+                f"预览就绪：{len(edited)} 列，{sql.count('COLUMN')} 处变更")
 
     def _copy_ddl(self) -> None:
         text = self.sql_preview.toPlainText()
@@ -250,9 +279,12 @@ class TableDesignerDialog(QDialog):
         errors = [r for r in results if r.get("kind") == "error"]
         if errors:
             QMessageBox.warning(self, "应用变更", "\n".join(e["message"] for e in errors))
-        else:
-            QMessageBox.information(self, "应用变更",
-                                    f"变更成功（{len(results)} 条语句）。")
+            self.btn_apply.setEnabled(True)
+            return
+        verb = "创建" if self.new_table else "变更"
+        QMessageBox.information(self, "应用变更", f"{verb}成功（{len(results)} 条语句）。")
+        if self.new_table:
+            self.new_table = False  # 创建成功后转为“编辑已有表”模式
         self._load()
 
     def _after_apply_error(self, err: str) -> None:

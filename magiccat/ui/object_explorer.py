@@ -60,6 +60,7 @@ class ObjectExplorer(QTreeWidget):
     open_table_requested = Signal(str, str, str)  # profile_id, schema, table
     design_table_requested = Signal(str, str, str)  # profile_id, schema, table
     er_database_requested = Signal(str, str)  # profile_id, schema
+    create_table_requested = Signal(str, str)  # profile_id, schema
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -257,7 +258,8 @@ class ObjectExplorer(QTreeWidget):
         menu = QMenu(self)
         action_test = action_open = action_close = None
         action_refresh = action_edit = action_delete = action_design = None
-        action_er = None
+        action_er = action_new_table = action_new_db = None
+        action_truncate = action_drop = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -273,8 +275,14 @@ class ObjectExplorer(QTreeWidget):
             action_refresh = menu.addAction("刷新")
         if kind == "table":
             action_design = menu.addAction("设计表…")
+            menu.addSeparator()
+            action_truncate = menu.addAction("清空表…")
+            action_drop = menu.addAction("删除表…")
         if kind == "database":
             action_er = menu.addAction("查看 ER 图…")
+            menu.addSeparator()
+            action_new_table = menu.addAction("新建表…")
+            action_new_db = menu.addAction("新建数据库…")
 
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is None:
@@ -295,6 +303,12 @@ class ObjectExplorer(QTreeWidget):
             self._design_table(item)
         elif chosen is action_er:
             self._er_database(item)
+        elif chosen is action_new_table:
+            self._new_table(item)
+        elif chosen is action_new_db:
+            self._new_database(item)
+        elif chosen is action_truncate or chosen is action_drop:
+            self._drop_or_truncate_table(item, truncate=chosen is action_truncate)
 
     def _er_database(self, item: QTreeWidgetItem) -> None:
         info = _info(item)
@@ -309,6 +323,92 @@ class ObjectExplorer(QTreeWidget):
             return
         self.design_table_requested.emit(
             profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
+
+    # ---- 对象管理动作 ----
+    def refresh_schema(self, profile_id: str, schema: str) -> None:
+        """刷新指定库的子树（供外部在 DDL 操作后调用）。"""
+        for item in self._walk():
+            info = _info(item)
+            if (info.get(KIND_KEY) == "database"
+                    and info.get(DATA_KEY, {}).get("schema") == schema
+                    and self._profile_of(item) is not None
+                    and self._profile_of(item).id == profile_id):
+                self._load_database(item)
+                return
+
+    def _new_table(self, item: QTreeWidgetItem) -> None:
+        info = _info(item)
+        profile = self._profile_of(item)
+        if profile is not None:
+            self.create_table_requested.emit(profile.id, info[DATA_KEY]["schema"])
+
+    def _new_database(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        from magiccat.services.query_service import QueryService
+
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        name, ok = QInputDialog.getText(self, "新建数据库", "数据库名称：")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        import re
+
+        if not re.fullmatch(r"[A-Za-z0-9_]+", name):
+            QMessageBox.warning(self, "新建数据库", "名称只能包含字母/数字/下划线。")
+            return
+        sql = f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci"
+        query = QueryService(self._connections)
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, "新建数据库", errors[0]["message"])
+                return
+            QMessageBox.information(self, "新建数据库", f"数据库 `{name}` 创建成功。")
+            profile_item = self.profile_item(profile.id)
+            if profile_item is not None:
+                self._load_profile(profile_item)
+
+        run_async(lambda: query.execute(profile, sql), done,
+                  lambda err: QMessageBox.critical(self, "新建数据库", err))
+
+    def _drop_or_truncate_table(self, item: QTreeWidgetItem, truncate: bool) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        from magiccat.services.query_service import QueryService
+
+        info = _info(item)
+        schema, table = info[DATA_KEY]["schema"], info[DATA_KEY]["table"]
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        verb = "清空" if truncate else "删除"
+        action_sql = (f"TRUNCATE TABLE `{schema}`.`{table}`"
+                      if truncate else f"DROP TABLE `{schema}`.`{table}`")
+        if QMessageBox.question(
+                self, f"{verb}表",
+                f"确定{verb}表 `{schema}`.{table}？\n\n{action_sql}",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        query = QueryService(self._connections)
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, f"{verb}表", errors[0]["message"])
+                return
+            # 刷新父级数据库节点
+            db_item = item.parent().parent() if item.parent() else None
+            while db_item is not None and _info(db_item).get(KIND_KEY) != "database":
+                db_item = db_item.parent()
+            if db_item is not None:
+                self._load_database(db_item)
+
+        run_async(lambda: query.execute(profile, action_sql), done,
+                  lambda err: QMessageBox.critical(self, f"{verb}表", err))
 
     def _run_profile_action(self, profile: ConnectionProfile, fn, prefix: str) -> None:
         item = self.profile_item(profile.id)

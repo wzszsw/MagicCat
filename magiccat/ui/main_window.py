@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
         self.explorer.open_table_requested.connect(self._on_open_table)
         self.explorer.design_table_requested.connect(self._on_design_table)
         self.explorer.er_database_requested.connect(self._on_er_database)
+        self.explorer.create_table_requested.connect(self._on_create_table)
         dock = QDockWidget("对象浏览器", self)
         dock.setWidget(self.explorer)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
@@ -357,6 +358,26 @@ class MainWindow(QMainWindow):
 
         dialog = TableDesignerDialog(profile, schema, table, self._connections, self)
         dialog.exec()
+
+    def _on_create_table(self, profile_id: str, schema: str) -> None:
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        import re
+
+        from PySide6.QtWidgets import QInputDialog
+
+        name, ok = QInputDialog.getText(self, "新建表", f"在 `{schema}` 中新建表：", "new_table")
+        name = (name or "").strip()
+        if not ok or not name or not re.fullmatch(r"[A-Za-z0-9_]+", name):
+            return
+        from magiccat.ui.table_designer import TableDesignerDialog
+
+        dialog = TableDesignerDialog(profile, schema, name, self._connections,
+                                     self, new_table=True)
+        dialog.exec()
+        self.explorer.refresh_schema(profile_id, schema)
+        self._status(f"新建表完成：{schema}.{name}")
 
     def _open_import_dialog(self) -> None:
         from magiccat.ui.transfer_dialogs import ImportCsvDialog
