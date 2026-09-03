@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         from magiccat.ui.connection_info_panel import ConnectionInfoPanel
 
         self.info_panel = ConnectionInfoPanel(self._connections, self._metadata)
-        dock = QDockWidget("连接信息", self)
+        dock = QDockWidget("信息", self)
         dock.setWidget(self.info_panel)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
 

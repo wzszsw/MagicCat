@@ -61,8 +61,14 @@ class ConnectionInfoPanel(QWidget):
         root.addWidget(scroll, 1)
 
         btn_refresh = QPushButton("刷新")
-        btn_refresh.clicked.connect(lambda: self.show_profile(self._profile_id))
+        btn_refresh.clicked.connect(self._refresh_current)
         root.addWidget(btn_refresh)
+
+    def _refresh_current(self) -> None:
+        if getattr(self, "_last_desc", None):
+            self.show_object(self._last_desc)
+        else:
+            self.show_profile(self._profile_id)
 
     # ---- 选中对象信息（Navicat 信息面板行为） ----
     _KIND_LABEL: ClassVar[dict[str, str]] = {"database": "数据库", "table": "表",
@@ -73,6 +79,7 @@ class ConnectionInfoPanel(QWidget):
 
     def show_object(self, desc: dict) -> None:
         """对象树选中某项 → 展示该对象信息（连接有完整信息，对象展示各自字段）。"""
+        self._last_desc = desc
         kind = desc.get("kind")
         if kind == "profile":
             self.show_profile(desc.get("profile_id"))
@@ -137,16 +144,21 @@ class ConnectionInfoPanel(QWidget):
 
         def fetch() -> list:
             return QueryService(self._connections).execute(profile, (
-                "SELECT ENGINE, TABLE_ROWS, TABLE_COLLATION, TABLE_COMMENT "
-                "FROM information_schema.TABLES "
-                f"WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'"))[0]
+                "SELECT t.ENGINE, t.TABLE_ROWS, t.TABLE_COLLATION, t.TABLE_COMMENT, "
+                "(SELECT COUNT(*) FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA=t.TABLE_SCHEMA "
+                "AND c.TABLE_NAME=t.TABLE_NAME) AS column_count, "
+                "(SELECT COUNT(DISTINCT i.INDEX_NAME) FROM information_schema.STATISTICS i "
+                "WHERE i.TABLE_SCHEMA=t.TABLE_SCHEMA AND i.TABLE_NAME=t.TABLE_NAME) AS index_count "
+                "FROM information_schema.TABLES t "
+                f"WHERE t.TABLE_SCHEMA = '{schema}' AND t.TABLE_NAME = '{table}'"))[0]
 
         def done(res: dict) -> None:
             row = res.get("rows", [])
             if row:
                 self._labels["备注"].setText(
                     f"引擎：{row[0][0]}\n估计行数：{row[0][1]}\n"
-                    f"字符集/排序：{row[0][2]}\n注释：{row[0][3] or '-'}")
+                    f"字符集/排序：{row[0][2]}\n注释：{row[0][3] or '-'}\n"
+                    f"列数：{row[0][4]} · 索引数：{row[0][5]}")
 
         run_async(fetch, done, lambda err: None)
 
