@@ -12,14 +12,17 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 基于标准 JDBC DatabaseMetaData 的元数据提供者（跨库友好，用户要求：少拼方言 SQL）。
+ * 基于标准 JDBC DatabaseMetaData 的元数据提供者（跨库友好，用于非 MySQL 产品）。
  *
- * <p>职责分工（见 docs/MagicCat设计方案.md §4）：
- * - 对象清单/键/外键/索引/例程 —— 一律走 DatabaseMetaData（表/列不存在方言）；
- * - information_schema 仅保留在 JDBC 拿不到的 MySQL 细节上：
- *   完整列类型(COLUMN_TYPE)、字符集/排序、EXTRA、列注释(由列补充层提供)、触发器(无 JDBC API)。
- *
- * 行结构刻意保持与旧 information_schema 实现一致（列名/取值语义），避免波及 Python 侧。
+ * <p>catalog/schema 映射约定（用户已确认的 JDBC 规范）：
+ * <ul>
+ *   <li>MySQL / MariaDB：database 即 catalog、schema 恒为 null；但 mysql-connector-j 的
+ *       getTables(catalog=库) 实测返回 0、schema 参数又跨库返回全部 —— catalog 语义不可靠，
+ *       因此 MySQL 由 {@link MetadataApi} 走 information_schema 富信息层，不进入本类。
+ *   <li>PostgreSQL / Oracle / SQL Server 等：catalog=null、schemaPattern=具体模式
+ *       （PG 风格），本类按此**唯一正确路径**调用，不再用“两种参数次序都试”掩盖方言怪癖。
+ * </ul>
+ * 行结构刻意与 information_schema 输出一致（列名/取值语义），不波及 Python 侧。
  */
 public final class JdbcStandardMetadata {
 
@@ -40,7 +43,7 @@ public final class JdbcStandardMetadata {
                 }
             }
             if (names.isEmpty()) {
-                // 非 catalog 型数据库（如多数实现）回退到 schema
+                // 非 catalog 型数据库（如 PostgreSQL）回退到 schema
                 try (ResultSet rs = md.getSchemas()) {
                     while (rs.next()) {
                         String s = rs.getString("TABLE_SCHEM");
@@ -63,28 +66,25 @@ public final class JdbcStandardMetadata {
         }
     }
 
-    // ---- 表/视图：name, type(BASE TABLE|VIEW) ----
+    // ---- 表/视图：name, type(BASE TABLE|VIEW)  （PG 风格：catalog=null, schema=name） ----
     public static String tables(String configId, String schema) {
-        // 不同驱动对 catalog/schema 的映射不同：两种参数次序都试并去重
-        java.util.Map<String, String> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (String[] arg : new String[][] {{schema, null}, {null, schema}}) {
-            try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
-                DatabaseMetaData md = conn.getMetaData();
-                try (ResultSet rs = md.getTables(arg[0], arg[1], "%",
-                                                 new String[] {"TABLE", "VIEW"})) {
-                    while (rs.next()) {
-                        String name = rs.getString("TABLE_NAME");
-                        String type = rs.getString("TABLE_TYPE");
-                        if (name != null) {
-                            String normalized = "VIEW".equalsIgnoreCase(type)
-                                    ? "VIEW" : "BASE TABLE";
-                            byName.putIfAbsent(name, normalized);
-                        }
+        TreeMap<String, String> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getTables(null, schema, "%",
+                                             new String[] {"TABLE", "VIEW"})) {
+                while (rs.next()) {
+                    String name = rs.getString("TABLE_NAME");
+                    String type = rs.getString("TABLE_TYPE");
+                    if (name != null) {
+                        String normalized = "VIEW".equalsIgnoreCase(type)
+                                ? "VIEW" : "BASE TABLE";
+                        byName.putIfAbsent(name, normalized);
                     }
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("读取表列表失败: " + e.getMessage(), e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取表列表失败: " + e.getMessage(), e);
         }
         List<String[]> rows = new ArrayList<>();
         for (String name : byName.keySet()) {
@@ -99,28 +99,26 @@ public final class JdbcStandardMetadata {
     // ---- 例程：name, type(PROCEDURE|FUNCTION) ----
     public static String routines(String configId, String schema) {
         TreeMap<String, String> result = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (String[] arg : new String[][] {{schema, null}, {null, schema}}) {
-            try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
-                DatabaseMetaData md = conn.getMetaData();
-                try (ResultSet rs = md.getFunctions(arg[0], arg[1], "%")) {
-                    while (rs.next()) {
-                        String name = rs.getString("FUNCTION_NAME");
-                        if (name != null) {
-                            result.put(name, "FUNCTION");
-                        }
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getFunctions(null, schema, "%")) {
+                while (rs.next()) {
+                    String name = rs.getString("FUNCTION_NAME");
+                    if (name != null) {
+                        result.put(name, "FUNCTION");
                     }
                 }
-                try (ResultSet rs = md.getProcedures(arg[0], arg[1], "%")) {
-                    while (rs.next()) {
-                        String name = rs.getString("PROCEDURE_NAME");
-                        if (name != null && !result.containsKey(name)) {
-                            result.put(name, "PROCEDURE");
-                        }
-                    }
-                }
-            } catch (SQLException e) {
-                throw new IllegalStateException("读取例程失败: " + e.getMessage(), e);
             }
+            try (ResultSet rs = md.getProcedures(null, schema, "%")) {
+                while (rs.next()) {
+                    String name = rs.getString("PROCEDURE_NAME");
+                    if (name != null && !result.containsKey(name)) {
+                        result.put(name, "PROCEDURE");
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取例程失败: " + e.getMessage(), e);
         }
         List<String[]> rows = new ArrayList<>();
         for (String name : result.keySet()) {
@@ -134,28 +132,25 @@ public final class JdbcStandardMetadata {
     // ---- 索引：index_name, non_unique, seq, column_name, index_type ----
     public static String indexes(String configId, String schema, String table) {
         TreeMap<String, String[]> byKey = new TreeMap<>();
-        for (String[] arg : new String[][] {{schema, null}, {null, schema}}) {
-            try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
-                DatabaseMetaData md = conn.getMetaData();
-                try (ResultSet rs = md.getIndexInfo(arg[0], arg[1], table, false, false)) {
-                    while (rs.next()) {
-                        String idx = rs.getString("INDEX_NAME");
-                        String col = rs.getString("COLUMN_NAME");
-                        if (idx == null || col == null) {
-                            continue;
-                        }
-                        short seq = rs.getShort("ORDINAL_POSITION");
-                        String nonUnique = rs.getBoolean("NON_UNIQUE") ? "1" : "0";
-                        short typeCode = rs.getShort("TYPE");
-                        String key = idx + "\u0000" + seq + "\u0000" + col;
-                        byKey.putIfAbsent(key, new String[] {
-                                idx, nonUnique, String.valueOf(seq), col,
-                                indexTypeName(typeCode)});
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getIndexInfo(null, schema, table, false, false)) {
+                while (rs.next()) {
+                    String idx = rs.getString("INDEX_NAME");
+                    String col = rs.getString("COLUMN_NAME");
+                    if (idx == null || col == null) {
+                        continue;
                     }
+                    short seq = rs.getShort("ORDINAL_POSITION");
+                    String nonUnique = rs.getBoolean("NON_UNIQUE") ? "1" : "0";
+                    short typeCode = rs.getShort("TYPE");
+                    String key = idx + "\u0000" + seq + "\u0000" + col;
+                    byKey.putIfAbsent(key, new String[] {
+                            idx, nonUnique, String.valueOf(seq), col, indexTypeName(typeCode)});
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("读取索引失败: " + e.getMessage(), e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取索引失败: " + e.getMessage(), e);
         }
         List<String[]> rows = new ArrayList<>(byKey.values());
         rows.sort(Comparator
@@ -168,28 +163,25 @@ public final class JdbcStandardMetadata {
     // ---- 外键：constraint_name, column_name, ref_table, ref_column, on_update, on_delete ----
     public static String foreignKeys(String configId, String schema, String table) {
         TreeMap<String, Object[]> byKey = new TreeMap<>();
-        for (String[] arg : new String[][] {{schema, null}, {null, schema}}) {
-            try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
-                DatabaseMetaData md = conn.getMetaData();
-                try (ResultSet rs = md.getImportedKeys(arg[0], arg[1], table)) {
-                    while (rs.next()) {
-                        String name = rs.getString("FK_NAME");
-                        String key = (name == null ? "" : name) + "\u0000"
-                                + rs.getShort("KEY_SEQ");
-                        byKey.putIfAbsent(key, new Object[] {
-                                name,
-                                rs.getString("FKCOLUMN_NAME"),
-                                rs.getString("PKTABLE_NAME"),
-                                rs.getString("PKCOLUMN_NAME"),
-                                shortRuleName(rs.getShort("UPDATE_RULE")),
-                                shortRuleName(rs.getShort("DELETE_RULE")),
-                                rs.getShort("KEY_SEQ"),
-                        });
-                    }
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getImportedKeys(null, schema, table)) {
+                while (rs.next()) {
+                    String name = rs.getString("FK_NAME");
+                    String key = (name == null ? "" : name) + "\u0000" + rs.getShort("KEY_SEQ");
+                    byKey.putIfAbsent(key, new Object[] {
+                            name,
+                            rs.getString("FKCOLUMN_NAME"),
+                            rs.getString("PKTABLE_NAME"),
+                            rs.getString("PKCOLUMN_NAME"),
+                            shortRuleName(rs.getShort("UPDATE_RULE")),
+                            shortRuleName(rs.getShort("DELETE_RULE")),
+                            rs.getShort("KEY_SEQ"),
+                    });
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("读取外键失败: " + e.getMessage(), e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取外键失败: " + e.getMessage(), e);
         }
         List<Object[]> all = new ArrayList<>(byKey.values());
         all.sort(Comparator

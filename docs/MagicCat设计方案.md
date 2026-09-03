@@ -355,6 +355,7 @@ MagicCat/
 | M32 | 具名查询库（对标 Navicat “查询”：树节点/另存/打开/删除，绑定连接+库） | ✅ | 存取覆盖/树节点/编辑器打开 |
 | M33 | 数据库转储 SQL 文件（库右键：结构和数据 / 仅结构，后台+取消） | ✅ | 两模式 INSERT 断言 |
 | M34 | Bugfix：连接信息面板启动黑块（QScrollArea 视口自填充 + 深色 QSS 覆盖） | ✅ | autofill 标志回归 |
+| M35 | 转储 SQL 保持 schema 级；标准层 catalog/schema 映射收敛（MySQL=catalog 走信息层，PG 走 catalog=null+schema） | ✅ | 71 回归全绿 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
