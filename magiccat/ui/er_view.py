@@ -151,15 +151,38 @@ class ErDialog(QDialog):
         profile, schema = self.profile, self.schema
 
         def fetch() -> object:
+            from magiccat.services.query_service import QueryService
+
             tables = [t for t in self._metadata.tables(profile, schema)
                       if t["type"] == "BASE TABLE"]
             if not tables:
                 return None
-            columns_of = {}
-            fk_rows_of = {}
-            for t in tables:
-                columns_of[t["name"]] = self._metadata.columns(profile, schema, t["name"])
-                fk_rows_of[t["name"]] = self._metadata.foreign_keys(profile, schema, t["name"])
+            # 批查：一次取全库所有列，一次取全库所有外键（避免 N+1 逐表查询）
+            query = QueryService(self._connections)
+            cols_res = query.execute(profile, (
+                "SELECT TABLE_NAME AS table_name, COLUMN_NAME AS name, "
+                "COLUMN_TYPE AS data_type, COLUMN_KEY AS `key` "
+                "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = "
+                f"'{schema}' ORDER BY TABLE_NAME, ORDINAL_POSITION"))[0]
+            fk_res = query.execute(profile, (
+                "SELECT kcu.TABLE_NAME AS child_table, kcu.COLUMN_NAME AS column_name, "
+                "kcu.REFERENCED_TABLE_NAME AS ref_table, "
+                "kcu.REFERENCED_COLUMN_NAME AS ref_column, "
+                "kcu.CONSTRAINT_NAME AS constraint_name "
+                "FROM information_schema.KEY_COLUMN_USAGE kcu "
+                "WHERE kcu.TABLE_SCHEMA = "
+                f"'{schema}' AND kcu.REFERENCED_TABLE_NAME IS NOT NULL"))[0]
+
+            def _rows(res: dict) -> list[dict]:
+                return [dict(zip(res.get("columns", []), row)) for row in res.get("rows", [])]
+
+            columns_of: dict[str, list[dict]] = {}
+            for r in _rows(cols_res):
+                columns_of.setdefault(r["table_name"], []).append(
+                    {"name": r["name"], "data_type": r["data_type"], "key": r.get("key", "")})
+            fk_rows_of: dict[str, list[dict]] = {}
+            for r in _rows(fk_res):
+                fk_rows_of.setdefault(r["child_table"], []).append(r)
             return build_er_model(schema, tables, columns_of, fk_rows_of)
 
         def done(model) -> None:

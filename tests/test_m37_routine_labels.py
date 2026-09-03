@@ -48,23 +48,38 @@ def test_tree_routine_labels(qtbot, mysql_env, connection_service):
                     return child
             return None
 
-        # 等库节点出现后展开加载例程
+        # 等库节点出现后展开加载分类骨架，再展开「函数」分类（懒加载例程）
         def wait_db():
             return db_item() is not None
 
         qtbot.waitUntil(wait_db, timeout=25_000)
         db_item().setExpanded(True)
 
-        def got() -> bool:
+        def func_cat_item():
             node = db_item()
             if node is None:
+                return None
+            for i in range(node.childCount()):
+                if node.child(i).text(0) == "函数":
+                    return node.child(i)
+            return None
+
+        def expand_func():
+            cat = func_cat_item()
+            if cat is not None:
+                cat.setExpanded(True)
+            return cat is not None
+
+        qtbot.waitUntil(expand_func, timeout=25_000)
+
+        def got() -> bool:
+            cat = func_cat_item()
+            if cat is None:
                 return False
-            cats = [node.child(i).text(0) for i in range(node.childCount())]
-            # 分类常驻：表/视图/函数/触发器/查询/备份；函数节点含 2 个例程
-            func_cat = next((c for i, c in enumerate(cats) if c == "函数"), None)
-            joined = "\n".join(cats)
-            return (func_cat is not None and node.child(cats.index("函数")).childCount() == 2
-                    and "存储过程" not in joined and "例程" not in joined)
+            texts = [db_item().child(i).text(0) for i in range(db_item().childCount())]
+            joined = "\n".join(texts)
+            return (cat.childCount() == 2 and "存储过程" not in joined
+                    and "例程" not in joined)
 
         qtbot.waitUntil(got, timeout=25_000)
     finally:

@@ -126,6 +126,9 @@ class ObjectExplorer(QTreeWidget):
             self._load_profile(item)
         elif kind == "database":
             self._load_database(item)
+        elif kind == "category":
+            # 逐层懒加载：展开分类才取该层数据
+            self._load_category(item)
         elif kind == "table" or kind == "view":
             self._load_columns(item)
 
@@ -179,70 +182,86 @@ class ObjectExplorer(QTreeWidget):
                 return
 
     def _load_database(self, item: QTreeWidgetItem) -> None:
+        """展开库：只建分类骨架（表/视图/函数/触发器/查询/备份），数据懒加载到各分类展开时。"""
         info = _info(item)
         schema = info[DATA_KEY]["schema"]
         profile = self._profile_of(item)
         if profile is None:
             return
 
-        def fetch() -> dict:
-            tables = self._metadata.tables(profile, schema)
-            routines = self._metadata.routines(profile, schema)
-            triggers = self._metadata.triggers(profile, schema)
-            queries = [q for q in self._queries.list(profile.id) if (q.get("schema") or "") == schema]
-            return {"tables": tables, "routines": routines, "triggers": triggers,
-                    "queries": queries}
-
-        def done(data: dict) -> None:
-            if item.treeWidget() is None:
-                return
-            tables = [t for t in data["tables"] if t["type"] == "BASE TABLE"]
-            views = [v for v in data["tables"] if v["type"] == "VIEW"]
-            children: list[QTreeWidgetItem] = []
-
-            # 表
-            cat = _make_item("表", "category")
+        children: list[QTreeWidgetItem] = []
+        for label, cat_type in (("表", "tables"), ("视图", "views"), ("函数", "routines"),
+                                ("触发器", "triggers")):
+            cat = _make_item(label, "category", schema=schema, cat_type=cat_type)
+            # 占位子项使分类可展开；展开时才拉取该层数据（逐层懒加载，避免 N+1）
+            _placeholder(cat)
             children.append(cat)
-            for t in tables:
-                ti = _make_item(t["name"], "table", schema=schema, table=t["name"])
-                _placeholder(ti)
-                cat.addChild(ti)
-            # 视图（常驻，空则显示占位）
-            cat = _make_item("视图", "category")
-            children.append(cat)
-            for v in views:
-                cat.addChild(_make_item(v["name"], "view", schema=schema,
-                                        table=v["name"], name=v["name"]))
-            # 函数（常驻）
-            cat = _make_item("函数", "category")
-            children.append(cat)
-            for r in data["routines"]:
-                cat.addChild(_make_item(r["name"], "routine", schema=schema,
-                                        routine=r["name"], name=r["name"],
-                                        type=r["type"].upper()))
-            # 查询（该库的具名查询，常驻）
-            cat = _make_item("查询", "category", schema=schema)
-            children.append(cat)
-            for q in data["queries"]:
+        # 查询：本地具名查询，立即填充（无数据库交互）
+        cat = _make_item("查询", "category", schema=schema, cat_type="queries")
+        children.append(cat)
+        for q in self._queries.list(profile.id):
+            if (q.get("schema") or "") == schema:
                 cat.addChild(_make_item(q["name"], "saved_query", profile_id=profile.id,
                                         name=q["name"], schema=q.get("schema", "")))
-            # 触发器（空库也保留，但多数为空）
-            cat = _make_item("触发器", "category")
-            children.append(cat)
-            for tr in data["triggers"]:
-                cat.addChild(_make_item(
-                    f"{tr['name']} [{tr['event']} ON {tr['table']}]", "trigger",
-                    schema=schema, name=tr["name"]))
-            # 备份（对标 Navicat 备份节点，保留骨架）
-            cat = _make_item("备份", "category")
-            children.append(cat)
+        # 备份：骨架节点（Navicat 同）
+        children.append(_make_item("备份", "category", schema=schema, cat_type="backup"))
+        _replace_children(item, children)
 
-            _replace_children(item, children)
-            item.setToolTip(
-                0, f"{len(tables)} 表 / {len(views)} 视图 / {len(data['routines'])} 函数 / "
-                   f"{len(data['triggers'])} 触发器 / 查询 {len(data['queries'])}")
+    def _schema_of(self, item: QTreeWidgetItem) -> str | None:
+        cur: QTreeWidgetItem | None = item
+        while cur is not None:
+            info = _info(cur)
+            if info.get(KIND_KEY) == "database":
+                return info.get(DATA_KEY, {}).get("schema")
+            cur = cur.parent()
+        return None
+
+    def _load_category(self, item: QTreeWidgetItem) -> None:
+        """展开分类：按 cat_type 拉取并填充该层对象（单次查询，非逐对象）。"""
+        info = _info(item)
+        cat_type = info.get(DATA_KEY, {}).get("cat_type")
+        schema = self._schema_of(item)
+        profile = self._profile_of(item)
+        if profile is None or not schema:
+            return
+
+        def fetch() -> list:
+            if cat_type == "tables":
+                return [t for t in self._metadata.tables(profile, schema)
+                        if t["type"] == "BASE TABLE"]
+            if cat_type == "views":
+                return [v for v in self._metadata.tables(profile, schema)
+                        if v["type"] == "VIEW"]
+            if cat_type == "routines":
+                return self._metadata.routines(profile, schema)
+            if cat_type == "triggers":
+                return self._metadata.triggers(profile, schema)
+            return []
+
+        def done(objects: list) -> None:
+            if item.treeWidget() is None:
+                return
+            _replace_children(item, [self._category_leaf(o, cat_type, schema) for o in objects])
 
         run_async(fetch, done, lambda err: self._show_error(item, f"读取失败：{err}"))
+
+    @staticmethod
+    def _category_leaf(obj: dict, cat_type: str, schema: str) -> QTreeWidgetItem:
+        if cat_type in ("tables", "views"):
+            leaf = _make_item(obj["name"], "view" if cat_type == "views" else "table",
+                              schema=schema, table=obj["name"], name=obj["name"])
+            if cat_type == "tables":
+                _placeholder(leaf)  # 表可继续展开列（列也是懒加载）
+            return leaf
+        if cat_type == "routines":
+            return _make_item(obj["name"], "routine", schema=schema,
+                              routine=obj["name"], name=obj["name"],
+                              type=obj["type"].upper())
+        if cat_type == "triggers":
+            return _make_item(
+                f"{obj['name']} [{obj['event']} ON {obj['table']}]", "trigger",
+                schema=schema, name=obj["name"])
+        return _make_item(str(obj.get("name", "")), "category")
 
     def _load_columns(self, item: QTreeWidgetItem) -> None:
         info = _info(item)
