@@ -99,6 +99,13 @@ def test_object_browse_load_and_selection(qtbot):
     pg._emit_open()
     assert emitted and emitted[0] == ("p1", "test", "books")
 
+    # 「刷新」按钮存在且可点击
+    assert pg.btn_refresh.text() == "刷新"
+    refreshed = []
+    pg.refresh_requested.connect(lambda: refreshed.append(True))
+    pg.btn_refresh.click()
+    assert refreshed == [True]
+
 
 # ---- MainWindow 领域切换 + 固定占位 ----
 def test_mainwindow_domain_stack(qtbot, connection_service):

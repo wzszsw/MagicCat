@@ -28,6 +28,7 @@ class ObjectBrowseView(QWidget):
     open_object = Signal(str, str)  # profile_id, name
     new_object = Signal()
     delete_object = Signal(str, str)  # profile_id, name
+    refresh_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,6 +58,9 @@ class ObjectBrowseView(QWidget):
         self.ctx_label = QLabel("")
         self.ctx_label.setStyleSheet("color: #777;")
         bar.addWidget(self.ctx_label)
+        self.btn_refresh = QPushButton("刷新")
+        self.btn_refresh.clicked.connect(self.refresh_requested.emit)
+        bar.addWidget(self.btn_refresh)
         lay.addLayout(bar)
 
         self.table = QTableWidget(0, 0)

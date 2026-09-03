@@ -176,6 +176,7 @@ class MainWindow(QMainWindow):
         self.browse_page.new_query.connect(self._new_editor)
         self.browse_page.open_query.connect(self._open_saved_query)
         self.browse_page.delete_query.connect(self._delete_saved_query)
+        self.browse_page.refresh_requested.connect(self._reload_query_browse)
 
     def _build_table_browse(self) -> None:
         """表领域「对象」子页：打开/设计/新建/删除表 + 当前库表列表。"""
@@ -186,6 +187,7 @@ class MainWindow(QMainWindow):
         self.table_page.design_table.connect(self._on_design_table)
         self.table_page.new_table.connect(lambda: self._quick_create_object("table"))
         self.table_page.delete_table.connect(self._delete_table)
+        self.table_page.refresh_requested.connect(self._reload_table_browse)
 
     def _build_view_browse(self) -> None:
         """视图领域「对象」子页：打开/新建/删除视图 + 当前库视图列表。"""
@@ -195,6 +197,7 @@ class MainWindow(QMainWindow):
         self.view_page.open_view.connect(self._open_view)
         self.view_page.new_view.connect(lambda: self._quick_create_object("view"))
         self.view_page.delete_view.connect(self._delete_view)
+        self.view_page.refresh_requested.connect(self._reload_view_browse)
 
     def _build_routine_browse(self) -> None:
         """函数领域「对象」子页：打开/新建/删除函数 + 当前库函数/过程列表。"""
@@ -204,6 +207,7 @@ class MainWindow(QMainWindow):
         self.routine_page.open_routine.connect(self._open_routine)
         self.routine_page.new_routine.connect(lambda: self._on_create_routine_entry())
         self.routine_page.delete_routine.connect(self._delete_routine)
+        self.routine_page.refresh_requested.connect(self._reload_routine_browse)
 
     def _build_trigger_browse(self) -> None:
         """触发器领域「对象」子页：打开/删除触发器 + 当前库触发器列表（无新建入口）。"""
@@ -212,6 +216,7 @@ class MainWindow(QMainWindow):
         self.trigger_page = TriggerBrowseView()
         self.trigger_page.open_trigger.connect(self._open_trigger)
         self.trigger_page.delete_trigger.connect(self._delete_trigger)
+        self.trigger_page.refresh_requested.connect(self._reload_trigger_browse)
 
     def _on_create_routine_entry(self, profile_id: str | None = None,
                                  schema: str | None = None) -> None:
