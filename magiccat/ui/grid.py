@@ -101,6 +101,11 @@ class ResultView(QTableView):
         act_tsv = menu.addAction("复制(TSV)")
         act_tsv_header = menu.addAction("复制带表头(TSV)")
         act_export = menu.addAction("导出当前结果到 CSV…")
+        paste_fn = getattr(self, "_mc_paste_tsv", None)
+        if paste_fn is not None:
+            act_paste = menu.addAction("粘贴(TSV)…")
+        else:
+            act_paste = None
         menu.addSeparator()
         act_select_all = menu.addAction("全选")
         chosen = menu.exec(self.mapToGlobal(pos))
@@ -110,6 +115,8 @@ class ResultView(QTableView):
             self.copy_selection(include_header=True)
         elif chosen is act_export:
             self._export_csv_dialog()
+        elif chosen is act_paste:
+            paste_fn()
         elif chosen is act_select_all:
             self.selectAll()
 

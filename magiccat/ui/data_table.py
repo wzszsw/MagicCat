@@ -167,9 +167,11 @@ class DataTableWidget(QWidget):
         self.btn_add = QPushButton("新增行")
         self.btn_delete = QPushButton("删除选中")
         self.btn_save = QPushButton("保存更改")
+        self.btn_paste = QPushButton("粘贴…")
         self.btn_export = QPushButton("导出…")
         for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,
-                  self.btn_add, self.btn_delete, self.btn_save, self.btn_export):
+                  self.btn_add, self.btn_delete, self.btn_save, self.btn_paste,
+                  self.btn_export):
             bar.addWidget(b)
         self.btn_first.clicked.connect(lambda: self._goto(0))
         self.btn_prev.clicked.connect(lambda: self._goto(max(0, self._offset - self._limit)))
@@ -179,6 +181,7 @@ class DataTableWidget(QWidget):
         self.btn_add.clicked.connect(self._add_row)
         self.btn_delete.clicked.connect(self._delete_selected)
         self.btn_save.clicked.connect(self._save_all)
+        self.btn_paste.clicked.connect(self._paste_from_clipboard)
         self.btn_export.clicked.connect(self._export_current)
         bar.addStretch(1)
         bar.addWidget(QLabel("筛选:"))
@@ -191,6 +194,7 @@ class DataTableWidget(QWidget):
 
         self.view = ResultView()
         self.view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+        self.view._mc_paste_tsv = self._paste_from_clipboard
         root.addWidget(self.view, 1)
 
         self.status_label = QLabel("")
@@ -415,6 +419,40 @@ class DataTableWidget(QWidget):
 
         run_async(lambda: fetch(collect()), done, error)
 
+    def _paste_from_clipboard(self) -> None:
+        """从剪贴板粘贴 TSV（Excel 复制）到当前单元格区域，改动标记为待保存。"""
+        from PySide6.QtGui import QGuiApplication
+
+        if self._model is None or self._model.readonly:
+            self.status_label.setText("该表只读或无主键，不支持粘贴。")
+            return
+        text = QGuiApplication.clipboard().text()
+        if not text:
+            self.status_label.setText("剪贴板为空。")
+            return
+        lines = [line for line in text.replace("\r\n", "\n").split("\n") if line != ""]
+        if not lines:
+            return
+        model = self._model
+        # 起点：当前选中区左上角，否则 (0,0)
+        start_row = self._model.rowCount()
+        start_col = 0
+        current = self.view.currentIndex()
+        if current.isValid():
+            start_row, start_col = current.row(), current.column()
+        count = 0
+        for i, line in enumerate(lines):
+            row = start_row + i
+            if row >= model.rowCount():
+                break
+            for j, token in enumerate(line.split("\t")):
+                col = start_col + j
+                if col >= model.columnCount():
+                    break
+                model.setData(model.index(row, col, QModelIndex()), token)
+                count += 1
+        self.status_label.setText(f"已粘贴 {len(lines)} 行 · {count} 个单元格（点「保存更改」提交）")
+
     def _export_current(self) -> None:
         from magiccat.ui.transfer_dialogs import run_export
 
@@ -423,5 +461,6 @@ class DataTableWidget(QWidget):
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,
-                  self.btn_add, self.btn_delete, self.btn_save, self.btn_export):
+                  self.btn_add, self.btn_delete, self.btn_save, self.btn_paste,
+                  self.btn_export):
             b.setEnabled(enabled)
