@@ -55,6 +55,11 @@ class ConnectionInfoPanel(QWidget):
             label.setWordWrap(True)
             self._labels[text] = label
             self.form.addRow(f"{text}：", label)
+        # 修复：启动时信息面板出现黑色块 —— 滚动区视口/内容开启自填充，
+        # 让背景由主题决定（深色 QSS 的 QWidget 背景 / 浅色默认窗口色），
+        # 避免 QScrollArea 视口在未自填充时露出未初始化的黑色底。
+        body.setAutoFillBackground(True)
+        scroll.viewport().setAutoFillBackground(True)
         scroll.setWidget(body)
         root.addWidget(scroll, 1)
 
