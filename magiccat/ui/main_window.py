@@ -157,6 +157,8 @@ class MainWindow(QMainWindow):
         menu_query.addSeparator()
         act_format = menu_query.addAction("美化 SQL")
         act_format.triggered.connect(self._format_sql)
+        act_explain = menu_query.addAction("EXPLAIN 当前语句")
+        act_explain.triggered.connect(self._explain_current)
         act_history = menu_query.addAction("最近执行的 SQL…")
         act_history.triggered.connect(self._insert_history)
         act_snippets = menu_query.addAction("SQL 收藏…")
@@ -533,6 +535,42 @@ class MainWindow(QMainWindow):
                 self._status(f"计划任务「{t.name}」：{status}", 8000)
 
             run_async(run, lambda _none: None, lambda err: None)
+
+    def _explain_current(self) -> None:
+        """对当前 SELECT/SHOW/DESCRIBE 生成 EXPLAIN 执行计划（MySQL 方言路径）。"""
+        import re
+
+        profile = self._current_profile()
+        if profile is None:
+            QMessageBox.information(self, "EXPLAIN", "请先在工具栏选择要执行的连接。")
+            return
+        editor = self._active_editor()
+        if editor is None:
+            return
+        sql = (editor.current_sql() or "").strip()
+        if not sql:
+            self._status("无可 EXPLAIN 的语句（选中或光标所在语句）")
+            return
+        if not re.match(r"(?is)^\s*(explain\b|select\b|with\b|show\b|describe\b)", sql):
+            self._status("仅支持对 SELECT/WITH/SHOW/DESCRIBE 生成执行计划", 6000)
+            return
+        target = sql if re.match(r"(?is)^\s*explain\b", sql) else "EXPLAIN " + sql
+        self._status(f"正在生成执行计划（{profile.name}）…")
+        self.result_panel.append_message(f"──── EXPLAIN · {profile.name} · {target}")
+        run_async(
+            lambda: self._query.execute(profile, target),
+            lambda results: self._on_explained(results),
+            lambda err: self._on_exec_error(err))
+
+    def _on_explained(self, results: list[dict]) -> None:
+        errors = [r for r in results if r.get("kind") == "error"]
+        if errors:
+            self.result_panel.append_message(f"[EXPLAIN 失败] {errors[0]['message']}")
+            self._status("执行计划失败", 8000)
+            return
+        self.result_panel.show_results(results)
+        rows = sum(len(r.get("rows", [])) for r in results)
+        self._status(f"执行计划完成（{rows} 行步骤）", 5000)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)

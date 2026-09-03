@@ -197,11 +197,15 @@ class DataTableWidget(QWidget):
         root.addWidget(self.status_label)
 
     # ---- 数据加载 ----
-    def _order_by(self) -> str:
-        if not self._sort:
-            return ""
-        col, direction = self._sort
-        return f"`{col.replace('`', '``')}` {direction}"
+    @staticmethod
+    def _order_for(pk: list[str], sort: tuple | None) -> str:
+        if sort:
+            col, direction = sort
+            return f"`{col.replace('`', '``')}` {direction}"
+        # 无用户排序时默认按主键升序，保证翻页稳定（无主键则交给数据库默认序）
+        if pk:
+            return f"`{pk[0].replace('`', '``')}` ASC"
+        return ""
 
     def _reload(self) -> None:
         """后台拉取 列元数据(首次) + 当前页 + 总行数。"""
@@ -216,7 +220,7 @@ class DataTableWidget(QWidget):
             pk = self._data.primary_key(profile, schema, table)
             page = self._data.load_page(profile, schema, table,
                                         offset=self._offset, limit=self._limit,
-                                        order_by=self._order_by() or None,
+                                        order_by=self._order_for(pk, self._sort) or None,
                                         where=self._where or None)
             return cols_meta, pk, page
 
