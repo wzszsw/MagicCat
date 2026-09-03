@@ -49,7 +49,6 @@ class MainWindow(QMainWindow):
         self._query = QueryService(connections)
         self._history = HistoryStore.default()
         self._settings = AppSettings.default()
-        self._busy = False
         self._tab_seq = 0
 
         self.setWindowTitle("MagicCat")
@@ -216,8 +215,6 @@ class MainWindow(QMainWindow):
         self._run_sql(all_statements=True)
 
     def _run_sql(self, all_statements: bool) -> None:
-        if self._busy:
-            return
         profile = self._current_profile()
         if profile is None:
             QMessageBox.information(self, "执行 SQL", "请先在工具栏选择要执行的连接。")
@@ -229,19 +226,15 @@ class MainWindow(QMainWindow):
         if not sql.strip():
             self._status("无可执行内容：请选中文本或把光标放在语句上")
             return
-        self._busy = True
-        self._set_busy(True)
         self._status(f"正在执行（{profile.name}）…")
         self.result_panel.append_message(f"──── 执行 · {profile.name} · {sql}")
-
+        # 支持多标签并行：每次执行独立入池，结果完成时刷新下方结果区
         run_async(
             lambda: self._query.execute(profile, sql),
             lambda results: self._on_executed(results),
             lambda err: self._on_exec_error(err))
 
     def _on_executed(self, results: list[dict]) -> None:
-        self._busy = False
-        self._set_busy(False)
         self.result_panel.show_results(results)
         errors = [r for r in results if r.get("kind") == "error"]
         total = round(sum(float(r.get("time_ms", 0)) for r in results), 1)
@@ -254,14 +247,8 @@ class MainWindow(QMainWindow):
             self._history.push(editor.all_text())
 
     def _on_exec_error(self, err: str) -> None:
-        self._busy = False
-        self._set_busy(False)
         self.result_panel.append_message(f"[执行失败] {err}")
         self._status("执行失败", 8000)
-
-    def _set_busy(self, busy: bool) -> None:
-        self.act_run.setEnabled(not busy)
-        self.act_run_all.setEnabled(not busy)
 
     # ---- 其它动作 ----
     def _format_sql(self) -> None:

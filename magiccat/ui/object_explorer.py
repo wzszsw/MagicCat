@@ -259,7 +259,7 @@ class ObjectExplorer(QTreeWidget):
         action_test = action_open = action_close = None
         action_refresh = action_edit = action_delete = action_design = None
         action_er = action_new_table = action_new_db = None
-        action_truncate = action_drop = None
+        action_truncate = action_drop = action_copy_ddl = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -275,6 +275,7 @@ class ObjectExplorer(QTreeWidget):
             action_refresh = menu.addAction("刷新")
         if kind == "table":
             action_design = menu.addAction("设计表…")
+            action_copy_ddl = menu.addAction("复制 CREATE 语句…")
             menu.addSeparator()
             action_truncate = menu.addAction("清空表…")
             action_drop = menu.addAction("删除表…")
@@ -301,6 +302,8 @@ class ObjectExplorer(QTreeWidget):
             self._delete_profile(profile)
         elif chosen is action_design:
             self._design_table(item)
+        elif chosen is action_copy_ddl:
+            self._copy_create_sql(item)
         elif chosen is action_er:
             self._er_database(item)
         elif chosen is action_new_table:
@@ -323,6 +326,26 @@ class ObjectExplorer(QTreeWidget):
             return
         self.design_table_requested.emit(
             profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
+
+    def _copy_create_sql(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtWidgets import QMessageBox
+
+        from magiccat.services.ddl_service import DdlService
+
+        info = _info(item)
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        schema, table = info[DATA_KEY]["schema"], info[DATA_KEY]["table"]
+        ddl = DdlService(self._connections)
+
+        def done(create_sql: str) -> None:
+            QGuiApplication.clipboard().setText(create_sql)
+            QMessageBox.information(self, "复制 CREATE", f"已复制到剪贴板（{len(create_sql)} 字符）。")
+
+        run_async(lambda: ddl.show_create(profile, schema, table), done,
+                  lambda err: QMessageBox.warning(self, "复制 CREATE", f"失败：{err}"))
 
     # ---- 对象管理动作 ----
     def refresh_schema(self, profile_id: str, schema: str) -> None:
