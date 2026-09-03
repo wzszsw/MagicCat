@@ -89,6 +89,44 @@ public final class ConnectionRegistry {
         return Json.table(columns, rows);
     }
 
+    /**
+     * 执行任意单条语句并自动分拣结果：
+     * 查询类（SELECT/SHOW/DESCRIBE…）→ {"kind":"query","columns":[...],"rows":[...]}；
+     * 更新类（INSERT/UPDATE/DDL…）→ {"kind":"update","affected":N}。
+     */
+    public static String execute(String configId, String sql, int maxRows) {
+        List<String[]> rows = new ArrayList<>();
+        String[] columns;
+        try (Connection conn = requirePool(configId).getConnection();
+             Statement st = conn.createStatement()) {
+            if (maxRows > 0) {
+                st.setMaxRows(maxRows);
+            }
+            boolean hasResult = st.execute(sql);
+            if (!hasResult) {
+                return Json.updateResult(st.getUpdateCount());
+            }
+            try (ResultSet rs = st.getResultSet()) {
+                ResultSetMetaData md = rs.getMetaData();
+                int n = md.getColumnCount();
+                columns = new String[n];
+                for (int i = 1; i <= n; i++) {
+                    columns[i - 1] = md.getColumnLabel(i);
+                }
+                while (rs.next()) {
+                    String[] row = new String[n];
+                    for (int i = 1; i <= n; i++) {
+                        row[i - 1] = Facade.cellToString(rs.getObject(i));
+                    }
+                    rows.add(row);
+                }
+            }
+            return Json.queryResult(columns, rows);
+        } catch (SQLException e) {
+            throw new IllegalStateException("执行失败: " + e.getMessage(), e);
+        }
+    }
+
     /** 关闭某个连接池。 */
     public static void close(String configId) {
         HikariDataSource ds = POOLS.remove(configId);

@@ -37,10 +37,10 @@ public final class Json {
         return b.toString();
     }
 
-    /** 编码结果集：{"columns":[...],"rows":[[...]]}，NULL 单元格为 null。 */
-    public static String table(String[] columns, List<String[]> rows) {
+    /** columns/rows 主体（不含外层大括号）："columns":[...],"rows":[[...]]。 */
+    private static String columnsRows(String[] columns, List<String[]> rows) {
         StringBuilder b = new StringBuilder(256);
-        b.append("{\"columns\":[");
+        b.append("\"columns\":[");
         for (int i = 0; i < columns.length; i++) {
             if (i > 0) {
                 b.append(',');
@@ -64,5 +64,20 @@ public final class Json {
         }
         b.append("]}");
         return b.toString();
+    }
+
+    /** 结果集表：{"columns":[...],"rows":[[...]]}，NULL 单元格为 null。 */
+    public static String table(String[] columns, List<String[]> rows) {
+        return "{" + columnsRows(columns, rows);
+    }
+
+    /** 查询结果（带 kind=query，供 QueryService 区分）。 */
+    public static String queryResult(String[] columns, List<String[]> rows) {
+        return "{\"kind\":\"query\"," + columnsRows(columns, rows);
+    }
+
+    /** 更新结果：{"kind":"update","affected":N}。 */
+    public static String updateResult(long affected) {
+        return "{\"kind\":\"update\",\"affected\":" + Math.max(affected, 0) + "}";
     }
 }
