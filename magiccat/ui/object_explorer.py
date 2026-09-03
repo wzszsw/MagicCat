@@ -331,7 +331,7 @@ class ObjectExplorer(QTreeWidget):
         action_truncate = action_drop = action_copy_ddl = None
         action_obj_copy = action_obj_drop = None
         action_open_query = action_del_query = None
-        action_run_sql = action_new_routine = None
+        action_run_sql = action_new_routine = action_edit_db = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -368,6 +368,7 @@ class ObjectExplorer(QTreeWidget):
             menu.addSeparator()
             action_new_table = menu.addAction("新建表…")
             action_new_db = menu.addAction("新建数据库…")
+            action_edit_db = menu.addAction("编辑数据库…")
             menu.addSeparator()
             dump_menu = menu.addMenu("转储 SQL 文件…")
             act_dump_all = dump_menu.addAction("结构和数据…")
@@ -406,6 +407,8 @@ class ObjectExplorer(QTreeWidget):
             self._new_database(item)
         elif chosen is action_new_routine:
             self._new_routine(item)
+        elif chosen is action_edit_db:
+            self._edit_database(item)
         elif chosen is action_truncate or chosen is action_drop:
             self._drop_or_truncate_table(item, truncate=chosen is action_truncate)
         elif chosen is action_obj_copy:
@@ -416,6 +419,15 @@ class ObjectExplorer(QTreeWidget):
             self._open_saved_query_item(item)
         elif chosen is action_del_query:
             self._delete_saved_query(item)
+
+    def _edit_database(self, item: QTreeWidgetItem) -> None:
+        from magiccat.ui.database_dialog import EditDatabaseDialog
+
+        info = _info(item)
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        EditDatabaseDialog(profile, info[DATA_KEY]["schema"], self._connections, self).exec()
 
     def _er_database(self, item: QTreeWidgetItem) -> None:
         info = _info(item)
