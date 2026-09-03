@@ -69,6 +69,7 @@ class ObjectExplorer(QTreeWidget):
     create_routine_entry = Signal(str, str)  # profile_id, schema（弹向导）
     open_routine_sql = Signal(str, str, str)  # profile_id, name, sql_text
     selection_info_requested = Signal(object)  # 当前选中项描述 dict
+    domain_selected = Signal(str, str, str)  # profile_id, schema, cat_type（`对象`页联动）
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -122,6 +123,9 @@ class ObjectExplorer(QTreeWidget):
                 desc = {"kind": "group", "name": current.text(0)}
             elif kind == "category":
                 desc = {"kind": "category", "name": current.text(0)}
+                cat_type = data.get("cat_type")
+                if cat_type:
+                    self.domain_selected.emit(pid, data.get("schema", ""), cat_type)
             elif kind == "saved_query":
                 desc = {"kind": "saved_query", "profile_id": pid,
                         "schema": data.get("schema"), "name": data.get("name")}

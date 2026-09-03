@@ -177,6 +177,19 @@ public final class MetadataApi {
                 new String[] {schema}, 0);
     }
 
+    /** 全库表信息一次批查（表对象页用；避免“逐表循环查”的 N+1）：
+     *  name, type, engine, rows, data_length, comment。 */
+    public static String schemaTables(String configId, String schema) {
+        return ConnectionRegistry.executeJson(
+                configId,
+                "SELECT TABLE_NAME AS name, TABLE_TYPE AS type, "
+                        + "ENGINE AS engine, TABLE_ROWS AS `rows`, "
+                        + "DATA_LENGTH AS data_length, TABLE_COMMENT AS comment "
+                        + "FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? "
+                        + "ORDER BY TABLE_TYPE, TABLE_NAME",
+                new String[] {schema}, 0);
+    }
+
     /** 索引列表：index_name, non_unique, seq, column_name, index_type。 */
     public static String indexes(String configId, String schema, String table) {
         return isMySqlFamily(configId)

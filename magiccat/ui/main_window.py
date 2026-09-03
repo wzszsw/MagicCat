@@ -129,10 +129,14 @@ class MainWindow(QMainWindow):
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
         self.editor_tabs.currentChanged.connect(self._on_query_tab_changed)
 
-        # 「对象」页 = 领域浏览栈：本轮只实现“查询”领域子页，其余领域后续逐个加入
+        # 「对象」页 = 领域浏览栈：查询、表两个领域子页；其余领域后续逐个加入
         self.domain_stack = QStackedWidget()
         self._build_query_browse()
+        self._build_table_browse()
         self.domain_stack.addWidget(self.browse_page)
+        self.domain_stack.addWidget(self.table_page)
+        self._domain_pages: dict[str, QWidget] = {
+            "queries": self.browse_page, "tables": self.table_page}
         self.editor_tabs.addTab(self.domain_stack, "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
@@ -165,24 +169,52 @@ class MainWindow(QMainWindow):
         self.browse_page.open_query.connect(self._open_saved_query)
         self.browse_page.delete_query.connect(self._delete_saved_query)
 
+    def _build_table_browse(self) -> None:
+        """表领域「对象」子页：打开/设计/新建/删除表 + 当前库表列表。"""
+        from magiccat.ui.table_browse import TableBrowseView
+
+        self.table_page = TableBrowseView()
+        self.table_page.open_table.connect(self._on_open_table)
+        self.table_page.design_table.connect(self._on_design_table)
+        self.table_page.new_table.connect(lambda: self._quick_create_object("table"))
+        self.table_page.delete_table.connect(self._delete_table)
+
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
         """顶部动作行随当前激活标签类型切换：
         - 查询编辑器标签 → 显示编辑态动作（保存/运行/停止）；
         - 「对象」页 / 表等其它标签 → 隐藏编辑态动作。
-        返回「对象」页时刷新查询列表。"""
+        返回「对象」页时刷新当前领域列表。"""
         widget = self.editor_tabs.widget(index)
         is_editor = isinstance(widget, SqlEditorWidget)
         for btn in self._edit_actions:
             btn.setVisible(is_editor)
         if widget is self.domain_stack:
-            self._reload_query_browse()
+            self._reload_current_domain()
 
     def _show_query_domain(self) -> None:
         """顶部「查询」领域图标：切到「对象」页并选中查询浏览子页。"""
         self.domain_stack.setCurrentWidget(self.browse_page)
         self.editor_tabs.setCurrentIndex(0)
         self._reload_query_browse()
+
+    def _show_domain(self, cat_type: str) -> None:
+        """对象树选中某分类 → 对象页切到对应领域子页并展示列表。"""
+        page = self._domain_pages.get(cat_type)
+        if page is None:
+            return
+        self.domain_stack.setCurrentWidget(page)
+        self.editor_tabs.setCurrentIndex(0)
+        self._reload_current_domain()
+
+    def _reload_current_domain(self) -> None:
+        page = self.domain_stack.currentWidget()
+        if page is self.browse_page:
+            self._reload_query_browse()
+        elif page is self.table_page:
+            self._reload_table_browse()
+        else:
+            page.clear() if hasattr(page, "clear") else None
 
     def _reload_query_browse(self) -> None:
         """按当前连接/库刷新「查询」对象页列表。"""
@@ -195,6 +227,26 @@ class MainWindow(QMainWindow):
         self.browse_page.load_queries(profile.id, schema)
         self.browse_page.ctx_label.setText(
             f"{profile.display_name} · {schema or '默认'}")
+
+    def _reload_table_browse(self, profile=None, schema: str = "") -> None:
+        """按当前连接/库刷新「表」对象页列表（全库一次批查，无 N+1）。"""
+        profile = profile or self._current_profile()
+        if profile is None:
+            self.table_page.clear()
+            self.table_page.ctx_label.setText("")
+            return
+        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        self.table_page.ctx_label.setText(
+            f"{profile.display_name} · {schema or '默认'}")
+
+        def fetch():
+            return self._metadata.schema_tables(profile, schema)
+
+        def done(rows: list[dict]) -> None:
+            self.table_page.load_tables(profile.id, schema, rows)
+
+        run_async(fetch, done, lambda err: self.table_page.ctx_label.setText(
+            f"读取表失败：{err}"))
 
     def _query_btn(self, text: str, handler, bar: QHBoxLayout):
         from PySide6.QtWidgets import QPushButton
@@ -214,6 +266,7 @@ class MainWindow(QMainWindow):
         self.explorer.create_routine_entry.connect(self._on_create_routine)
         self.explorer.open_routine_sql.connect(self._open_routine_sql)
         self.explorer.selection_info_requested.connect(self._on_selection_info)
+        self.explorer.domain_selected.connect(self._on_domain_selected)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -257,7 +310,7 @@ class MainWindow(QMainWindow):
         quick("连接", "connection", self._add_connection)
         quick("新建查询", "new_query", self._new_editor)
         toolbar.addSeparator()
-        quick("表", "table", lambda: self._quick_create_object("table"))
+        quick("表", "table", lambda: self._show_domain("tables"))
         quick("视图", "view", lambda: self._quick_create_object("view"))
         quick("函数", "function", lambda: self._quick_create_object("routine"))
         toolbar.addSeparator()
@@ -675,6 +728,32 @@ class MainWindow(QMainWindow):
 
         dialog = TableDesignerDialog(profile, schema, table, self._connections, self)
         dialog.exec()
+        self._reload_table_browse(profile, schema)
+
+    def _delete_table(self, profile_id: str, schema: str, table: str) -> None:
+        """删除表（对象页动作）：确认后 DROP TABLE，并刷新「表」对象页。"""
+        from magiccat.services.query_service import QueryService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        sql = f"DROP TABLE `{schema}`.`{table}`"
+        if QMessageBox.question(
+                self, "删除表",
+                f"确定删除表 `{schema}`.{table}？\n\n{sql}",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, "删除表", errors[0]["message"])
+                return
+            self._reload_table_browse(profile, schema)
+            self._status(f"表已删除：{schema}.{table}", 4000)
+
+        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+                  done, lambda err: QMessageBox.critical(self, "删除表", err))
 
     def _on_create_table(self, profile_id: str, schema: str) -> None:
         profile = self._connections.get(profile_id)
@@ -923,6 +1002,10 @@ class MainWindow(QMainWindow):
 
     def _on_selection_info(self, desc: dict) -> None:
         self.info_panel.show_object(desc)
+
+    def _on_domain_selected(self, profile_id: str, schema: str, cat_type: str) -> None:
+        """对象树选中某分类 → 「对象」页切到该领域子页并展示列表。"""
+        self._show_domain(cat_type)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)

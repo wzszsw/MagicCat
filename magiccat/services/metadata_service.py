@@ -39,6 +39,10 @@ class MetadataService:
     def tables(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "tables", schema)
 
+    def schema_tables(self, profile: ConnectionProfile, schema: str) -> list[dict]:
+        """全库表信息一次批查（表对象页；含 engine/rows/comment，避免 N+1）。"""
+        return self._meta(profile, "schemaTables", schema)
+
     def routines(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "routines", schema)
 
