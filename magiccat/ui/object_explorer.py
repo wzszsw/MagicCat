@@ -147,38 +147,29 @@ class ObjectExplorer(QTreeWidget):
         def done(payload: tuple[str, list[dict]]) -> None:
             if item.treeWidget() is None:
                 return
-            profile_id, dbs = payload
-            children: list[QTreeWidgetItem] = [self._make_query_folder(profile_id)]
-            children += [_make_item(db["name"], "database", schema=db["name"]) for db in dbs]
-            for c in children[1:]:
+            _profile_id, dbs = payload
+            children = [_make_item(db["name"], "database", schema=db["name"]) for db in dbs]
+            for c in children:
                 _placeholder(c)
             _replace_children(item, children)
             item.setToolTip(0, f"{len(dbs)} 个数据库")
 
         run_async(fetch, done, lambda err: self._show_error(item, f"连接失败：{err}"))
 
-    def _make_query_folder(self, profile_id: str) -> QTreeWidgetItem:
-        folder = _make_item("查询", "query_folder", profile_id=profile_id)
-        self._populate_query_folder(folder)
-        return folder
-
-    def _populate_query_folder(self, folder: QTreeWidgetItem) -> None:
-        info = _info(folder)
-        profile_id = info.get(DATA_KEY, {}).get("profile_id")
-        if not profile_id:
-            return
-        _replace_children(folder, [
-            _make_item(q["name"], "saved_query", profile_id=profile_id,
-                       name=q["name"], schema=q.get("schema", ""))
-            for q in self._queries.list(profile_id)])
-
-    def refresh_queries(self, profile_id: str) -> None:
-        """保存/删除查询后刷新对应连接的“查询”文件夹。"""
+    def refresh_schema_queries(self, profile_id: str, schema: str) -> None:
+        """保存/删除查询后刷新【库级】“查询”分类（连接级无查询节点，与 Navicat 一致）。"""
         for item in self._walk():
             info = _info(item)
-            if (info.get(KIND_KEY) == "query_folder"
-                    and info.get(DATA_KEY, {}).get("profile_id") == profile_id):
-                self._populate_query_folder(item)
+            data = info.get(DATA_KEY, {})
+            if (info.get(KIND_KEY) == "category"
+                    and data.get("cat_type") == "queries"
+                    and data.get("schema") == schema):
+                _replace_children(item, [
+                    _make_item(q["name"], "saved_query", profile_id=profile_id,
+                               name=q["name"], schema=q.get("schema", ""))
+                    for q in self._queries.list(profile_id)
+                    if (q.get("schema") or "") == schema])
+                return
                 return
 
     def _load_database(self, item: QTreeWidgetItem) -> None:
@@ -380,8 +371,6 @@ class ObjectExplorer(QTreeWidget):
             menu.addSeparator()
             action_truncate = menu.addAction("清空表…")
             action_drop = menu.addAction("删除表…")
-        if kind == "query_folder":
-            action_refresh = menu.addAction("刷新")
         if kind == "saved_query":
             action_open_query = menu.addAction("打开")
             action_del_query = menu.addAction("删除…")
@@ -704,7 +693,10 @@ class ObjectExplorer(QTreeWidget):
                                 ) != QMessageBox.Yes:
             return
         self._queries.delete(profile_id, name)
-        self.refresh_queries(profile_id)
+        # 刷新其所属库的“查询”分类
+        schema = (item.parent().data(0, 0x0100) or {}).get("data", {}).get("schema") if item.parent() else None
+        if schema:
+            self.refresh_schema_queries(profile_id, schema)
 
     def _dump_database(self, item: QTreeWidgetItem, with_data: bool) -> None:
         """转储整个数据库为 SQL 文件（对标 Navicat：结构和数据 / 仅结构）。"""

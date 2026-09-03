@@ -37,12 +37,26 @@ def test_query_folder_in_tree(qtbot, mysql_env, connection_service):
     item = explorer.profile_item(profile.id)
     item.setExpanded(True)
 
+    def db_node() -> object | None:
+        for i in range(item.childCount()):
+            c = item.child(i)
+            info = c.data(0, 0x0100) or {}
+            if info.get("kind") == "database" and info.get("data", {}).get("schema") == "test":
+                return c
+        return None
+
     def has_query() -> bool:
-        for qf in (item.child(i) for i in range(item.childCount())):
-            info = qf.data(0, 0x0100) or {}
-            if info.get("kind") == "query_folder":
-                return any(qf.child(i).text(0) == "统计分析"
-                           for i in range(qf.childCount()))
+        node = db_node()
+        if node is None:
+            return False
+        if node.childCount() <= 1:  # 占位子项=1，先展开库（懒加载骨架）
+            node.setExpanded(True)
+            return False
+        for i in range(node.childCount()):
+            if node.child(i).text(0) != "查询":
+                continue
+            return any(node.child(i).child(j).text(0) == "统计分析"
+                       for j in range(node.child(i).childCount()))
         return False
 
     qtbot.waitUntil(has_query, timeout=25_000)

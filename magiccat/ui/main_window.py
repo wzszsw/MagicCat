@@ -704,9 +704,11 @@ class MainWindow(QMainWindow):
         name = (name or "").strip()
         if not ok or not name:
             return
+        schema = profile.database or ""
         lib = QueryLibrary.default()
-        lib.save(profile.id, name, editor.toPlainText(), schema=profile.database or "")
-        self.explorer.refresh_queries(profile.id)
+        lib.save(profile.id, name, editor.toPlainText(), schema=schema)
+        if schema:
+            self.explorer.refresh_schema_queries(profile.id, schema)
         self._status(f"查询已保存：{name}（{profile.display_name}）", 5000)
 
     def _open_saved_query(self, profile_id: str, name: str) -> None:
