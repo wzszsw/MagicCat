@@ -344,6 +344,7 @@ MagicCat/
 | M21 | Java 错误文案去重 + 快捷键帮助 + 打开日志目录 | ✅ | 前缀剥除/格式化单测 |
 | M22 | 视图/例程/触发器 右键（复制 CREATE/删除对象） | ✅ | DDL 取回+DROP 通路面 |
 | M23 | 便携版发行包（build_release.ps1 → zip，含内嵌 JRE/图标，关键文件校验） | ✅ | zip 68MB 校验 OK + exe 自检 |
+| M24 | 元数据实现按产品自动选择：标准 JDBC(DatabaseMetaData) vs MySQL information_schema | ✅ | 作用域回归（mysql.user 命中、不混他库） |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
