@@ -105,6 +105,10 @@ class MainWindow(QMainWindow):
         act_close.setShortcut("Ctrl+W")
         act_close.triggered.connect(lambda: self._close_editor_tab(self.editor_tabs.currentIndex()))
 
+        menu_tools = self.menuBar().addMenu("工具(&T)")
+        act_import = menu_tools.addAction("导入 CSV 到表…")
+        act_import.triggered.connect(self._open_import_dialog)
+
         toolbar = self.addToolBar("查询")
         toolbar.addAction(act_add)
         toolbar.addSeparator()
@@ -307,6 +311,12 @@ class MainWindow(QMainWindow):
         from magiccat.ui.table_designer import TableDesignerDialog
 
         dialog = TableDesignerDialog(profile, schema, table, self._connections, self)
+        dialog.exec()
+
+    def _open_import_dialog(self) -> None:
+        from magiccat.ui.transfer_dialogs import ImportCsvDialog
+
+        dialog = ImportCsvDialog(self._connections, self._metadata, self)
         dialog.exec()
 
     def _status(self, message: str, timeout: int = 0) -> None:

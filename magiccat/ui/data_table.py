@@ -165,8 +165,9 @@ class DataTableWidget(QWidget):
         self.btn_add = QPushButton("新增行")
         self.btn_delete = QPushButton("删除选中")
         self.btn_save = QPushButton("保存更改")
+        self.btn_export = QPushButton("导出…")
         for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,
-                  self.btn_add, self.btn_delete, self.btn_save):
+                  self.btn_add, self.btn_delete, self.btn_save, self.btn_export):
             bar.addWidget(b)
         self.btn_first.clicked.connect(lambda: self._goto(0))
         self.btn_prev.clicked.connect(lambda: self._goto(max(0, self._offset - self._limit)))
@@ -176,6 +177,7 @@ class DataTableWidget(QWidget):
         self.btn_add.clicked.connect(self._add_row)
         self.btn_delete.clicked.connect(self._delete_selected)
         self.btn_save.clicked.connect(self._save_all)
+        self.btn_export.clicked.connect(self._export_current)
         bar.addStretch(1)
         bar.addWidget(QLabel("筛选:"))
         self.filter_edit = QLineEdit()
@@ -407,7 +409,13 @@ class DataTableWidget(QWidget):
 
         run_async(lambda: fetch(collect()), done, error)
 
+    def _export_current(self) -> None:
+        from magiccat.ui.transfer_dialogs import run_export
+
+        run_export(self, self.profile, self.schema, self.table,
+                   self._data, self._metadata)
+
     def _set_buttons_enabled(self, enabled: bool) -> None:
         for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,
-                  self.btn_add, self.btn_delete, self.btn_save):
+                  self.btn_add, self.btn_delete, self.btn_save, self.btn_export):
             b.setEnabled(enabled)
