@@ -56,6 +56,8 @@ class TableDesignerDialog(QDialog):
         self._orig_columns: list[dict] = []
         self._orig_indexes: list[dict] = []
         self._indexes: list[dict] = []  # 工作副本（应用时与 _orig_indexes 求差）
+        self._orig_fks: list[dict] = []
+        self._fks: list[dict] = []  # 外键工作副本
         title = f"新建表 · {schema}.{table}" if new_table else f"设计表 · {schema}.{table}"
         self.setWindowTitle(f"{title}（{profile.name}）")
         self.resize(860, 620)
@@ -112,7 +114,22 @@ class TableDesignerDialog(QDialog):
         self.fk_grid = QTableWidget(0, 4)
         self.fk_grid.setHorizontalHeaderLabels(["约束", "列", "引用", "规则"])
         self.fk_grid.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.tabs.addTab(self.fk_grid, "外键")
+        fk_tab = QWidget()
+        fk_lay = QVBoxLayout(fk_tab)
+        fk_lay.setContentsMargins(4, 4, 4, 4)
+        fk_bar = QHBoxLayout()
+        btn_fk_add = QPushButton("新增外键…")
+        btn_fk_del = QPushButton("删除选中外键")
+        fk_bar.addWidget(btn_fk_add)
+        fk_bar.addWidget(btn_fk_del)
+        fk_bar.addStretch(1)
+        fk_lay.addLayout(fk_bar)
+        fk_lay.addWidget(self.fk_grid, 1)
+        self.btn_fk_add = btn_fk_add
+        self.btn_fk_del = btn_fk_del
+        btn_fk_add.clicked.connect(self._add_fk)
+        btn_fk_del.clicked.connect(self._remove_fk_selected)
+        self.tabs.addTab(fk_tab, "外键")
 
         # SQL 预览
         self.sql_preview = QPlainTextEdit()
@@ -158,13 +175,13 @@ class TableDesignerDialog(QDialog):
             self._orig_indexes = group_indexes(snapshot["indexes"])
             self._indexes = [dict(g, columns=list(g["columns"]))
                              for g in self._orig_indexes]
+            self._orig_fks = group_foreign_keys(snapshot["foreign_keys"])
+            self._fks = [dict(g, columns=list(g["columns"]),
+                              ref_columns=list(g["ref_columns"]))
+                         for g in self._orig_fks]
             self._fill_columns(snapshot["columns"])
             self._refresh_indexes_grid()
-            self._fill_readonly(self.fk_grid, [
-                (g["constraint_name"], ", ".join(g["columns"]),
-                 f"{g['ref_table']}({', '.join(g['ref_columns'])})",
-                 f"DEL {g['on_delete']} · UPD {g['on_update']}")
-                for g in group_foreign_keys(snapshot["foreign_keys"])])
+            self._refresh_fk_grid()
             self.sql_preview.setPlainText("# 服务器当前 DDL：\n" + snapshot["create_sql"])
             self.status_label.setText(f"已加载：{len(snapshot['columns'])} 列 · "
                                       f"{len(snapshot['indexes'])} 条索引记录")
@@ -242,6 +259,114 @@ class TableDesignerDialog(QDialog):
                 break
         self._refresh_indexes_grid()
         self._generate_preview()
+
+    # ---- 外键管理 ----
+    def _refresh_fk_grid(self) -> None:
+        rows = []
+        for g in self._fks:
+            rows.append((g["constraint_name"], ", ".join(g["columns"]),
+                         f"{g['ref_table']}({', '.join(g['ref_columns'])})",
+                         f"DEL {g['on_delete']} · UPD {g['on_update'] or 'RESTRICT'}"))
+        self._fill_readonly(self.fk_grid, rows)
+
+    def _add_fk(self) -> None:
+        if self.new_table:
+            self.status_label.setText("新建表模式暂不提供外键编辑，创建后再设计外键。")
+            return
+        from PySide6.QtWidgets import QInputDialog
+
+        from magiccat.services.metadata_service import MetadataService
+
+        meta = MetadataService(self._connections)
+        try:
+            tables = [t["name"] for t in meta.tables(self.profile, self.schema)
+                      if t["type"] == "BASE TABLE" and t["name"] != self.table]
+        except Exception as exc:  # noqa: BLE001
+            self.status_label.setText(f"读取可引用表失败：{exc}")
+            return
+        if not tables:
+            self.status_label.setText("本库没有可引用的基础表。")
+            return
+        cols = [c["name"] for c in self._read_columns()]
+        if not cols:
+            self.status_label.setText("没有可作外键的列。")
+            return
+        name, ok = QInputDialog.getText(self, "新增外键", "约束名：",
+                                        text=f"fk_{self.table}")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        col, ok2 = QInputDialog.getItem(self, "新增外键", "本表列：", cols, 0, False)
+        if not ok2:
+            return
+        ref_t, ok3 = QInputDialog.getItem(self, "新增外键", "引用表：", tables, 0, False)
+        if not ok3:
+            return
+        try:
+            ref_cols = [c["name"] for c in meta.columns(self.profile, self.schema, ref_t)]
+        except Exception as exc:  # noqa: BLE001
+            self.status_label.setText(f"读取引用表列失败：{exc}")
+            return
+        if not ref_cols:
+            self.status_label.setText("引用表没有列。")
+            return
+        ref_col, ok4 = QInputDialog.getItem(self, "新增外键", "引用列：", ref_cols, 0, False)
+        if not ok4:
+            return
+        rule, ok5 = QInputDialog.getItem(self, "新增外键", "ON DELETE：",
+                                         ["RESTRICT", "CASCADE", "SET NULL", "NO ACTION"],
+                                         0, False)
+        self.add_fk(name, col, ref_t, ref_col, on_delete=rule if ok5 else "RESTRICT")
+
+    def add_fk(self, name: str, column: str, ref_table: str, ref_column: str,
+               on_delete: str = "RESTRICT", on_update: str = "RESTRICT") -> None:
+        """编程入口（供测试/UI 复用）：追加外键工作副本（单列外键）。"""
+        self._fks.append({"constraint_name": name, "columns": [column],
+                          "ref_table": ref_table, "ref_columns": [ref_column],
+                          "on_delete": on_delete, "on_update": on_update})
+        self._refresh_fk_grid()
+        self._generate_preview()
+
+    def _remove_fk_selected(self) -> None:
+        row = self.fk_grid.currentRow()
+        if row < 0 or row >= len(self._fks):
+            self.status_label.setText("请先选中要删除的外键行。")
+            return
+        name = self._fks[row]["constraint_name"]
+        if QMessageBox.question(self, "删除外键", f"删除外键 `{name}`？"
+                                ) != QMessageBox.Yes:
+            return
+        self.remove_fk(name)
+
+    def remove_fk(self, name: str) -> None:
+        """编程入口（供测试/UI 复用）。"""
+        for i, g in enumerate(self._fks):
+            if g["constraint_name"] == name:
+                del self._fks[i]
+                break
+        self._refresh_fk_grid()
+        self._generate_preview()
+
+    @staticmethod
+    def _fk_fragments(orig: list[dict], current: list[dict], schema: str) -> list[str]:
+        """比较外键工作副本生成 ADD/DROP CONSTRAINT 片段（单列外键）。"""
+        orig_names = {g["constraint_name"] for g in orig if g["constraint_name"]}
+        cur_names = {g["constraint_name"] for g in current if g["constraint_name"]}
+        frags = [f"DROP FOREIGN KEY `{n.replace('`', '``')}`"
+                 for n in sorted(orig_names - cur_names)]
+        cur = {g["constraint_name"]: g for g in current}
+        for name in sorted(cur_names - orig_names):
+            g = cur[name]
+            col = g["columns"][0].replace("`", "``")
+            ref_t = g["ref_table"].replace("`", "``")
+            ref_c = g["ref_columns"][0].replace("`", "``")
+            on_del = f" ON DELETE {g['on_delete']}" if g.get("on_delete") else ""
+            on_upd = f" ON UPDATE {g['on_update']}" if g.get("on_update") else ""
+            frags.append(
+                f"ADD CONSTRAINT `{name.replace('`', '``')}` FOREIGN KEY (`{col}`) "
+                f"REFERENCES `{schema.replace('`', '``')}`.`{ref_t}` (`{ref_c}`)"
+                + on_del + on_upd)
+        return frags
 
     @staticmethod
     def _index_fragments(orig: list[dict], current: list[dict],
@@ -338,6 +463,7 @@ class TableDesignerDialog(QDialog):
         dropped_cols = [c["name"] for c in self._orig_columns
                         if c["name"] not in {e["name"] for e in edited}]
         frags += self._index_fragments(self._orig_indexes, self._indexes, dropped_cols)
+        frags += self._fk_fragments(self._orig_fks, self._fks, self.schema)
         if not frags:
             return None
         from magiccat.services.ddl_builder import _q
