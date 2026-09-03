@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+import re
+
 import sqlparse
 
 _EMPTY_LINE_PREFIXES = ("--", "#", "/*")
+_DELIMITER_RE = re.compile(r"\s*DELIMITER\s+(\S+)", re.IGNORECASE)
 
 
 def _is_empty(sql: str) -> bool:
@@ -20,16 +23,33 @@ def _is_empty(sql: str) -> bool:
 
 
 def split_with_offsets(text: str) -> list[tuple[int, int, str]]:
-    """按顶层分号切分，返回 [(start, end, 语句文本)]（已去首尾空白）。"""
+    """按顶层定界符切分语句，返回 [(start, end, 文本)]（已去首尾空白）。
+
+    支持 mysql 客户端习惯的 DELIMITER 指令：
+    - 识别行首 ``DELIMITER $$``，其后使用 ``$$`` 作为语句结束符（例程体内 ``;`` 不再切分）；
+    - DELIMITER 行本身不进语句、不影响偏移定位（光标定位仍基于原文）。
+    """
     out: list[tuple[int, int, str]] = []
     n = len(text)
     i = 0
     start = 0
-    state = "code"  # code | single | double | backtick | line_comment | block_comment
+    delim = ";"
+    line_start = True
+    # code | single | double | backtick | line_comment | block_comment
+    state = "code"
     while i < n:
         ch = text[i]
         nxt = text[i + 1] if i + 1 < n else ""
         if state == "code":
+            if line_start:
+                m = _DELIMITER_RE.match(text, i)
+                if m:
+                    delim = m.group(1)
+                    nl = text.find("\n", i)
+                    i = n if nl < 0 else nl  # 跳到行尾（随后自增越过换行）
+                    start = i + 1
+                    line_start = False
+                    continue
             if ch == "'":
                 state = "single"
             elif ch == '"':
@@ -44,9 +64,10 @@ def split_with_offsets(text: str) -> list[tuple[int, int, str]]:
             elif ch == "/" and nxt == "*":
                 state = "block_comment"
                 i += 1
-            elif ch == ";":
+            elif text.startswith(delim, i):
                 _append_statement(text, start, i, out)
-                start = i + 1
+                start = i + len(delim)
+                i += len(delim) - 1
         elif state == "single":
             if ch == "\\":
                 i += 1  # 跳过转义字符
@@ -76,6 +97,10 @@ def split_with_offsets(text: str) -> list[tuple[int, int, str]]:
             state = "code"
             i += 1
         i += 1
+        if ch == "\n":
+            line_start = True
+        elif ch not in " \t\r\n":
+            line_start = False
     _append_statement(text, start, n, out)
     return out
 
