@@ -25,25 +25,57 @@ def list_users(query: QueryService, profile: ConnectionProfile) -> list[dict]:
 
 
 def create_user(query: QueryService, profile: ConnectionProfile, user: str, host: str,
-                password: str) -> None:
+                password: str = "", plugin: str = "", expire: str = "DEFAULT") -> None:
     if not user or not host:
         raise ValueError("用户名与主机不能为空")
     ident = _quote(user, host)
+    sql = f"CREATE USER {ident}" + _auth_clause(password, plugin) + _expire_clause(expire)
+    _raise_if_error(query.execute(profile, sql), "创建用户")
+
+
+def alter_user(query: QueryService, profile: ConnectionProfile, user: str, host: str,
+               password: str = "", plugin: str = "", expire: str = "DEFAULT",
+               change_credentials: bool = True) -> None:
+    """修改用户：可改 插件/密码（change_credentials 控制是否生成 IDENTIFIED 子句）
+    与密码过期策略。password 为空但不改凭据时跳过 IDENTIFIED。"""
+    ident = _quote(user, host)
+    parts = []
     if password:
-        sql = f"CREATE USER {ident} IDENTIFIED BY '{password.replace(chr(39), chr(39) * 2)}'"
-    else:
-        sql = f"CREATE USER {ident}"
-    results = query.execute(profile, sql)
-    _raise_if_error(results, "创建用户")
+        parts.append(_auth_clause(password, plugin))
+    if expire:
+        parts.append(_expire_clause(expire))
+    if not parts:
+        raise ValueError("没有要修改的项目")
+    sql = f"ALTER USER {ident} " + " ".join(parts)
+    _raise_if_error(query.execute(profile, sql), "修改用户")
 
 
 def alter_password(query: QueryService, profile: ConnectionProfile, user: str, host: str,
                    password: str) -> None:
     if not password:
         raise ValueError("密码不能为空")
-    sql = (f"ALTER USER {_quote(user, host)} "
-           f"IDENTIFIED BY '{password.replace(chr(39), chr(39) * 2)}'")
-    _raise_if_error(query.execute(profile, sql), "修改密码")
+    alter_user(query, profile, user, host, password=password)
+
+
+def _auth_clause(password: str, plugin: str) -> str:
+    clause = ""
+    if plugin:
+        clause += f" IDENTIFIED WITH '{plugin.replace(chr(39), chr(39) * 2)}'"
+    if password:
+        clause += f" BY '{password.replace(chr(39), chr(39) * 2)}'"
+    return clause
+
+
+def _expire_clause(expire: str) -> str:
+    upper = (expire or "DEFAULT").strip().upper()
+    if upper == "DEFAULT":
+        return " PASSWORD EXPIRE DEFAULT"
+    if upper == "NEVER":
+        return " PASSWORD EXPIRE NEVER"
+    if upper.startswith("INTERVAL"):
+        days = upper.replace("INTERVAL", "").replace("DAY", "").strip() or "90"
+        return f" PASSWORD EXPIRE INTERVAL {int(days)} DAY"
+    return ""
 
 
 def drop_user(query: QueryService, profile: ConnectionProfile, user: str, host: str) -> None:

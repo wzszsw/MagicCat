@@ -24,13 +24,19 @@ def test_user_service_crud(mysql_env, connection_service):
         users = user_service.list_users(q, profile)
         assert any(u["user"] == "root" and u["host"] == "localhost" for u in users)
 
-        user_service.create_user(q, profile, name, "localhost", "p@ss1")
-        assert any(u["user"] == name and u["host"] == "localhost"
-                   for u in user_service.list_users(q, profile))
+        user_service.create_user(q, profile, name, "localhost", "p@ss1",
+                                 plugin="caching_sha2_password", expire="INTERVAL 30 DAY")
+        found = next(u for u in user_service.list_users(q, profile)
+                     if u["user"] == name and u["host"] == "localhost")
+        assert found["plugin"] == "caching_sha2_password"
 
-        user_service.alter_password(q, profile, name, "localhost", "p@ss2")
+        user_service.alter_user(q, profile, name, "localhost", password="p@ss2",
+                                plugin="caching_sha2_password", expire="NEVER")
         grants = user_service.show_grants(q, profile, name, "localhost")
         assert grants  # SHOW GRANTS 应有内容
+        show = q.execute(profile, f"SHOW CREATE USER '{name}'@'localhost'")[0]
+        show_text = " ".join(str(v) for v in show["rows"][0])
+        assert "PASSWORD EXPIRE NEVER" in show_text, show_text
     finally:
         try:
             user_service.drop_user(q, profile, name, "localhost")
