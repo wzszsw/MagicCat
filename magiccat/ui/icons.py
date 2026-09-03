@@ -174,7 +174,7 @@ def _icon_image(kind: str, subtype: str = "") -> QImage | None:
         return _database()
     if kind == "profile" or kind == "connection":
         return _connection()
-    if kind == "saved_query":
+    if kind in ("saved_query", "query"):
         return _query()
     if kind in ("query_folder", "category"):
         return _folder(_COLORS["cream"])

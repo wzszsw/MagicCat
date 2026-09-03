@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSplitter,
     QTabWidget,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self._build_explorer_dock()
         self._build_info_dock()
         self._build_actions()
+        self._build_quick_toolbar()
 
         self._reload_connection_combo()
         self._new_editor()
@@ -136,6 +138,71 @@ class MainWindow(QMainWindow):
         dock = QDockWidget("连接信息", self)
         dock.setWidget(self.info_panel)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
+
+    def _build_quick_toolbar(self) -> None:
+        """对标 Navicat 顶部快速访问栏：连接/新建查询/表/视图/函数。"""
+        from magiccat.ui.icons import icon
+
+        toolbar = QToolBar("快速访问")
+        toolbar.setObjectName("quick_toolbar")
+        self.addToolBar(toolbar)
+
+        def quick(text: str, kind: str, handler) -> None:
+            act = QAction(icon(kind), text, self)
+            act.triggered.connect(handler)
+            toolbar.addAction(act)
+
+        quick("新建连接", "connection", self._add_connection)
+        toolbar.addSeparator()
+        quick("新建查询", "query", self._new_editor)
+        toolbar.addSeparator()
+        quick("表", "table", lambda: self._quick_create_object("table"))
+        quick("视图", "view", lambda: self._quick_create_object("view"))
+        quick("函数", "function", lambda: self._quick_create_object("routine"))
+
+    def _resolve_current_schema(self) -> str | None:
+        """取当前连接的默认库；无则让用户从库列表选。返回 schema 或 None。"""
+        profile = self._current_profile()
+        if profile is None:
+            QMessageBox.information(self, "快速创建", "请先选择连接。")
+            return None
+        if profile.database:
+            return profile.database
+        try:
+            dbs = [d["name"] for d in self._metadata.databases(profile)]
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "快速创建", f"读取库列表失败：{exc}")
+            return None
+        name, ok = QInputDialog.getItem(self, "快速创建", "选择库：", dbs, 0, False)
+        return name if ok and name else None
+
+    def _quick_create_object(self, what: str) -> None:
+        schema = self._resolve_current_schema()
+        if not schema:
+            return
+        profile = self._current_profile()
+        if what == "table":
+            name, ok = QInputDialog.getText(self, "新建表", f"在 `{schema}` 中新建表：", "new_table")
+            name = (name or "").strip()
+            if ok and name:
+                from magiccat.ui.table_designer import TableDesignerDialog
+
+                TableDesignerDialog(profile, schema, name, self._connections,
+                                    self, new_table=True).exec()
+                self.explorer.refresh_schema(profile.id, schema)
+        elif what == "view":
+            name, ok = QInputDialog.getText(self, "新建视图", f"在 `{schema}` 中新建视图：", "v_new")
+            name = (name or "").strip()
+            if ok and name:
+                editor = self._new_editor()
+                editor.setPlainText(
+                    f"CREATE VIEW `{schema.replace('`', '``')}`.`{name.replace('`', '``')}` AS\n"
+                    "SELECT ...  -- 填写查询")
+                index = self.editor_tabs.indexOf(editor)
+                self.editor_tabs.setTabText(index, name + "（视图）")
+                self._status("新建视图模板已生成：填写 SELECT 后「执行全部」创建", 8000)
+        elif what == "routine":
+            self._on_create_routine(profile.id, schema)
 
     def _build_actions(self) -> None:
         menu_conn = self.menuBar().addMenu("连接(&C)")
