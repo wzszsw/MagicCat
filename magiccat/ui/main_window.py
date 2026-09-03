@@ -165,6 +165,7 @@ class MainWindow(QMainWindow):
 
     def _on_profile_selected(self) -> None:
         profile = self._current_profile()
+        self.setWindowTitle(f"MagicCat — {profile.display_name}" if profile else "MagicCat")
         self._status(f"当前连接：{profile.name if profile else '未选择'}")
         if profile is not None:
             self._update_completion_words(profile)

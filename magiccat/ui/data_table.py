@@ -413,7 +413,7 @@ class DataTableWidget(QWidget):
         from magiccat.ui.transfer_dialogs import run_export
 
         run_export(self, self.profile, self.schema, self.table,
-                   self._data, self._metadata)
+                   self._data, self._metadata, where=self._where or None)
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,

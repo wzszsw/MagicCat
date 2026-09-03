@@ -44,8 +44,8 @@ class _Bus(QObject):
 
 
 def run_export(parent: QWidget, profile, schema: str, table: str,
-               data, metadata: MetadataService) -> None:
-    """导出当前表 → 文件（QFileDialog + 进度/取消）。"""
+               data, metadata: MetadataService, where: str | None = None) -> None:
+    """导出当前表 → 文件（QFileDialog + 进度/取消）。where 透传给查询（与视图筛选一致）。"""
     path_text, _filter = QFileDialog.getSaveFileName(
         parent, "导出表数据", f"{schema}.{table}", _FMT_FILTERS)
     if not path_text:
@@ -91,7 +91,8 @@ def run_export(parent: QWidget, profile, schema: str, table: str,
     bus.error.connect(on_error)
     run_async(
         lambda: transfer.export_table(profile, schema, table, path, fmt, data, metadata,
-                                      progress=bus.progress.emit, cancel=cancel_event),
+                                      where=where or "", progress=bus.progress.emit,
+                                      cancel=cancel_event),
         lambda result: bus.finished.emit(result),
         lambda err: bus.error.emit(err))
 
