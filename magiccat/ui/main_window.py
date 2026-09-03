@@ -140,8 +140,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
     def _build_quick_toolbar(self) -> None:
-        """对标 Navicat 顶部快速访问栏（图标+文字在下）：
-        连接/新建查询 | 表/视图/函数 | 用户/其它 | 查询/备份/自动运行/模型/BI。"""
+        """对标 Navicat 顶部快速访问栏（图标+文字在下）；仅放已实现功能，
+        未实现的（其它/BI）不放置。"""
         from magiccat.ui.icons import icon
 
         toolbar = QToolBar("快速访问")
@@ -156,13 +156,6 @@ class MainWindow(QMainWindow):
             act.triggered.connect(handler)
             toolbar.addAction(act)
 
-        def stub(text: str, kind: str) -> None:
-            def info() -> None:
-                QMessageBox.information(
-                    self, text, f"「{text}」为专业模块，当前版本规划中。")
-
-            quick(text, kind, info)
-
         quick("连接", "connection", self._add_connection)
         quick("新建查询", "new_query", self._new_editor)
         toolbar.addSeparator()
@@ -171,13 +164,11 @@ class MainWindow(QMainWindow):
         quick("函数", "function", lambda: self._quick_create_object("routine"))
         toolbar.addSeparator()
         quick("用户", "user", self._quick_user)
-        stub("其它", "other")
         toolbar.addSeparator()
         quick("查询", "query", self._new_editor)
         quick("备份", "backup", self._open_backup_dialog)
         quick("自动运行", "auto_run", self._open_task_dialog)
         quick("模型", "model", self._quick_model)
-        stub("BI", "bi")
 
     def _quick_user(self) -> None:
         """用户：打开用户管理面板（对标 Navicat）。"""
