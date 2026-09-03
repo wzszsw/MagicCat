@@ -14,10 +14,13 @@ from PySide6.QtWidgets import (
     QDockWidget,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QSplitter,
     QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from magiccat.models.profile import ConnectionProfile
@@ -54,7 +57,14 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("MagicCat")
         self.setWindowIcon(QIcon(app_icon_png()))
-        self.resize(1280, 820)
+        geometry = self._settings.get("geometry")
+        if isinstance(geometry, str) and geometry:
+            from PySide6.QtCore import QByteArray
+
+            if self.restoreGeometry(QByteArray.fromBase64(geometry.encode("ascii"))):
+                self.resize(1280, 820)
+        else:
+            self.resize(1280, 820)
         self._build_central()
         self._build_explorer_dock()
         self._build_actions()
@@ -63,6 +73,14 @@ class MainWindow(QMainWindow):
         self._new_editor()
         self.statusBar().showMessage("就绪")
         apply_theme(self, self._settings.get("theme", "light"))
+
+    def closeEvent(self, event) -> None:
+        try:
+            data = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            self._settings.set("geometry", data)
+        except Exception as exc:  # noqa: BLE001 —— 保存失败不影响退出
+            logger.warning("保存窗口几何失败: %s", exc)
+        super().closeEvent(event)
 
     # ---- 布局 ----
     def _build_central(self) -> None:
@@ -84,7 +102,17 @@ class MainWindow(QMainWindow):
         self.explorer.er_database_requested.connect(self._on_er_database)
         self.explorer.create_table_requested.connect(self._on_create_table)
         dock = QDockWidget("对象浏览器", self)
-        dock.setWidget(self.explorer)
+
+        container = QWidget()
+        box = QVBoxLayout(container)
+        box.setContentsMargins(3, 3, 3, 3)
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText("过滤 连接/库/表…")
+        self.filter_edit.setClearButtonEnabled(True)
+        self.filter_edit.textChanged.connect(self.explorer.apply_name_filter)
+        box.addWidget(self.filter_edit)
+        box.addWidget(self.explorer, 1)
+        dock.setWidget(container)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.explorer.load_profiles()
 

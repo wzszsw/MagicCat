@@ -232,6 +232,29 @@ class ObjectExplorer(QTreeWidget):
             return
         _replace_children(item, [_make_item(message, KIND_ERROR)])
 
+    # ---- 过滤 ----
+    def apply_name_filter(self, text: str) -> None:
+        """按名称过滤整棵树：节点自身或任意后代命中则保持可见（不自动展开/加载）。"""
+        keyword = text.strip().lower()
+        for i in range(self.topLevelItemCount()):
+            self._apply_filter(self.topLevelItem(i), keyword)
+
+    @staticmethod
+    def _apply_filter(item: QTreeWidgetItem, keyword: str) -> bool:
+        if keyword == "":
+            item.setHidden(False)
+            for c in range(item.childCount()):
+                ObjectExplorer._apply_filter(item.child(c), keyword)
+            return True
+        self_hit = keyword in item.text(0).lower()
+        any_child_hit = False
+        for c in range(item.childCount()):
+            if ObjectExplorer._apply_filter(item.child(c), keyword):
+                any_child_hit = True
+        visible = self_hit or any_child_hit
+        item.setHidden(not visible)
+        return visible
+
     # ---- 交互 ----
     def _on_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         info = _info(item)
