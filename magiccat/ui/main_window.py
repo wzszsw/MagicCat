@@ -376,9 +376,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "日志目录", f"打开失败：{exc}")
 
     def _about(self) -> None:
+        import magiccat
+
         QMessageBox.about(
             self, "关于 MagicCat",
-            f"<h3>MagicCat {__import__('magiccat').__version__}</h3>"
+            f"<h3>MagicCat {magiccat.__version__}</h3>"
             "<p>对标 Navicat 的跨数据库桌面管理工具（开发版）。</p>"
             "<p>技术栈：PySide6 · JPype(内嵌 JVM) · JDBC(HikariCP + mysql-connector-j)<br>"
             "首发支持：MySQL / MariaDB（Windows）</p>")

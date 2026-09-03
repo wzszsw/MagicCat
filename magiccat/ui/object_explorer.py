@@ -173,20 +173,22 @@ class ObjectExplorer(QTreeWidget):
                 cat = _make_item(f"视图 ({len(views)})", "category")
                 children.append(cat)
                 for v in views:
-                    cat.addChild(_make_item(v["name"], "view", schema=schema, table=v["name"]))
+                    cat.addChild(_make_item(v["name"], "view", schema=schema,
+                                            table=v["name"], name=v["name"]))
             if data["routines"]:
                 cat = _make_item(f"例程 ({len(data['routines'])})", "category")
                 children.append(cat)
                 for r in data["routines"]:
                     cat.addChild(_make_item(f"{r['type'].lower()} {r['name']}", "routine",
-                                            schema=schema, routine=r["name"]))
+                                            schema=schema, routine=r["name"],
+                                            name=r["name"], type=r["type"].upper()))
             if data["triggers"]:
                 cat = _make_item(f"触发器 ({len(data['triggers'])})", "category")
                 children.append(cat)
                 for tr in data["triggers"]:
                     cat.addChild(_make_item(
                         f"{tr['name']} [{tr['event']} ON {tr['table']}]", "trigger",
-                        schema=schema))
+                        schema=schema, name=tr["name"]))
             _replace_children(item, children)
             item.setToolTip(0, f"{len(tables)} 表 / {len(views)} 视图 / {len(data['routines'])} 例程")
 
@@ -283,6 +285,7 @@ class ObjectExplorer(QTreeWidget):
         action_refresh = action_edit = action_delete = action_design = None
         action_er = action_new_table = action_new_db = None
         action_truncate = action_drop = action_copy_ddl = None
+        action_obj_copy = action_obj_drop = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -302,6 +305,9 @@ class ObjectExplorer(QTreeWidget):
             menu.addSeparator()
             action_truncate = menu.addAction("清空表…")
             action_drop = menu.addAction("删除表…")
+        if kind in ("view", "routine", "trigger"):
+            action_obj_copy = menu.addAction("复制 CREATE 语句…")
+            action_obj_drop = menu.addAction("删除对象…")
         if kind == "database":
             action_er = menu.addAction("查看 ER 图…")
             menu.addSeparator()
@@ -335,6 +341,10 @@ class ObjectExplorer(QTreeWidget):
             self._new_database(item)
         elif chosen is action_truncate or chosen is action_drop:
             self._drop_or_truncate_table(item, truncate=chosen is action_truncate)
+        elif chosen is action_obj_copy:
+            self._copy_object_ddl(item)
+        elif chosen is action_obj_drop:
+            self._drop_object(item)
 
     def _er_database(self, item: QTreeWidgetItem) -> None:
         info = _info(item)
@@ -455,6 +465,78 @@ class ObjectExplorer(QTreeWidget):
 
         run_async(lambda: query.execute(profile, action_sql), done,
                   lambda err: QMessageBox.critical(self, f"{verb}表", err))
+
+    def _copy_object_ddl(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtWidgets import QMessageBox
+
+        from magiccat.services.ddl_service import DdlService
+
+        info = _info(item)
+        kind = info.get(KIND_KEY)
+        data = info.get(DATA_KEY, {})
+        profile = self._profile_of(item)
+        if profile is None or not data.get("name"):
+            return
+        schema, name = data["schema"], data["name"]
+        ddl = DdlService(self._connections)
+
+        def fetch() -> str:
+            if kind == "view":
+                return ddl.show_create_view(profile, schema, name)
+            if kind == "routine":
+                return ddl.show_create_routine(profile, schema, name,
+                                               data.get("type", "PROCEDURE"))
+            return ddl.show_create_trigger(profile, schema, name)
+
+        def done(sql: str) -> None:
+            QGuiApplication.clipboard().setText(sql)
+            QMessageBox.information(self, "复制 CREATE",
+                                    f"已复制到剪贴板（{len(sql)} 字符）。")
+
+        run_async(fetch, done,
+                  lambda err: QMessageBox.warning(self, "复制 CREATE", f"失败：{err}"))
+
+    def _drop_object(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        from magiccat.services.query_service import QueryService
+
+        info = _info(item)
+        kind = info.get(KIND_KEY)
+        data = info.get(DATA_KEY, {})
+        profile = self._profile_of(item)
+        if profile is None or not data.get("name"):
+            return
+        if kind == "view":
+            word = "VIEW"
+        elif kind == "trigger":
+            word = "TRIGGER"
+        elif kind == "routine":
+            word = data.get("type", "PROCEDURE")
+        else:
+            return
+        schema, name = data["schema"], data["name"]
+        sql = f"DROP {word} IF EXISTS `{schema}`.`{name}`"
+        if QMessageBox.question(
+                self, "删除对象", f"确定删除 {word} `{schema}`.{name}？\n\n{sql}",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        query = QueryService(self._connections)
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, "删除对象", errors[0]["message"])
+                return
+            db_item = item.parent().parent() if item.parent() else None
+            while db_item is not None and _info(db_item).get(KIND_KEY) != "database":
+                db_item = db_item.parent()
+            if db_item is not None:
+                self._load_database(db_item)
+
+        run_async(lambda: query.execute(profile, sql), done,
+                  lambda err: QMessageBox.critical(self, "删除对象", err))
 
     def _run_profile_action(self, profile: ConnectionProfile, fn, prefix: str) -> None:
         item = self.profile_item(profile.id)
