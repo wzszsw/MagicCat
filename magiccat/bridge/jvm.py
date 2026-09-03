@@ -9,20 +9,38 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 # 开发态：java-bridge/target/ 下由 Maven 产出的 jar（脚本 scripts/build_java.ps1）
 _DEV_BRIDGE_DIR = Path(__file__).resolve().parents[2] / "java-bridge" / "target"
 
-# 打包态：PyInstaller 解包目录或包内 jvm 资源（后续里程碑接入）
 _PKG_BRIDGE_DIR_ENV = "MAGICCAT_BRIDGE_DIR"
+
+
+def _frozen_base() -> Path:
+    """PyInstaller 解包目录（onedir 下为 _internal，onefile 下为临时解包目录）。"""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return Path(base)
+    return Path(sys.executable).resolve().parent
 
 
 def _resolve_bridge_dir() -> Path:
     env_dir = os.environ.get(_PKG_BRIDGE_DIR_ENV)
     if env_dir:
         return Path(env_dir)
+    if getattr(sys, "frozen", False):
+        return _frozen_base() / "jvm"
     return _DEV_BRIDGE_DIR
+
+
+def bundled_jre() -> Path | None:
+    """打包内嵌 JRE（jlink 产物）路径；未打包/未找到返回 None。"""
+    candidate = _resolve_bridge_dir() / "runtime"
+    if (candidate / "bin" / "server" / "jvm.dll").exists():
+        return candidate
+    return None
 
 
 def discover_classpath(bridge_dir: Path | None = None) -> list[str]:
@@ -59,8 +77,18 @@ class BridgeRuntime:
             "-Dfile.encoding=UTF-8",
             "-Dorg.slf4j.simpleLogger.defaultLogLevel=warn",
         ]
+        # 优先使用打包内嵌 JRE，其次允许 MAGICCAT_JAVA_HOME，最后交给 JPype 自动探测
+        jvm_path = None
+        jre = bundled_jre()
+        if jre is not None:
+            jvm_path = str(jre / "bin" / "server" / "jvm.dll")
+        elif os.environ.get("MAGICCAT_JAVA_HOME"):
+            jvm_path = str(Path(os.environ["MAGICCAT_JAVA_HOME"])
+                           / "bin" / "server" / "jvm.dll")
+        if jvm_path is None:
+            jvm_path = jpype.getDefaultJVMPath()
         # JPype 从调用 Java 时释放 GIL；JVM 崩溃无法热重启 —— 由调用方兜底提示
-        jpype.startJVM(jpype.getDefaultJVMPath(), *args, classpath=classpath, convertStrings=True)
+        jpype.startJVM(jvm_path, *args, classpath=classpath, convertStrings=True)
         self._started = True
 
     def jclass(self, fqcn: str):

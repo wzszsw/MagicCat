@@ -39,3 +39,8 @@ testpaths = ["tests"]
 # HotSpot JVM 在 Windows 上使用 SEH 做隐式空指针检查，pytest 的 faulthandler
 # 会拦截并误报 “access violation” 崩溃 —— 禁用以获得干净输出（测试本身通过）。
 addopts = "-p no:faulthandler"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22.2",
+]

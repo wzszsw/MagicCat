@@ -25,6 +25,9 @@ packaging/output/
 # Local dev data (MAGICCAT_HOME)
 .devdata/
 
+# PyInstaller 生成的 spec（本工程用命令行参数驱动）
+MagicCat.spec
+
 # OS / misc
 .DS_Store
 Thumbs.db
