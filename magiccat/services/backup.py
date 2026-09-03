@@ -84,8 +84,9 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
                     data: DataService, metadata: MetadataService,
                     ddl,  # DdlService
                     progress: ProgressCb | None = None,
-                    cancel: threading.Event | None = None) -> dict:
-    """全库备份：基础表(结构+数据) + 视图 + 存储过程/函数 + 触发器 → 单个 .sql。
+                    cancel: threading.Event | None = None,
+                    with_data: bool = True) -> dict:
+    """全库备份：基础表(结构+数据，with_data=False 时仅结构) + 视图 + 例程 + 触发器。
 
     返回 {tables, rows, views, routines, triggers, cancelled}。
     """
@@ -116,23 +117,24 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
             f.write(build_create(schema, table, columns, indexes, fks) + ";\n")
             qtable = _qname(schema, table)
             headers = [c["name"] for c in columns]
-            offset = 0
-            while True:
-                _check(cancel)
-                page = data.load_page(profile, schema, table, offset=offset, limit=1000)
-                rows = page["rows"]
-                for row in rows:
-                    values = []
-                    for name, v in zip(headers, row):
-                        if v is None or v == "" and nullable.get(name, False):
-                            values.append("NULL")
-                        else:
-                            values.append(_sql_string(v))
-                    f.write(f"INSERT INTO {qtable} VALUES ({', '.join(values)});\n")
-                total_rows += len(rows)
-                if len(rows) < 1000:
-                    break
-                offset += 1000
+            if with_data:
+                offset = 0
+                while True:
+                    _check(cancel)
+                    page = data.load_page(profile, schema, table, offset=offset, limit=1000)
+                    rows = page["rows"]
+                    for row in rows:
+                        values = []
+                        for name, v in zip(headers, row):
+                            if v is None or v == "" and nullable.get(name, False):
+                                values.append("NULL")
+                            else:
+                                values.append(_sql_string(v))
+                        f.write(f"INSERT INTO {qtable} VALUES ({', '.join(values)});\n")
+                    total_rows += len(rows)
+                    if len(rows) < 1000:
+                        break
+                    offset += 1000
             done_tables += 1
             if progress:
                 progress(done_tables, len(tables),

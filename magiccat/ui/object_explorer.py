@@ -348,6 +348,10 @@ class ObjectExplorer(QTreeWidget):
             menu.addSeparator()
             action_new_table = menu.addAction("新建表…")
             action_new_db = menu.addAction("新建数据库…")
+            menu.addSeparator()
+            dump_menu = menu.addMenu("转储 SQL 文件…")
+            act_dump_all = dump_menu.addAction("结构和数据…")
+            act_dump_schema = dump_menu.addAction("仅结构…")
 
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is None:
@@ -370,6 +374,10 @@ class ObjectExplorer(QTreeWidget):
             self._copy_create_sql(item)
         elif chosen is action_er:
             self._er_database(item)
+        elif chosen is act_dump_all:
+            self._dump_database(item, with_data=True)
+        elif chosen is act_dump_schema:
+            self._dump_database(item, with_data=False)
         elif chosen is action_new_table:
             self._new_table(item)
         elif chosen is action_new_db:
@@ -597,6 +605,61 @@ class ObjectExplorer(QTreeWidget):
             return
         self._queries.delete(profile_id, name)
         self.refresh_queries(profile_id)
+
+    def _dump_database(self, item: QTreeWidgetItem, with_data: bool) -> None:
+        """转储整个数据库为 SQL 文件（对标 Navicat：结构和数据 / 仅结构）。"""
+        import threading
+        from pathlib import Path
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+
+        from magiccat.services import backup
+        from magiccat.services.data_service import DataService
+        from magiccat.services.ddl_service import DdlService
+
+        info = _info(item)
+        schema = info[DATA_KEY]["schema"]
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        path, _f = QFileDialog.getSaveFileName(self, "转储 SQL 文件", f"{schema}.sql",
+                                               "SQL 脚本 (*.sql)")
+        if not path:
+            return
+        ev = threading.Event()
+        dialog = QProgressDialog("正在转储…", "取消", 0, 0, self)
+        dialog.setWindowTitle(f"转储 {schema}")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(300)
+        dialog.canceled.connect(ev.set)
+        dialog.setValue(0)
+
+        def fetch() -> dict:
+            return backup.dump_schema_sql(
+                profile, schema, Path(path), DataService(self._connections),
+                MetadataService(self._connections), DdlService(self._connections),
+                cancel=ev, with_data=with_data)
+
+        def done(res: dict) -> None:
+            dialog.close()
+            if res.get("cancelled"):
+                QMessageBox.information(self, "转储", "已取消。")
+                return
+            rows_note = f" · {res['rows']} 行数据" if with_data else "（仅结构）"
+            QMessageBox.information(
+                self, "转储",
+                f"完成：{res['tables']} 表 / {res['views']} 视图 / "
+                f"{res['routines']} 例程 / {res['triggers']} 触发器{rows_note} →\n{path}")
+
+        def error(err: str) -> None:
+            dialog.close()
+            if "TransferCancelled" in err:
+                QMessageBox.information(self, "转储", "已取消。")
+            else:
+                QMessageBox.critical(self, "转储", f"失败：{err}")
+
+        run_async(fetch, done, error)
 
     def _run_profile_action(self, profile: ConnectionProfile, fn, prefix: str) -> None:
         item = self.profile_item(profile.id)
