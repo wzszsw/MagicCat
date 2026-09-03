@@ -53,3 +53,13 @@ class MetadataService:
 
     def foreign_keys(self, profile: ConnectionProfile, schema: str, table: str) -> list[dict]:
         return self._meta(profile, "foreignKeys", schema, table)
+
+    # ---- 全库批查（避免“逐表循环查”的 N+1，结果按 table_name 归组由调用方聚合） ----
+    def schema_columns(self, profile: ConnectionProfile, schema: str) -> list[dict]:
+        return self._meta(profile, "schemaColumns", schema)
+
+    def schema_indexes(self, profile: ConnectionProfile, schema: str) -> list[dict]:
+        return self._meta(profile, "schemaIndexes", schema)
+
+    def schema_foreign_keys(self, profile: ConnectionProfile, schema: str) -> list[dict]:
+        return self._meta(profile, "schemaForeignKeys", schema)

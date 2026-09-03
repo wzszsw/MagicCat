@@ -104,15 +104,34 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"-- MagicCat 全库备份 · {schema}\n\n")
+
+        # 结构元数据一次批查（避免逐表循环查 columns/indexes/fks 的 N+1）
+        cols_by, idx_rows_by, fk_rows_by = {}, {}, {}
+        try:
+            for r in metadata.schema_columns(profile, schema):
+                cols_by.setdefault(r["table_name"], []).append(
+                    {k: v for k, v in r.items() if k != "table_name"})
+            for r in metadata.schema_indexes(profile, schema):
+                idx_rows_by.setdefault(r["table_name"], []).append(r)
+            for r in metadata.schema_foreign_keys(profile, schema):
+                fk_rows_by.setdefault(r["table_name"], []).append(r)
+        except Exception:  # noqa: BLE001 —— 不支持批查的产品回退逐表（仍正确，仅更慢）
+            cols_by = idx_rows_by = fk_rows_by = None
+
         # 1) 表：结构 + 数据
         for table in tables:
             _check(cancel)
-            columns = metadata.columns(profile, schema, table)
+            if cols_by is not None:
+                columns = cols_by.get(table, [])
+                indexes = group_indexes(idx_rows_by.get(table, []))
+                fks = group_foreign_keys(fk_rows_by.get(table, []))
+            else:
+                columns = metadata.columns(profile, schema, table)
+                indexes = group_indexes(metadata.indexes(profile, schema, table))
+                fks = group_foreign_keys(metadata.foreign_keys(profile, schema, table))
             if not columns:
                 continue
             nullable = {c["name"]: c.get("nullable") == "YES" for c in columns}
-            indexes = group_indexes(metadata.indexes(profile, schema, table))
-            fks = group_foreign_keys(metadata.foreign_keys(profile, schema, table))
             f.write(f"-- 表 {table}\n")
             f.write(build_create(schema, table, columns, indexes, fks) + ";\n")
             qtable = _qname(schema, table)

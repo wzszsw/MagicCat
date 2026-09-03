@@ -130,6 +130,53 @@ public final class MetadataApi {
                 new String[] {schema, table}, 0);
     }
 
+    /** 全库列一次批查（避免“逐表循环查列”的 N+1）：额外带 table_name，按表内序排。 */
+    public static String schemaColumns(String configId, String schema) {
+        return ConnectionRegistry.executeJson(
+                configId,
+                "SELECT TABLE_NAME AS table_name, COLUMN_NAME AS name, "
+                        + "COLUMN_TYPE AS data_type, IS_NULLABLE AS nullable, "
+                        + "COLUMN_KEY AS `key`, COLUMN_DEFAULT AS default_value, "
+                        + "EXTRA AS extra, CHARACTER_SET_NAME AS charset, "
+                        + "COLLATION_NAME AS collation, COLUMN_COMMENT AS comment, "
+                        + "ORDINAL_POSITION AS ordinal FROM information_schema.COLUMNS "
+                        + "WHERE TABLE_SCHEMA = ? "
+                        + "ORDER BY TABLE_NAME, ORDINAL_POSITION",
+                new String[] {schema}, 0);
+    }
+
+    /** 全库索引一次批查：额外带 table_name。 */
+    public static String schemaIndexes(String configId, String schema) {
+        return ConnectionRegistry.executeJson(
+                configId,
+                "SELECT TABLE_NAME AS table_name, INDEX_NAME AS index_name, "
+                        + "NON_UNIQUE AS non_unique, SEQ_IN_INDEX AS seq, "
+                        + "COLUMN_NAME AS column_name, INDEX_TYPE AS index_type "
+                        + "FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? "
+                        + "ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
+                new String[] {schema}, 0);
+    }
+
+    /** 全库外键一次批查：额外带 table_name。 */
+    public static String schemaForeignKeys(String configId, String schema) {
+        return ConnectionRegistry.executeJson(
+                configId,
+                "SELECT kcu.TABLE_NAME AS table_name, "
+                        + "kcu.CONSTRAINT_NAME AS constraint_name, "
+                        + "kcu.COLUMN_NAME AS column_name, "
+                        + "kcu.REFERENCED_TABLE_NAME AS ref_table, "
+                        + "kcu.REFERENCED_COLUMN_NAME AS ref_column, "
+                        + "rc.UPDATE_RULE AS on_update, rc.DELETE_RULE AS on_delete "
+                        + "FROM information_schema.KEY_COLUMN_USAGE kcu "
+                        + "LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc "
+                        + "ON rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA "
+                        + "AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                        + "WHERE kcu.TABLE_SCHEMA = ? "
+                        + "AND kcu.REFERENCED_TABLE_NAME IS NOT NULL "
+                        + "ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
+                new String[] {schema}, 0);
+    }
+
     /** 索引列表：index_name, non_unique, seq, column_name, index_type。 */
     public static String indexes(String configId, String schema, String table) {
         return isMySqlFamily(configId)
