@@ -23,6 +23,7 @@ from magiccat.models.profile import ConnectionProfile
 from magiccat.services.connection_service import ConnectionService
 from magiccat.services.runtime import get_runtime
 from magiccat.services.sql_text import split_sql_statements
+from magiccat.utils.errors import format_exc
 
 
 class QueryService:
@@ -81,7 +82,7 @@ class QueryService:
                     data = {
                         "kind": "error",
                         "sql": stmt,
-                        "message": f"{type(exc).__name__}: {exc}",
+                        "message": format_exc(exc),
                         "time_ms": round((time.perf_counter() - started) * 1000, 1),
                         "cancelled": False,
                     }

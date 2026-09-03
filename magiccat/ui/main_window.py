@@ -175,6 +175,10 @@ class MainWindow(QMainWindow):
         self.act_dark.triggered.connect(self._toggle_theme)
 
         menu_help = self.menuBar().addMenu("帮助(&H)")
+        act_shortcuts = menu_help.addAction("快捷键说明…")
+        act_shortcuts.triggered.connect(self._show_shortcuts)
+        act_logdir = menu_help.addAction("打开日志目录…")
+        act_logdir.triggered.connect(self._open_log_dir)
         act_about = menu_help.addAction("关于 MagicCat…")
         act_about.triggered.connect(self._about)
 
@@ -345,6 +349,31 @@ class MainWindow(QMainWindow):
                 editor.insertPlainText(("\n" if editor.toPlainText().strip() else "") + sql)
 
         SnippetDialog(SnippetStore.default(), insert, self).exec()
+
+    def _show_shortcuts(self) -> None:
+        QMessageBox.information(self, "快捷键", (
+            "<b>执行/编辑</b><br>"
+            "F5 / Ctrl+Enter — 执行当前语句或选中<br>"
+            "Ctrl+Shift+Enter — 执行全部<br>"
+            "Ctrl+Space — 补全<br>"
+            "Ctrl+T — 新建查询标签<br>"
+            "Ctrl+W — 关闭当前标签<br><br>"
+            "<b>数据页</b><br>"
+            "点击表头 — 排序切换<br>"
+            "单元格双击 — 编辑（保存按钮提交）<br>"
+            "右键 — 复制(TSV)/导出 CSV"))
+
+    def _open_log_dir(self) -> None:
+        from magiccat.services.profile_store import ProfileStore
+
+        log_dir = ProfileStore.default().root / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            import os
+
+            os.startfile(str(log_dir))
+        except OSError as exc:
+            QMessageBox.warning(self, "日志目录", f"打开失败：{exc}")
 
     def _about(self) -> None:
         QMessageBox.about(

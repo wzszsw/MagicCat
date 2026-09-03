@@ -15,6 +15,8 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 
+from magiccat.utils.errors import format_exc
+
 
 class _Signals(QObject):
     done = Signal(object)
@@ -32,7 +34,7 @@ class _Task(QRunnable):
         try:
             result = self._fn()
         except Exception as exc:  # noqa: BLE001 —— 边界错误统一走 error 信号
-            self._signals.error.emit(f"{type(exc).__name__}: {exc}")
+            self._signals.error.emit(format_exc(exc))
         else:
             self._signals.done.emit(result)
 
