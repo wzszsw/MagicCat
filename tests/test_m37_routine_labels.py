@@ -59,10 +59,12 @@ def test_tree_routine_labels(qtbot, mysql_env, connection_service):
             node = db_item()
             if node is None:
                 return False
-            texts = [node.child(i).text(0) for i in range(node.childCount())]
-            joined = "\n".join(texts)
-            return ("函数 (2)" in joined and "存储过程" not in joined
-                    and "例程" not in joined)
+            cats = [node.child(i).text(0) for i in range(node.childCount())]
+            # 分类常驻：表/视图/函数/触发器/查询/备份；函数节点含 2 个例程
+            func_cat = next((c for i, c in enumerate(cats) if c == "函数"), None)
+            joined = "\n".join(cats)
+            return (func_cat is not None and node.child(cats.index("函数")).childCount() == 2
+                    and "存储过程" not in joined and "例程" not in joined)
 
         qtbot.waitUntil(got, timeout=25_000)
     finally:

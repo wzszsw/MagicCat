@@ -189,48 +189,58 @@ class ObjectExplorer(QTreeWidget):
             tables = self._metadata.tables(profile, schema)
             routines = self._metadata.routines(profile, schema)
             triggers = self._metadata.triggers(profile, schema)
-            return {"tables": tables, "routines": routines, "triggers": triggers}
+            queries = [q for q in self._queries.list(profile.id) if (q.get("schema") or "") == schema]
+            return {"tables": tables, "routines": routines, "triggers": triggers,
+                    "queries": queries}
 
         def done(data: dict) -> None:
             if item.treeWidget() is None:
                 return
-            children: list[QTreeWidgetItem] = []
             tables = [t for t in data["tables"] if t["type"] == "BASE TABLE"]
             views = [v for v in data["tables"] if v["type"] == "VIEW"]
-            if tables:
-                cat = _make_item(f"表 ({len(tables)})", "category")
-                children.append(cat)
-                for t in tables:
-                    ti = _make_item(t["name"], "table", schema=schema, table=t["name"])
-                    _placeholder(ti)
-                    cat.addChild(ti)
-            if views:
-                cat = _make_item(f"视图 ({len(views)})", "category")
-                children.append(cat)
-                for v in views:
-                    cat.addChild(_make_item(v["name"], "view", schema=schema,
-                                            table=v["name"], name=v["name"]))
-            if data["routines"]:
-                cat = _make_item(f"函数 ({len(data['routines'])})", "category")
-                children.append(cat)
-                for r in data["routines"]:
-                    cat.addChild(_make_item(r["name"], "routine", schema=schema,
-                                            routine=r["name"], name=r["name"],
-                                            type=r["type"].upper()))
-            else:
-                # 常驻“函数”节点（Navicat 亦然：空库也保留，便于右键新建函数）
-                children.append(_make_item("函数 (0)", "category"))
-            if data["triggers"]:
-                cat = _make_item(f"触发器 ({len(data['triggers'])})", "category")
-                children.append(cat)
-                for tr in data["triggers"]:
-                    cat.addChild(_make_item(
-                        f"{tr['name']} [{tr['event']} ON {tr['table']}]", "trigger",
-                        schema=schema, name=tr["name"]))
+            children: list[QTreeWidgetItem] = []
+
+            # 表
+            cat = _make_item("表", "category")
+            children.append(cat)
+            for t in tables:
+                ti = _make_item(t["name"], "table", schema=schema, table=t["name"])
+                _placeholder(ti)
+                cat.addChild(ti)
+            # 视图（常驻，空则显示占位）
+            cat = _make_item("视图", "category")
+            children.append(cat)
+            for v in views:
+                cat.addChild(_make_item(v["name"], "view", schema=schema,
+                                        table=v["name"], name=v["name"]))
+            # 函数（常驻）
+            cat = _make_item("函数", "category")
+            children.append(cat)
+            for r in data["routines"]:
+                cat.addChild(_make_item(r["name"], "routine", schema=schema,
+                                        routine=r["name"], name=r["name"],
+                                        type=r["type"].upper()))
+            # 查询（该库的具名查询，常驻）
+            cat = _make_item("查询", "category", schema=schema)
+            children.append(cat)
+            for q in data["queries"]:
+                cat.addChild(_make_item(q["name"], "saved_query", profile_id=profile.id,
+                                        name=q["name"], schema=q.get("schema", "")))
+            # 触发器（空库也保留，但多数为空）
+            cat = _make_item("触发器", "category")
+            children.append(cat)
+            for tr in data["triggers"]:
+                cat.addChild(_make_item(
+                    f"{tr['name']} [{tr['event']} ON {tr['table']}]", "trigger",
+                    schema=schema, name=tr["name"]))
+            # 备份（对标 Navicat 备份节点，保留骨架）
+            cat = _make_item("备份", "category")
+            children.append(cat)
+
             _replace_children(item, children)
             item.setToolTip(
                 0, f"{len(tables)} 表 / {len(views)} 视图 / {len(data['routines'])} 函数 / "
-                   f"{len(data['triggers'])} 触发器")
+                   f"{len(data['triggers'])} 触发器 / 查询 {len(data['queries'])}")
 
         run_async(fetch, done, lambda err: self._show_error(item, f"读取失败：{err}"))
 
