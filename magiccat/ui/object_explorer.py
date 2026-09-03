@@ -62,6 +62,8 @@ class ObjectExplorer(QTreeWidget):
     er_database_requested = Signal(str, str)  # profile_id, schema
     create_table_requested = Signal(str, str)  # profile_id, schema
     open_saved_query = Signal(str, str)  # profile_id, name
+    create_routine_requested = Signal(str, str, str, str)  # profile_id, schema, kind, name
+    create_routine_entry = Signal(str, str)  # profile_id, schema（弹向导）
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -211,6 +213,9 @@ class ObjectExplorer(QTreeWidget):
                     cat.addChild(_make_item(r["name"], "routine", schema=schema,
                                             routine=r["name"], name=r["name"],
                                             type=r["type"].upper()))
+            else:
+                # 常驻“函数”节点（Navicat 亦然：空库也保留，便于右键新建函数）
+                children.append(_make_item("函数 (0)", "category"))
             if data["triggers"]:
                 cat = _make_item(f"触发器 ({len(data['triggers'])})", "category")
                 children.append(cat)
@@ -320,7 +325,7 @@ class ObjectExplorer(QTreeWidget):
         action_truncate = action_drop = action_copy_ddl = None
         action_obj_copy = action_obj_drop = None
         action_open_query = action_del_query = None
-        action_run_sql = None
+        action_run_sql = action_new_routine = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -340,14 +345,19 @@ class ObjectExplorer(QTreeWidget):
             menu.addSeparator()
             action_truncate = menu.addAction("清空表…")
             action_drop = menu.addAction("删除表…")
+        if kind == "query_folder":
+            action_refresh = menu.addAction("刷新")
         if kind == "saved_query":
             action_open_query = menu.addAction("打开")
             action_del_query = menu.addAction("删除…")
+        if kind == "category" and item.text(0).startswith("函数"):
+            action_new_routine = menu.addAction("新建函数…")
         if kind in ("view", "routine", "trigger"):
             action_obj_copy = menu.addAction("复制 CREATE 语句…")
             action_obj_drop = menu.addAction("删除对象…")
         if kind == "database":
             action_run_sql = menu.addAction("运行 SQL 文件…")
+            action_new_routine = menu.addAction("新建函数…")
             action_er = menu.addAction("查看 ER 图…")
             menu.addSeparator()
             action_new_table = menu.addAction("新建表…")
@@ -388,6 +398,8 @@ class ObjectExplorer(QTreeWidget):
             self._new_table(item)
         elif chosen is action_new_db:
             self._new_database(item)
+        elif chosen is action_new_routine:
+            self._new_routine(item)
         elif chosen is action_truncate or chosen is action_drop:
             self._drop_or_truncate_table(item, truncate=chosen is action_truncate)
         elif chosen is action_obj_copy:
@@ -450,6 +462,22 @@ class ObjectExplorer(QTreeWidget):
         profile = self._profile_of(item)
         if profile is not None:
             self.create_table_requested.emit(profile.id, info[DATA_KEY]["schema"])
+
+    def _new_routine(self, item: QTreeWidgetItem) -> None:
+        """「新建函数…」：向上找到所属库，交由主窗口弹函数向导。"""
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        schema = None
+        cur: QTreeWidgetItem | None = item
+        while cur is not None:
+            info = _info(cur)
+            if info.get(KIND_KEY) == "database":
+                schema = info.get(DATA_KEY, {}).get("schema")
+                break
+            cur = cur.parent()
+        if schema:
+            self.create_routine_entry.emit(profile.id, schema)
 
     def _new_database(self, item: QTreeWidgetItem) -> None:
         from PySide6.QtWidgets import QInputDialog, QMessageBox

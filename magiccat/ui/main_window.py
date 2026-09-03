@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self.explorer.er_database_requested.connect(self._on_er_database)
         self.explorer.create_table_requested.connect(self._on_create_table)
         self.explorer.open_saved_query.connect(self._open_saved_query)
+        self.explorer.create_routine_entry.connect(self._on_create_routine)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -614,6 +615,54 @@ class MainWindow(QMainWindow):
             self.profile_combo.setCurrentIndex(idx)
         self._status(f"已打开查询「{name}」（{profile.display_name}"
                      f"{' · ' + record['schema'] if record.get('schema') else ''}）", 5000)
+
+    def _on_create_routine(self, profile_id: str, schema: str) -> None:
+        """函数向导：选 过程/函数 + 名称 → 编辑器生成模板 SQL。"""
+        from magiccat.ui.routine_wizard import RoutineWizardDialog
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        dialog = RoutineWizardDialog(self)
+        if not dialog.exec():
+            return
+        self._open_routine_template(profile, schema, dialog.kind(), dialog.name())
+
+    def _open_routine_template(self, profile, schema: str, kind: str, name: str) -> None:
+        def ident(n: str) -> str:
+            return "`" + n.replace("`", "``") + "`"
+
+        qname = f"{ident(schema)}.{ident(name)}"
+        if kind == "FUNCTION":
+            body = (
+                "DELIMITER $$\n"
+                f"CREATE FUNCTION {qname}() RETURNS INT\n"
+                "DETERMINISTIC\n"
+                "BEGIN\n"
+                "    RETURN 1;\n"
+                "END$$\n"
+                "DELIMITER ;\n")
+        else:
+            body = (
+                "DELIMITER $$\n"
+                f"CREATE PROCEDURE {qname}()\n"
+                "BEGIN\n"
+                "    -- TODO: 编写过程体\n"
+                "    SELECT 1;\n"
+                "END$$\n"
+                "DELIMITER ;\n")
+        editor = self._new_editor()
+        editor.setPlainText(body)
+        index = self.editor_tabs.indexOf(editor)
+        label = name + ("（函数）" if kind == "FUNCTION" else "（过程）")
+        self.editor_tabs.setTabText(index, label)
+        idx = self.profile_combo.findData(profile.id)
+        if idx >= 0:
+            self.profile_combo.setCurrentIndex(idx)
+        verb = "函数" if kind == "FUNCTION" else "过程"
+        self._status(
+            f"已生成「{verb} {schema}.{name}」模板：填写内容后「执行全部」即可创建"
+            "（体含分号，编辑器支持 DELIMITER 语法）", 8000)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)
