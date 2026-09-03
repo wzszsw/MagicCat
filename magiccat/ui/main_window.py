@@ -116,12 +116,10 @@ class MainWindow(QMainWindow):
         self.schema_combo.setMinimumWidth(150)
         bar.addWidget(self.schema_combo)
         bar.addSpacing(8)
+        # 查询领域“编辑态”专属操作：保存 + 基本执行（美化/全部/解释在菜单+快捷键）
         self._query_btn("保存查询", self._save_query_dialog, bar)
-        self._query_btn("美化", self._format_sql, bar)
         self._query_btn("运行", self._run_current, bar)
-        self._query_btn("全部", self._run_all, bar)
         self._query_btn("停止", self._cancel_execution, bar)
-        self._query_btn("解释", self._explain_current, bar)
         bar.addStretch(1)
         work_lay.addLayout(bar)
 
