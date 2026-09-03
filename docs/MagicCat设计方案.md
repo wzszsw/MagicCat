@@ -318,10 +318,38 @@ MagicCat/
 
 ---
 
-## 附录 A：待 M1 确认的技术细节清单
+## 附录 B：实施状态（持续更新）
 
+| 里程碑 | 内容 | 状态 | 关键验证 |
+|---|---|---|---|
+| M0 | 方案评审 | ✅ | 本文档 |
+| M1 | JPype→HikariCP→MySQL 全链路 POC | ✅ | `scripts/poc_m1.py` 一次通过（MySQL 8.4.7） |
+| M2 | 连接管理（DPAPI 加密）+ 对象浏览 | ✅ | pytest：加密回环 / 元数据 / Qt 对象树异步加载 |
+| M3 | SQL 编辑器（高亮/补全/多标签/历史/美化）+ 多结果集 | ✅ | 真实建表-插入-查询-错误不中断 |
+| M4 | 数据页（分页/主键编辑/增删行/筛选/排序）+ 表设计器（ALTER 预览/应用） | ✅ | CRUD / 无主键只读 / DDL 片段生成 |
+| M5 | 导入导出 CSV/Excel/JSON/SQL | ✅ | 四格式回读 + CSV 导入 + SQL 回灌 |
+| M6 | 主题、ER 图、SQL 备份/恢复、收藏/复制 | ✅ | ER PNG 导出；备份→删表→恢复→FK 仍生效 |
+| M7 | Windows 打包：PyInstaller + jlink 内嵌 JRE + 图标 | ✅ | `MagicCat.exe --selftest` 在无系统 Java 下 `jre_bundled:true` |
+| M8 | 打磨：收藏/复制/关于/图标/README | ✅ | 25 项自动化测试全绿 |
+
+- 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
+- 每日开发命令与打包命令见 README。
+
+## 附录 C：已确认/解决的问题记录（防回归）
+
+1. **跨线程 Qt 信号丢失**：QRunnable 被回收即销毁信号 QObject → 模块级 `_pending` 持有引用（`ui/job.py`）。
+2. **PySide6 6.11 在本机 QtCore DLL 报 procedure-not-found** → 锁定 6.8 LTS（pyproject 注释）。
+3. **pytest faulthandler 误报 JVM SEH 访问异常** → `-p no:faulthandler`。
+4. **JPype 不自动转换 list→String[]** → 显式 `to_java_string_array()`。
+5. **FK 规则列在 REFERENTIAL_CONSTRAINTS**（非 KEY_COLUMN_USAGE）→ LEFT JOIN。
+6. **PyInstaller 冻结态资源定位**：`magiccat/resources.py` 按 `_MEIPASS` 解析；JVM/jar 按 `_MEIPASS/jvm`。
+
+---
+
+## 附录 A：待进一步确认的技术细节清单
+
+- [x] PyInstaller + JPype + jlink 的组合打包冒烟（M7a 已通过，见附录 B）
 - [ ] JPype 调用长 SQL 时 GIL/线程实测行为（UI 是否全程无感）
 - [ ] `stmt.cancel()` 对 mysql-connector-j 的实际效果，是否需要 `KILL QUERY`
-- [ ] PyInstaller + JPype + jlink 的组合打包冒烟
 - [ ] 大 BLOB / 大文本在 ResultSet 上的取数策略实测
 - [ ] Decimal/datetime 在 JPype 自动转换下的精度与时区行为

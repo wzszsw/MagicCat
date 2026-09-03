@@ -20,8 +20,10 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 
+    from magiccat.resources import app_icon_png
     from magiccat.services.connection_service import ConnectionService
     from magiccat.services.metadata_service import MetadataService
     from magiccat.services.profile_store import ProfileStore
@@ -30,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("MagicCat")
     app.setOrganizationName("MagicCat")
+    app.setWindowIcon(QIcon(app_icon_png()))
 
     connections = ConnectionService(ProfileStore.default())
     metadata = MetadataService(connections)

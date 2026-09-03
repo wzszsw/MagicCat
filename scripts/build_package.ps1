@@ -45,8 +45,10 @@ Write-Host "==> 4) PyInstaller 打包"
     --name MagicCat `
     --console `
     --paths $root `
+    --icon (Join-Path $root "magiccat\resources\app_icon.ico") `
     --collect-all jpype `
     --add-data "$stage;jvm" `
+    --add-data (Join-Path $root "magiccat\resources;magiccat\resources") `
     (Join-Path $root "packaging\magiccat_main.py")
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败 (exit $LASTEXITCODE)" }
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from magiccat.models.profile import ConnectionProfile
+from magiccat.resources import app_icon_png
 from magiccat.services.connection_service import ConnectionService
 from magiccat.services.history import HistoryStore
 from magiccat.services.metadata_service import MetadataService
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
         self._tab_seq = 0
 
         self.setWindowTitle("MagicCat")
+        self.setWindowIcon(QIcon(app_icon_png()))
         self.resize(1280, 820)
         self._build_central()
         self._build_explorer_dock()
