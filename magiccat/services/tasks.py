@@ -115,8 +115,9 @@ def run_backup_task(task: Task, profile: ConnectionProfile, connections: Connect
     result = backup.dump_schema_sql(
         profile, task.schema, path,
         DataService(connections), MetadataService(connections), DdlService(connections))
-    text = (f"OK 表{result['tables']}/视图{result['views']}/例程{result['routines']}"
-            f"/触发器{result['triggers']} · {result['rows']} 行 → {path.name}")
+    text = (f"OK 表{result['tables']}/视图{result['views']}/"
+            f"函数+存储过程{result['routines']}/触发器{result['triggers']} · "
+            f"{result['rows']} 行 → {path.name}")
     return text
 
 

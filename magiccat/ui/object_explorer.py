@@ -204,13 +204,22 @@ class ObjectExplorer(QTreeWidget):
                 for v in views:
                     cat.addChild(_make_item(v["name"], "view", schema=schema,
                                             table=v["name"], name=v["name"]))
-            if data["routines"]:
-                cat = _make_item(f"例程 ({len(data['routines'])})", "category")
+            procs = [r for r in data["routines"] if r["type"].upper() == "PROCEDURE"]
+            funcs = [r for r in data["routines"] if r["type"].upper() == "FUNCTION"]
+            if procs:
+                cat = _make_item(f"存储过程 ({len(procs)})", "category")
                 children.append(cat)
-                for r in data["routines"]:
-                    cat.addChild(_make_item(f"{r['type'].lower()} {r['name']}", "routine",
-                                            schema=schema, routine=r["name"],
-                                            name=r["name"], type=r["type"].upper()))
+                for r in procs:
+                    cat.addChild(_make_item(r["name"], "routine", schema=schema,
+                                            routine=r["name"], name=r["name"],
+                                            type="PROCEDURE"))
+            if funcs:
+                cat = _make_item(f"函数 ({len(funcs)})", "category")
+                children.append(cat)
+                for r in funcs:
+                    cat.addChild(_make_item(r["name"], "routine", schema=schema,
+                                            routine=r["name"], name=r["name"],
+                                            type="FUNCTION"))
             if data["triggers"]:
                 cat = _make_item(f"触发器 ({len(data['triggers'])})", "category")
                 children.append(cat)
@@ -219,7 +228,9 @@ class ObjectExplorer(QTreeWidget):
                         f"{tr['name']} [{tr['event']} ON {tr['table']}]", "trigger",
                         schema=schema, name=tr["name"]))
             _replace_children(item, children)
-            item.setToolTip(0, f"{len(tables)} 表 / {len(views)} 视图 / {len(data['routines'])} 例程")
+            item.setToolTip(
+                0, f"{len(tables)} 表 / {len(views)} 视图 / {len(funcs)} 函数 / "
+                   f"{len(procs)} 存储过程 / {len(data['triggers'])} 触发器")
 
         run_async(fetch, done, lambda err: self._show_error(item, f"读取失败：{err}"))
 
@@ -654,7 +665,7 @@ class ObjectExplorer(QTreeWidget):
             QMessageBox.information(
                 self, "转储",
                 f"完成：{res['tables']} 表 / {res['views']} 视图 / "
-                f"{res['routines']} 例程 / {res['triggers']} 触发器{rows_note} →\n{path}")
+                f"{res['routines']} 函数+存储过程 / {res['triggers']} 触发器{rows_note} →\n{path}")
 
         def error(err: str) -> None:
             dialog.close()
