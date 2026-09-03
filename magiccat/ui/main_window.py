@@ -167,11 +167,15 @@ class MainWindow(QMainWindow):
 
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
-        """「对象」页显示浏览态（编辑动作按钮隐藏）；编辑器标签显示编辑态。"""
-        is_browse = self.editor_tabs.widget(index) is self.domain_stack
+        """顶部动作行随当前激活标签类型切换：
+        - 查询编辑器标签 → 显示编辑态动作（保存/运行/停止）；
+        - 「对象」页 / 表等其它标签 → 隐藏编辑态动作。
+        返回「对象」页时刷新查询列表。"""
+        widget = self.editor_tabs.widget(index)
+        is_editor = isinstance(widget, SqlEditorWidget)
         for btn in self._edit_actions:
-            btn.setVisible(not is_browse)
-        if is_browse:
+            btn.setVisible(is_editor)
+        if widget is self.domain_stack:
             self._reload_query_browse()
 
     def _show_query_domain(self) -> None:
