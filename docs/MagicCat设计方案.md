@@ -352,6 +352,7 @@ MagicCat/
 | M29 | 表设计器索引增删（普通/UNIQUE；列随删时跳过冗余 DROP） | ✅ | 加/删索引端到端 + 不重建未变索引 |
 | M30 | 表设计器外键增删（单列；ON DELETE/UPDATE 规则） | ✅ | CASCADE 加/删端到端 + 规则断言 |
 | M31 | 数据页批量粘贴 TSV（Excel 复制到单元格区域，标记待保存） | ✅ | 两行两列 dirty 断言 |
+| M32 | 具名查询库（对标 Navicat “查询”：树节点/另存/打开/删除，绑定连接+库） | ✅ | 存取覆盖/树节点/编辑器打开 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

@@ -61,12 +61,16 @@ class ObjectExplorer(QTreeWidget):
     design_table_requested = Signal(str, str, str)  # profile_id, schema, table
     er_database_requested = Signal(str, str)  # profile_id, schema
     create_table_requested = Signal(str, str)  # profile_id, schema
+    open_saved_query = Signal(str, str)  # profile_id, name
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
         super().__init__(parent)
         self._connections = connections
         self._metadata = metadata
+        from magiccat.services.query_library import QueryLibrary
+
+        self._queries = QueryLibrary.default()
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
@@ -134,14 +138,39 @@ class ObjectExplorer(QTreeWidget):
         def done(payload: tuple[str, list[dict]]) -> None:
             if item.treeWidget() is None:
                 return
-            _, dbs = payload
-            children = [_make_item(db["name"], "database", schema=db["name"]) for db in dbs]
-            for c in children:
+            profile_id, dbs = payload
+            children: list[QTreeWidgetItem] = [self._make_query_folder(profile_id)]
+            children += [_make_item(db["name"], "database", schema=db["name"]) for db in dbs]
+            for c in children[1:]:
                 _placeholder(c)
             _replace_children(item, children)
             item.setToolTip(0, f"{len(dbs)} 个数据库")
 
         run_async(fetch, done, lambda err: self._show_error(item, f"连接失败：{err}"))
+
+    def _make_query_folder(self, profile_id: str) -> QTreeWidgetItem:
+        folder = _make_item("查询", "query_folder", profile_id=profile_id)
+        self._populate_query_folder(folder)
+        return folder
+
+    def _populate_query_folder(self, folder: QTreeWidgetItem) -> None:
+        info = _info(folder)
+        profile_id = info.get(DATA_KEY, {}).get("profile_id")
+        if not profile_id:
+            return
+        _replace_children(folder, [
+            _make_item(q["name"], "saved_query", profile_id=profile_id,
+                       name=q["name"], schema=q.get("schema", ""))
+            for q in self._queries.list(profile_id)])
+
+    def refresh_queries(self, profile_id: str) -> None:
+        """保存/删除查询后刷新对应连接的“查询”文件夹。"""
+        for item in self._walk():
+            info = _info(item)
+            if (info.get(KIND_KEY) == "query_folder"
+                    and info.get(DATA_KEY, {}).get("profile_id") == profile_id):
+                self._populate_query_folder(item)
+                return
 
     def _load_database(self, item: QTreeWidgetItem) -> None:
         info = _info(item)
@@ -263,6 +292,8 @@ class ObjectExplorer(QTreeWidget):
         kind = info.get(KIND_KEY)
         if kind == "profile":
             item.setExpanded(not item.isExpanded())
+        elif kind == "saved_query":
+            self._open_saved_query_item(item)
         elif kind in ("table", "view"):
             profile = self._profile_of(item)
             if profile is not None:
@@ -286,6 +317,7 @@ class ObjectExplorer(QTreeWidget):
         action_er = action_new_table = action_new_db = None
         action_truncate = action_drop = action_copy_ddl = None
         action_obj_copy = action_obj_drop = None
+        action_open_query = action_del_query = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -305,6 +337,9 @@ class ObjectExplorer(QTreeWidget):
             menu.addSeparator()
             action_truncate = menu.addAction("清空表…")
             action_drop = menu.addAction("删除表…")
+        if kind == "saved_query":
+            action_open_query = menu.addAction("打开")
+            action_del_query = menu.addAction("删除…")
         if kind in ("view", "routine", "trigger"):
             action_obj_copy = menu.addAction("复制 CREATE 语句…")
             action_obj_drop = menu.addAction("删除对象…")
@@ -345,6 +380,10 @@ class ObjectExplorer(QTreeWidget):
             self._copy_object_ddl(item)
         elif chosen is action_obj_drop:
             self._drop_object(item)
+        elif chosen is action_open_query:
+            self._open_saved_query_item(item)
+        elif chosen is action_del_query:
+            self._delete_saved_query(item)
 
     def _er_database(self, item: QTreeWidgetItem) -> None:
         info = _info(item)
@@ -537,6 +576,27 @@ class ObjectExplorer(QTreeWidget):
 
         run_async(lambda: query.execute(profile, sql), done,
                   lambda err: QMessageBox.critical(self, "删除对象", err))
+
+    def _open_saved_query_item(self, item: QTreeWidgetItem) -> None:
+        info = _info(item)
+        data = info.get(DATA_KEY, {})
+        if data.get("profile_id") and data.get("name"):
+            self.open_saved_query.emit(data["profile_id"], data["name"])
+
+    def _delete_saved_query(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        info = _info(item)
+        data = info.get(DATA_KEY, {})
+        name = data.get("name")
+        profile_id = data.get("profile_id")
+        if not name or not profile_id:
+            return
+        if QMessageBox.question(self, "删除查询", f"删除查询「{name}」？"
+                                ) != QMessageBox.Yes:
+            return
+        self._queries.delete(profile_id, name)
+        self.refresh_queries(profile_id)
 
     def _run_profile_action(self, profile: ConnectionProfile, fn, prefix: str) -> None:
         item = self.profile_item(profile.id)

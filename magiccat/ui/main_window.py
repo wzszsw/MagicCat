@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         self.explorer.design_table_requested.connect(self._on_design_table)
         self.explorer.er_database_requested.connect(self._on_er_database)
         self.explorer.create_table_requested.connect(self._on_create_table)
+        self.explorer.open_saved_query.connect(self._open_saved_query)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -163,6 +164,9 @@ class MainWindow(QMainWindow):
         act_history.triggered.connect(self._insert_history)
         act_snippets = menu_query.addAction("SQL 收藏…")
         act_snippets.triggered.connect(self._open_snippets)
+        act_save_query = menu_query.addAction("保存查询…\tCtrl+Shift+S")
+        act_save_query.setShortcut("Ctrl+Shift+S")
+        act_save_query.triggered.connect(self._save_query_dialog)
         act_close = menu_query.addAction("关闭当前标签\tCtrl+W")
         act_close.setShortcut("Ctrl+W")
         act_close.triggered.connect(lambda: self._close_editor_tab(self.editor_tabs.currentIndex()))
@@ -571,6 +575,45 @@ class MainWindow(QMainWindow):
         self.result_panel.show_results(results)
         rows = sum(len(r.get("rows", [])) for r in results)
         self._status(f"执行计划完成（{rows} 行步骤）", 5000)
+
+    def _save_query_dialog(self) -> None:
+        """把当前编辑器另存为“具名查询”（对标 Navicat 查询库）。"""
+        from magiccat.services.query_library import QueryLibrary
+
+        profile = self._current_profile()
+        if profile is None:
+            QMessageBox.information(self, "保存查询", "请先在工具栏选择要保存到的连接。")
+            return
+        editor = self._active_editor()
+        if editor is None or not editor.toPlainText().strip():
+            QMessageBox.information(self, "保存查询", "编辑器没有可保存的内容。")
+            return
+        name, ok = QInputDialog.getText(
+            self, "保存查询", f"查询名称：保存位置：{profile.display_name} · "
+                              f"{profile.database or '默认'}")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        lib = QueryLibrary.default()
+        lib.save(profile.id, name, editor.toPlainText(), schema=profile.database or "")
+        self.explorer.refresh_queries(profile.id)
+        self._status(f"查询已保存：{name}（{profile.display_name}）", 5000)
+
+    def _open_saved_query(self, profile_id: str, name: str) -> None:
+        from magiccat.services.query_library import QueryLibrary
+
+        record = QueryLibrary.default().get(profile_id, name)
+        profile = self._connections.get(profile_id)
+        if record is None or profile is None:
+            return
+        editor = self._new_editor()
+        editor.setPlainText(record["content"])
+        self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor), name)
+        idx = self.profile_combo.findData(profile_id)
+        if idx >= 0:
+            self.profile_combo.setCurrentIndex(idx)
+        self._status(f"已打开查询「{name}」（{profile.display_name}"
+                     f"{' · ' + record['schema'] if record.get('schema') else ''}）", 5000)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)
