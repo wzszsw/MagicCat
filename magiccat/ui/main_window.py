@@ -129,14 +129,17 @@ class MainWindow(QMainWindow):
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
         self.editor_tabs.currentChanged.connect(self._on_query_tab_changed)
 
-        # 「对象」页 = 领域浏览栈：查询、表两个领域子页；其余领域后续逐个加入
+        # 「对象」页 = 领域浏览栈：查询、表、视图三个领域子页；其余领域后续逐个加入
         self.domain_stack = QStackedWidget()
         self._build_query_browse()
         self._build_table_browse()
+        self._build_view_browse()
         self.domain_stack.addWidget(self.browse_page)
         self.domain_stack.addWidget(self.table_page)
+        self.domain_stack.addWidget(self.view_page)
         self._domain_pages: dict[str, QWidget] = {
-            "queries": self.browse_page, "tables": self.table_page}
+            "queries": self.browse_page, "tables": self.table_page,
+            "views": self.view_page}
         self.editor_tabs.addTab(self.domain_stack, "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
@@ -179,6 +182,15 @@ class MainWindow(QMainWindow):
         self.table_page.new_table.connect(lambda: self._quick_create_object("table"))
         self.table_page.delete_table.connect(self._delete_table)
 
+    def _build_view_browse(self) -> None:
+        """视图领域「对象」子页：打开/新建/删除视图 + 当前库视图列表。"""
+        from magiccat.ui.view_browse import ViewBrowseView
+
+        self.view_page = ViewBrowseView()
+        self.view_page.open_view.connect(self._open_view)
+        self.view_page.new_view.connect(lambda: self._quick_create_object("view"))
+        self.view_page.delete_view.connect(self._delete_view)
+
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
         """顶部动作行随当前激活标签类型切换：
@@ -213,6 +225,8 @@ class MainWindow(QMainWindow):
             self._reload_query_browse()
         elif page is self.table_page:
             self._reload_table_browse()
+        elif page is self.view_page:
+            self._reload_view_browse()
         else:
             page.clear() if hasattr(page, "clear") else None
 
@@ -247,6 +261,27 @@ class MainWindow(QMainWindow):
 
         run_async(fetch, done, lambda err: self.table_page.ctx_label.setText(
             f"读取表失败：{err}"))
+
+    def _reload_view_browse(self, profile=None, schema: str = "") -> None:
+        """按当前连接/库刷新「视图」对象页列表（复用全库表批查，只取 VIEW）。"""
+        profile = profile or self._current_profile()
+        if profile is None:
+            self.view_page.clear()
+            self.view_page.ctx_label.setText("")
+            return
+        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        self.view_page.ctx_label.setText(
+            f"{profile.display_name} · {schema or '默认'}")
+
+        def fetch():
+            return [v for v in self._metadata.schema_tables(profile, schema)
+                    if v.get("type") == "VIEW"]
+
+        def done(rows: list[dict]) -> None:
+            self.view_page.load_views(profile.id, schema, rows)
+
+        run_async(fetch, done, lambda err: self.view_page.ctx_label.setText(
+            f"读取视图失败：{err}"))
 
     def _query_btn(self, text: str, handler, bar: QHBoxLayout):
         from PySide6.QtWidgets import QPushButton
@@ -311,7 +346,7 @@ class MainWindow(QMainWindow):
         quick("新建查询", "new_query", self._new_editor)
         toolbar.addSeparator()
         quick("表", "table", lambda: self._show_domain("tables"))
-        quick("视图", "view", lambda: self._quick_create_object("view"))
+        quick("视图", "view", lambda: self._show_domain("views"))
         quick("函数", "function", lambda: self._quick_create_object("routine"))
         toolbar.addSeparator()
         quick("用户", "user", self._quick_user)
@@ -754,6 +789,56 @@ class MainWindow(QMainWindow):
 
         run_async(lambda: QueryService(self._connections).execute(profile, sql),
                   done, lambda err: QMessageBox.critical(self, "删除表", err))
+
+    def _open_view(self, profile_id: str, schema: str, name: str) -> None:
+        """打开视图（对象页动作）：取 SHOW CREATE VIEW 定义，开到一个编辑器标签。"""
+        from magiccat.services.ddl_service import DdlService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        ddl = DdlService(self._connections)
+
+        def fetch() -> str:
+            return ddl.show_create_view(profile, schema, name)
+
+        def done(sql: str) -> None:
+            editor = self._new_editor()
+            editor.setPlainText(sql)
+            self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor),
+                                        f"{name}（视图）")
+            idx = self.profile_combo.findData(profile_id)
+            if idx >= 0:
+                self.profile_combo.setCurrentIndex(idx)
+            self._status(f"已打开视图「{name}」", 4000)
+
+        run_async(fetch, done,
+                  lambda err: QMessageBox.warning(self, "打开视图", f"失败：{err}"))
+
+    def _delete_view(self, profile_id: str, schema: str, name: str) -> None:
+        """删除视图（对象页动作）：确认后 DROP VIEW，并刷新「视图」对象页。"""
+        from magiccat.services.query_service import QueryService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        sql = f"DROP VIEW IF EXISTS `{schema}`.`{name}`"
+        if QMessageBox.question(
+                self, "删除视图",
+                f"确定删除视图 `{schema}`.{name}？\n\n{sql}",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, "删除视图", errors[0]["message"])
+                return
+            self._reload_view_browse(profile, schema)
+            self._status(f"视图已删除：{schema}.{name}", 4000)
+
+        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+                  done, lambda err: QMessageBox.critical(self, "删除视图", err))
 
     def _on_create_table(self, profile_id: str, schema: str) -> None:
         profile = self._connections.get(profile_id)
