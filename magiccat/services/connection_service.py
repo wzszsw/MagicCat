@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from magiccat.models.profile import ConnectionProfile
@@ -95,3 +96,10 @@ class ConnectionService:
             return Registry.ping(profile.id)
         finally:
             Registry.close(profile.id)
+
+    def server_info(self, profile: ConnectionProfile) -> dict:
+        """基于标准 JDBC DatabaseMetaData 的产品/版本/URL/用户等（需已打开）。"""
+        if not self.is_open(profile.id):
+            self.open(profile)
+        raw = get_runtime().jclass("com.magiccat.bridge.ServerInfoApi").info(profile.id)
+        return json.loads(raw)

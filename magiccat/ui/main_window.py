@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
             self.resize(1280, 820)
         self._build_central()
         self._build_explorer_dock()
+        self._build_info_dock()
         self._build_actions()
 
         self._reload_connection_combo()
@@ -124,6 +125,14 @@ class MainWindow(QMainWindow):
         dock.setWidget(container)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.explorer.load_profiles()
+
+    def _build_info_dock(self) -> None:
+        from magiccat.ui.connection_info_panel import ConnectionInfoPanel
+
+        self.info_panel = ConnectionInfoPanel(self._connections, self._metadata)
+        dock = QDockWidget("连接信息", self)
+        dock.setWidget(self.info_panel)
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
     def _build_actions(self) -> None:
         menu_conn = self.menuBar().addMenu("连接(&C)")
@@ -214,6 +223,7 @@ class MainWindow(QMainWindow):
         profile = self._current_profile()
         self.setWindowTitle(f"MagicCat — {profile.display_name}" if profile else "MagicCat")
         self._status(f"当前连接：{profile.name if profile else '未选择'}")
+        self.info_panel.show_profile(self.profile_combo.currentData() if profile else None)
         if profile is not None:
             self._update_completion_words(profile)
 
