@@ -22,6 +22,9 @@ build/
 packaging/output/
 *.spec.bak
 
+# Local dev data (MAGICCAT_HOME)
+.devdata/
+
 # OS / misc
 .DS_Store
 Thumbs.db

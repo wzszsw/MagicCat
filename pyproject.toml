@@ -9,7 +9,9 @@ description = "MagicCat —— 对标 Navicat 的跨数据库桌面管理工具�
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "PySide6>=6.7",
+    # 6.11 在本机（Windows 11 26200 + 运行库组合）出现 QtCore DLL “procedure not found”，
+    # 锁定稳定的 6.8 LTS 系列，见 M2 调试记录。
+    "pyside6>=6.8,<6.9",
     "JPype1>=1.5.0",
     "sqlparse>=0.5",
 ]
@@ -33,3 +35,6 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# HotSpot JVM 在 Windows 上使用 SEH 做隐式空指针检查，pytest 的 faulthandler
+# 会拦截并误报 “access violation” 崩溃 —— 禁用以获得干净输出（测试本身通过）。
+addopts = "-p no:faulthandler"

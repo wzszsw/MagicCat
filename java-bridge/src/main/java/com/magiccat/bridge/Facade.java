@@ -85,7 +85,7 @@ public final class Facade {
         }
     }
 
-    private static String cellToString(Object v) {
+    static String cellToString(Object v) {
         if (v == null) {
             return null;
         }
