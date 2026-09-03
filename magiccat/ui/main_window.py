@@ -281,8 +281,23 @@ class MainWindow(QMainWindow):
             lambda err: QMessageBox.warning(self, "测试连接", f"「{profile.name}」失败：\n{err}"))
 
     def _on_open_table(self, profile_id: str, schema: str, table: str) -> None:
-        # M4 将在此打开数据页；当前仅提示
-        self._status(f"待接入数据页：{schema}.{table}", 5000)
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        key = f"{schema}.{table}"
+        for i in range(self.editor_tabs.count()):
+            widget = self.editor_tabs.widget(i)
+            if getattr(widget, "tab_key", None) == key:
+                self.editor_tabs.setCurrentIndex(i)
+                return
+        from magiccat.services.data_service import DataService
+        from magiccat.ui.data_table import DataTableWidget
+
+        widget = DataTableWidget(profile, schema, table,
+                                 DataService(self._connections), self._metadata)
+        index = self.editor_tabs.addTab(widget, key)
+        self.editor_tabs.setCurrentIndex(index)
+        self._status(f"已打开表数据：{key}")
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)

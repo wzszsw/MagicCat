@@ -147,7 +147,7 @@ public final class ConnectionRegistry {
         return POOLS.keySet().toArray(new String[0]);
     }
 
-    private static HikariDataSource requirePool(String configId) {
+    static HikariDataSource requirePool(String configId) {
         HikariDataSource ds = POOLS.get(configId);
         if (ds == null) {
             throw new IllegalStateException("连接尚未打开或已被关闭: " + configId);

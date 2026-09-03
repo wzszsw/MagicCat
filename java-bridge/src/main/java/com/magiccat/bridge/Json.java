@@ -37,8 +37,8 @@ public final class Json {
         return b.toString();
     }
 
-    /** columns/rows 主体（不含外层大括号）："columns":[...],"rows":[[...]]。 */
-    private static String columnsRows(String[] columns, List<String[]> rows) {
+    /** 主体（不含首尾大括号）："columns":[...],"rows":[[...]]。 */
+    private static String body(String[] columns, List<String[]> rows) {
         StringBuilder b = new StringBuilder(256);
         b.append("\"columns\":[");
         for (int i = 0; i < columns.length; i++) {
@@ -66,18 +66,36 @@ public final class Json {
         return b.toString();
     }
 
-    /** 结果集表：{"columns":[...],"rows":[[...]]}，NULL 单元格为 null。 */
+    /** 结果集表：{"columns":[...],"rows":[...]}。 */
     public static String table(String[] columns, List<String[]> rows) {
-        return "{" + columnsRows(columns, rows);
+        return "{" + body(columns, rows);
     }
 
     /** 查询结果（带 kind=query，供 QueryService 区分）。 */
     public static String queryResult(String[] columns, List<String[]> rows) {
-        return "{\"kind\":\"query\"," + columnsRows(columns, rows);
+        return "{\"kind\":\"query\"," + body(columns, rows);
     }
 
     /** 更新结果：{"kind":"update","affected":N}。 */
     public static String updateResult(long affected) {
         return "{\"kind\":\"update\",\"affected\":" + Math.max(affected, 0) + "}";
+    }
+
+    /** 表数据页：{total,truncated,pk,kind,columns,rows}。 */
+    public static String dataset(String[] columns, List<String[]> rows, long total,
+                                 String[] pk, boolean truncated) {
+        StringBuilder b = new StringBuilder(256);
+        b.append("{\"total\":").append(total)
+                .append(",\"truncated\":").append(truncated)
+                .append(",\"pk\":[");
+        for (int i = 0; i < pk.length; i++) {
+            if (i > 0) {
+                b.append(',');
+            }
+            b.append(q(pk[i]));
+        }
+        b.append("],\"kind\":\"page\",");
+        b.append(body(columns, rows));
+        return b.toString();
     }
 }

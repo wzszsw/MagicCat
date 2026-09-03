@@ -236,9 +236,10 @@ class ObjectExplorer(QTreeWidget):
         if kind == "profile":
             item.setExpanded(not item.isExpanded())
         elif kind in ("table", "view"):
-            self.open_table_requested.emit(
-                info[DATA_KEY]["profile_id"] or self._profile_of(item).id,
-                info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
+            profile = self._profile_of(item)
+            if profile is not None:
+                self.open_table_requested.emit(
+                    profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
         elif kind == "database":
             item.setExpanded(not item.isExpanded())
 
