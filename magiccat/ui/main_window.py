@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         self.explorer.open_saved_query.connect(self._open_saved_query)
         self.explorer.create_routine_entry.connect(self._on_create_routine)
         self.explorer.open_routine_sql.connect(self._open_routine_sql)
+        self.explorer.selection_info_requested.connect(self._on_selection_info)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -825,6 +826,9 @@ class MainWindow(QMainWindow):
         self._status(
             f"已打开例程「{name}」定义：可查看/修改；改动后需先删除再执行创建"
             "（或用编辑器结合删除动作）, 双击即可再次查看", 8000)
+
+    def _on_selection_info(self, desc: dict) -> None:
+        self.info_panel.show_object(desc)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)

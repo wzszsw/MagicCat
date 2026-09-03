@@ -68,6 +68,7 @@ class ObjectExplorer(QTreeWidget):
     create_routine_requested = Signal(str, str, str, str)  # profile_id, schema, kind, name
     create_routine_entry = Signal(str, str)  # profile_id, schema（弹向导）
     open_routine_sql = Signal(str, str, str)  # profile_id, name, sql_text
+    selection_info_requested = Signal(object)  # 当前选中项描述 dict
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -82,6 +83,51 @@ class ObjectExplorer(QTreeWidget):
         self.customContextMenuRequested.connect(self._show_menu)
         self.itemExpanded.connect(self._on_expanded)
         self.itemDoubleClicked.connect(self._on_double_clicked)
+        self.currentItemChanged.connect(self._on_selection_changed)
+
+    # ---- 选中项信息（信息面板联动） ----
+    def _on_selection_changed(self, current: QTreeWidgetItem | None,
+                              _previous: QTreeWidgetItem | None = None) -> None:
+        if current is None:
+            return
+        info = _info(current)
+        kind = info.get(KIND_KEY)
+        data = info.get(DATA_KEY, {})
+        if kind == "profile":
+            desc = {"kind": "profile", "profile_id": data.get("profile_id")}
+        else:
+            profile = self._profile_of(current)
+            if profile is None:
+                return
+            pid = profile.id
+            if kind == "database":
+                desc = {"kind": "database", "profile_id": pid, "schema": data.get("schema")}
+            elif kind in ("table", "view"):
+                desc = {"kind": kind, "profile_id": pid, "schema": data.get("schema"),
+                        "table": data.get("table"), "name": data.get("name")}
+            elif kind == "routine":
+                desc = {"kind": "routine", "profile_id": pid, "schema": data.get("schema"),
+                        "name": data.get("name"), "type": data.get("type", "")}
+            elif kind == "trigger":
+                desc = {"kind": "trigger", "profile_id": pid, "schema": data.get("schema"),
+                        "name": data.get("name")}
+            elif kind == "column":
+                desc = {"kind": "column", "profile_id": pid, "schema": data.get("schema"),
+                        "name": data.get("name"),
+                        "data_type": data.get("data_type", ""),
+                        "nullable": data.get("nullable", ""),
+                        "default": data.get("default_value", ""),
+                        "comment": data.get("comment", "")}
+            elif kind == "group":
+                desc = {"kind": "group", "name": current.text(0)}
+            elif kind == "category":
+                desc = {"kind": "category", "name": current.text(0)}
+            elif kind == "saved_query":
+                desc = {"kind": "saved_query", "profile_id": pid,
+                        "schema": data.get("schema"), "name": data.get("name")}
+            else:
+                return
+        self.selection_info_requested.emit(desc)
 
     # ---- 装载 ----
     def load_profiles(self) -> None:
@@ -272,7 +318,12 @@ class ObjectExplorer(QTreeWidget):
                 tip = (f"{c.get('data_type')} · nullable={c.get('nullable')}"
                        f" · default={c.get('default_value')} · extra={c.get('extra')}"
                        f" · comment={c.get('comment') or '-'}")
-                leaf = _make_item(f"{c['name']}  {c['data_type']}", "column")
+                leaf = _make_item(f"{c['name']}  {c['data_type']}", "column",
+                                  schema=schema, name=c["name"],
+                                  data_type=c.get("data_type", ""),
+                                  nullable=c.get("nullable", ""),
+                                  default_value=c.get("default_value") or "",
+                                  comment=c.get("comment") or "")
                 leaf.setToolTip(0, tip)
                 children.append(leaf)
             _replace_children(item, children)

@@ -1,12 +1,9 @@
-"""连接信息面板（M26）：对标 Navicat 右侧“元数据面板”。
-
-静态项来自连接配置；动态项来自标准 JDBC DatabaseMetaData（服务端产品/版本/驱动/URL/用户等）。
-数据在后台线程加载，完成回填；未选中连接时显示占位。
-"""
+"""连接信息/对象信息面板（M26+）：连接完整信息；选中对象时展示该对象信息（Navicat 行为）。"""
 
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -66,6 +63,92 @@ class ConnectionInfoPanel(QWidget):
         btn_refresh = QPushButton("刷新")
         btn_refresh.clicked.connect(lambda: self.show_profile(self._profile_id))
         root.addWidget(btn_refresh)
+
+    # ---- 选中对象信息（Navicat 信息面板行为） ----
+    _KIND_LABEL: ClassVar[dict[str, str]] = {"database": "数据库", "table": "表",
+                                             "view": "视图", "routine": "函数",
+                                             "trigger": "触发器", "column": "列",
+                                             "group": "分组", "category": "分类",
+                                             "saved_query": "具名查询"}
+
+    def show_object(self, desc: dict) -> None:
+        """对象树选中某项 → 展示该对象信息（连接有完整信息，对象展示各自字段）。"""
+        kind = desc.get("kind")
+        if kind == "profile":
+            self.show_profile(desc.get("profile_id"))
+            return
+        if desc.get("profile_id"):
+            self._profile_id = desc["profile_id"]
+        for label in self._labels.values():
+            label.setText("—")
+        name = desc.get("name") or (desc.get("schema") or "")
+        schema = desc.get("schema") or ""
+        self._labels["服务器名称"].setText(name)
+        self._labels["服务器版本"].setText(self._KIND_LABEL.get(kind, kind or ""))
+        self._labels["初始数据库"].setText(schema)
+
+        if kind == "database":
+            self.title.setText(f"数据库 · {schema}")
+            self._load_database_detail(schema)
+        elif kind in ("table", "view"):
+            self.title.setText(f"{'视图' if kind == 'view' else '表'} · {name}")
+            self._load_table_detail(desc)
+        elif kind == "column":
+            self.title.setText(f"列 · {name}")
+            detail = (f"类型：{desc.get('data_type', '')}\n可空：{desc.get('nullable', '')}\n"
+                      f"默认：{desc.get('default', '')}\n注释：{desc.get('comment', '')}")
+            self._labels["备注"].setText(detail)
+        elif kind == "routine":
+            self.title.setText(f"{'过程' if desc.get('type') == 'PROCEDURE' else '函数'} · {name}")
+        elif kind == "trigger":
+            self.title.setText(f"触发器 · {name}")
+        elif kind == "saved_query":
+            self.title.setText(f"具名查询 · {name}")
+
+    def _profile_of_desc(self, desc: dict):
+        return self._connections.get(desc.get("profile_id")) if desc.get("profile_id") else None
+
+    def _load_database_detail(self, schema: str) -> None:
+        profile = self._connections.get(self._profile_id) if self._profile_id else None
+        if profile is None:
+            return
+        from magiccat.services.query_service import QueryService
+
+        def fetch() -> list:
+            return QueryService(self._connections).execute(profile, (
+                "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
+                f"FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '{schema}'"))[0]
+
+        def done(res: dict) -> None:
+            row = res.get("rows", [])
+            if row:
+                self._labels["备注"].setText(
+                    f"默认字符集：{row[0][0]}\n默认排序规则：{row[0][1]}")
+
+        run_async(fetch, done, lambda err: None)
+
+    def _load_table_detail(self, desc: dict) -> None:
+        profile = self._profile_of_desc(desc)
+        if profile is None:
+            return
+        from magiccat.services.query_service import QueryService
+
+        schema, table = desc["schema"], desc.get("table") or desc.get("name")
+
+        def fetch() -> list:
+            return QueryService(self._connections).execute(profile, (
+                "SELECT ENGINE, TABLE_ROWS, TABLE_COLLATION, TABLE_COMMENT "
+                "FROM information_schema.TABLES "
+                f"WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'"))[0]
+
+        def done(res: dict) -> None:
+            row = res.get("rows", [])
+            if row:
+                self._labels["备注"].setText(
+                    f"引擎：{row[0][0]}\n估计行数：{row[0][1]}\n"
+                    f"字符集/排序：{row[0][2]}\n注释：{row[0][3] or '-'}")
+
+        run_async(fetch, done, lambda err: None)
 
     def show_profile(self, profile_id: str | None) -> None:
         self._profile_id = profile_id
