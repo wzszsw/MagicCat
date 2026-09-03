@@ -119,7 +119,8 @@ class MainWindow(QMainWindow):
         # 查询领域“编辑态”专属操作：保存 + 基本执行（美化/全部/解释在菜单+快捷键）
         self._query_btn("保存查询", self._save_query_dialog, bar)
         self._query_btn("运行", self._run_current, bar)
-        self._query_btn("停止", self._cancel_execution, bar)
+        self.query_stop_btn = self._query_btn("停止", self._cancel_execution, bar)
+        self.query_stop_btn.setEnabled(False)
         bar.addStretch(1)
         work_lay.addLayout(bar)
 
