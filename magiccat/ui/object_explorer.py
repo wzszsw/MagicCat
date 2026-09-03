@@ -318,6 +318,7 @@ class ObjectExplorer(QTreeWidget):
         action_truncate = action_drop = action_copy_ddl = None
         action_obj_copy = action_obj_drop = None
         action_open_query = action_del_query = None
+        action_run_sql = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -344,6 +345,7 @@ class ObjectExplorer(QTreeWidget):
             action_obj_copy = menu.addAction("复制 CREATE 语句…")
             action_obj_drop = menu.addAction("删除对象…")
         if kind == "database":
+            action_run_sql = menu.addAction("运行 SQL 文件…")
             action_er = menu.addAction("查看 ER 图…")
             menu.addSeparator()
             action_new_table = menu.addAction("新建表…")
@@ -374,6 +376,8 @@ class ObjectExplorer(QTreeWidget):
             self._copy_create_sql(item)
         elif chosen is action_er:
             self._er_database(item)
+        elif chosen is action_run_sql:
+            self._run_sql_file(item)
         elif chosen is act_dump_all:
             self._dump_database(item, with_data=True)
         elif chosen is act_dump_schema:
@@ -658,6 +662,52 @@ class ObjectExplorer(QTreeWidget):
                 QMessageBox.information(self, "转储", "已取消。")
             else:
                 QMessageBox.critical(self, "转储", f"失败：{err}")
+
+        run_async(fetch, done, error)
+
+    def _run_sql_file(self, item: QTreeWidgetItem) -> None:
+        """运行 SQL 文件（以当前库为默认目标；未加库前缀的语句落到该库）。"""
+        from pathlib import Path
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+
+        from magiccat.services import backup
+        from magiccat.services.query_service import QueryService
+
+        info = _info(item)
+        schema = info[DATA_KEY]["schema"]
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        path, _f = QFileDialog.getOpenFileName(self, "运行 SQL 文件", "",
+                                               "SQL 脚本 (*.sql);;所有文件 (*)")
+        if not path:
+            return
+        dialog = QProgressDialog("正在执行 SQL 文件…", None, 0, 0, self)
+        dialog.setWindowTitle(f"运行 SQL 文件 · {schema}")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(300)
+        dialog.setValue(0)
+
+        def fetch() -> dict:
+            return backup.restore_sql_file(profile, Path(path),
+                                           QueryService(self._connections), schema=schema)
+
+        def done(res: dict) -> None:
+            dialog.close()
+            if res["ok"]:
+                QMessageBox.information(self, "运行 SQL 文件",
+                                        f"完成：{res['statements']} 条语句执行成功。")
+            else:
+                QMessageBox.warning(
+                    self, "运行 SQL 文件",
+                    f"{res['statements']} 条语句中 {len(res['errors'])} 条失败：\n"
+                    + "\n".join(res["errors"]))
+
+        def error(err: str) -> None:
+            dialog.close()
+            QMessageBox.critical(self, "运行 SQL 文件", f"失败：{err}")
 
         run_async(fetch, done, error)
 

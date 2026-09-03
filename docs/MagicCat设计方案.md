@@ -356,6 +356,7 @@ MagicCat/
 | M33 | 数据库转储 SQL 文件（库右键：结构和数据 / 仅结构，后台+取消） | ✅ | 两模式 INSERT 断言 |
 | M34 | Bugfix：连接信息面板启动黑块（QScrollArea 视口自填充 + 深色 QSS 覆盖） | ✅ | autofill 标志回归 |
 | M35 | 转储 SQL 保持 schema 级；标准层 catalog/schema 映射收敛（MySQL=catalog 走信息层，PG 走 catalog=null+schema） | ✅ | 71 回归全绿 |
+| M36 | 运行 SQL 文件…（库节点；以该库为默认目标，未加前缀语句落地正确） | ✅ | 任意 SQL + 目标库断言 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
