@@ -58,6 +58,7 @@ class ObjectExplorer(QTreeWidget):
     """连接与数据库对象导航树。"""
 
     open_table_requested = Signal(str, str, str)  # profile_id, schema, table
+    design_table_requested = Signal(str, str, str)  # profile_id, schema, table
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -254,7 +255,7 @@ class ObjectExplorer(QTreeWidget):
 
         menu = QMenu(self)
         action_test = action_open = action_close = None
-        action_refresh = action_edit = action_delete = None
+        action_refresh = action_edit = action_delete = action_design = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -268,6 +269,8 @@ class ObjectExplorer(QTreeWidget):
             action_delete = menu.addAction("删除连接…")
         elif kind in ("database", "table", "view", "routine", "trigger", "category"):
             action_refresh = menu.addAction("刷新")
+        if kind == "table":
+            action_design = menu.addAction("设计表…")
 
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is None:
@@ -284,6 +287,16 @@ class ObjectExplorer(QTreeWidget):
             self._edit_profile(profile)
         elif chosen is action_delete:
             self._delete_profile(profile)
+        elif chosen is action_design:
+            self._design_table(item)
+
+    def _design_table(self, item: QTreeWidgetItem) -> None:
+        info = _info(item)
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        self.design_table_requested.emit(
+            profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
 
     def _run_profile_action(self, profile: ConnectionProfile, fn, prefix: str) -> None:
         item = self.profile_item(profile.id)

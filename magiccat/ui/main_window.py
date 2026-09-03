@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
     def _build_explorer_dock(self) -> None:
         self.explorer = ObjectExplorer(self._connections, self._metadata)
         self.explorer.open_table_requested.connect(self._on_open_table)
+        self.explorer.design_table_requested.connect(self._on_design_table)
         dock = QDockWidget("对象浏览器", self)
         dock.setWidget(self.explorer)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
@@ -298,6 +299,15 @@ class MainWindow(QMainWindow):
         index = self.editor_tabs.addTab(widget, key)
         self.editor_tabs.setCurrentIndex(index)
         self._status(f"已打开表数据：{key}")
+
+    def _on_design_table(self, profile_id: str, schema: str, table: str) -> None:
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        from magiccat.ui.table_designer import TableDesignerDialog
+
+        dialog = TableDesignerDialog(profile, schema, table, self._connections, self)
+        dialog.exec()
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)

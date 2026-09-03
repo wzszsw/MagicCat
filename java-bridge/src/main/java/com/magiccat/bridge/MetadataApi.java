@@ -80,14 +80,18 @@ public final class MetadataApi {
     public static String foreignKeys(String configId, String schema, String table) {
         return ConnectionRegistry.executeJson(
                 configId,
-                "SELECT CONSTRAINT_NAME AS constraint_name, COLUMN_NAME AS column_name, "
-                        + "REFERENCED_TABLE_NAME AS ref_table, "
-                        + "REFERENCED_COLUMN_NAME AS ref_column, "
-                        + "UPDATE_RULE AS on_update, DELETE_RULE AS on_delete "
-                        + "FROM information_schema.KEY_COLUMN_USAGE "
-                        + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? "
-                        + "AND REFERENCED_TABLE_NAME IS NOT NULL "
-                        + "ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION",
+                "SELECT kcu.CONSTRAINT_NAME AS constraint_name, "
+                        + "kcu.COLUMN_NAME AS column_name, "
+                        + "kcu.REFERENCED_TABLE_NAME AS ref_table, "
+                        + "kcu.REFERENCED_COLUMN_NAME AS ref_column, "
+                        + "rc.UPDATE_RULE AS on_update, rc.DELETE_RULE AS on_delete "
+                        + "FROM information_schema.KEY_COLUMN_USAGE kcu "
+                        + "LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc "
+                        + "ON rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA "
+                        + "AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                        + "WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ? "
+                        + "AND kcu.REFERENCED_TABLE_NAME IS NOT NULL "
+                        + "ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
                 new String[] {schema, table}, 0);
     }
 }
