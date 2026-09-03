@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 
 
@@ -14,29 +15,56 @@ def _q(name: str) -> str:
     return "`" + str(name).replace("`", "``") + "`"
 
 
+# MySQL 函数式/关键字默认值（应原样输出，不能被引号包裹）
+_DEFAULT_KEYWORDS = re.compile(
+    r"(?i)^(?:current_timestamp(?:\(\d*\))?|now(?:\(\d*\))?|localtimestamp(?:\(\d*\))?"
+    r"|localtime(?:\(\d*\))?|utc_timestamp(?:\(\d*\))?|sysdate(?:\(\d*\))?"
+    r"|curdate\(\)|curtime(?:\(\d*\))?|uuid\(\))$")
+
+
 def _default_literal(value: str | None) -> str:
-    """默认值字面量：数字/表达式/已引号包裹的原样；其余单引号包裹并转义。"""
+    """默认值字面量：数字/表达式/关键字(如 CURRENT_TIMESTAMP)/已引号包裹的原样；
+    其余（字符串）单引号包裹并转义。"""
     if value is None:
         return ""
     v = value.strip()
     if v == "" or v.upper() == "NULL":
         return ""
-    if v.startswith(("(", "'", '"')) or v.replace(".", "", 1).isdigit():
+    if v.startswith(("(", "'", '"')) or _DEFAULT_KEYWORDS.match(v):
+        return v
+    if v.replace(".", "", 1).isdigit():
         return v
     return "'" + v.replace("'", "''") + "'"
 
 
 def column_def(col: dict) -> str:
-    """单列定义文本（不含 KEY 前缀，可作 ADD/MODIFY COLUMN 的右部）。"""
+    """单列定义文本（不含 KEY 前缀，可作 ADD/MODIFY COLUMN 的右部）。
+
+    除类型/非空/默认外，尽量保留服务器元数据细节：
+    字符集/排序规则、AUTO_INCREMENT、ON UPDATE CURRENT_TIMESTAMP、注释。
+    """
     parts = [_q(col["name"]), col["data_type"]]
+    charset = (col.get("charset") or "").strip()
+    collation = (col.get("collation") or "").strip()
+    if charset:
+        parts.append(f"CHARACTER SET {charset}")
+    if collation:
+        parts.append(f"COLLATE {collation}")
     nullable = col.get("nullable", "NO") != "YES"
     if nullable and col.get("key") != "PRI":
         parts.append("NOT NULL")
     default = _default_literal(col.get("default_value"))
     if default:
         parts.append("DEFAULT " + default)
-    if "auto_increment" in (col.get("extra") or "").lower():
+    extra = (col.get("extra") or "").lower()
+    if "auto_increment" in extra:
         parts.append("AUTO_INCREMENT")
+    if "on update" in extra:
+        # MySQL EXTRA 形如 "... on update CURRENT_TIMESTAMP(...)"；取 CURRENT_TIMESTAMP 段
+        segment = re.search(r"on update\s+(CURRENT_TIMESTAMP(?:\([^)]*\))?)",
+                            extra, re.IGNORECASE)
+        if segment:
+            parts.append("ON UPDATE " + segment.group(1).upper())
     comment = (col.get("comment") or "").strip()
     if comment:
         parts.append("COMMENT " + "'" + comment.replace("'", "''") + "'")
