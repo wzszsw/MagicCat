@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Java / Maven
+target/
+*.class
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Packaging outputs
+dist/
+build/
+packaging/output/
+*.spec.bak
+
+# OS / misc
+.DS_Store
+Thumbs.db
+*.log

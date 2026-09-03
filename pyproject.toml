@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magiccat"
+version = "0.1.0"
+description = "MagicCat —— 对标 Navicat 的跨数据库桌面管理工具（PySide6 + JPype + JDBC）"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6>=6.7",
+    "JPype1>=1.5.0",
+    "sqlparse>=0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.4",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+magiccat = "magiccat.app:main"
+
+[tool.setuptools.packages.find]
+include = ["magiccat*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
