@@ -158,6 +158,55 @@ def _query() -> QImage:
     return image
 
 
+def _run() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(QColor("#4E9A5A")))
+    p.drawPolygon(QPolygonF([QPointF(3.5, 2), QPointF(13.5, 8), QPointF(3.5, 14)]))
+    p.end()
+    return image
+
+
+def _stop() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#8A3B3B"), 1.0))
+    p.setBrush(QBrush(QColor("#D9534F")))
+    p.drawRoundedRect(QRectF(3, 3, 10, 10), 2, 2)
+    p.end()
+    return image
+
+
+def _new_query() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#2B5F9E"), 1.0))
+    p.setBrush(QBrush(QColor("#FFFFFF")))
+    p.drawRoundedRect(QRectF(2.5, 1.5, 9, 12), 1, 1)
+    p.setPen(QPen(QColor("#3B82F6"), 1.0))
+    for y in (4.5, 7.0, 9.5):
+        p.drawLine(4.5, y, 9.5, y)
+    p.setBrush(QBrush(QColor("#F5C518")))
+    p.setPen(Qt.NoPen)
+    p.drawEllipse(QRectF(9.5, 9.5, 5.5, 5.5))
+    p.end()
+    return image
+
+
+def _save() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#2E5A77"), 1.0))
+    p.setBrush(QBrush(QColor("#7EB8DC")))
+    p.drawRoundedRect(QRectF(2.5, 2, 11, 12), 2, 2)
+    p.setBrush(QBrush(QColor("#FFFFFF")))
+    p.drawRect(QRectF(4.5, 3.5, 7, 4.5))
+    p.drawRect(QRectF(4.5, 9.5, 7, 3.5))
+    p.end()
+    return image
+
+
 @cache
 def _icon_image(kind: str, subtype: str = "") -> QImage | None:
     if kind == "function" or (kind == "routine" and subtype != "PROCEDURE"):
@@ -176,6 +225,14 @@ def _icon_image(kind: str, subtype: str = "") -> QImage | None:
         return _connection()
     if kind in ("saved_query", "query"):
         return _query()
+    if kind == "run":
+        return _run()
+    if kind == "stop":
+        return _stop()
+    if kind == "new_query":
+        return _new_query()
+    if kind == "save":
+        return _save()
     if kind in ("query_folder", "category"):
         return _folder(_COLORS["cream"])
     if kind == "group":

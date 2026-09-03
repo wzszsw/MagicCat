@@ -7,7 +7,8 @@ from magiccat.ui.icons import icon
 
 def test_icons_generated_for_kinds(qtbot):  # qtbot 确保 QApplication（QPixmap 需要）
     for kind in ("function", "procedure", "database", "table", "view", "trigger",
-                 "saved_query", "query_folder", "group", "profile"):
+                 "saved_query", "query_folder", "group", "profile",
+                 "run", "stop", "new_query", "save"):
         assert not icon(kind).isNull(), f"缺图标: {kind}"
     # 未知类型 → 空图标（Qt 默认）
     assert icon("not_exist").isNull()
