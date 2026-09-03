@@ -68,3 +68,15 @@ class DataService:
         return int(self._api().insertRow(profile.id, schema, table,
                                          to_java_string_array(cols),
                                          to_java_string_array(vals)))
+
+    def execute_script(self, profile: ConnectionProfile, schema: str,
+                       statements: list[str]) -> list[dict]:
+        """单连接批量执行（避免“循环内逐条 DB 调用”的网络往返）。
+
+        返回 [{kind:'update',affected:N} | {kind:'error',message}]，顺序与输入一致。
+        """
+        self._ensure_open(profile)
+        raw = get_runtime().jclass(
+            "com.magiccat.bridge.ConnectionRegistry").executeScript(
+            profile.id, schema, to_java_string_array(statements))
+        return json.loads(raw)

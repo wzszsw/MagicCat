@@ -363,45 +363,61 @@ class DataTableWidget(QWidget):
         self._busy = True
         self._set_buttons_enabled(False)
 
-        def collect() -> tuple[list[tuple], list[tuple]]:
-            """返回 (updates[(row, ...)], inserts[(cols, vals)])。"""
-            updates: list[tuple] = []
-            inserts: list[tuple] = []
+        def _lit(v) -> str:
+            if v is None:
+                return "NULL"
+            from magiccat.services.transfer import _sql_string
+
+            return _sql_string(str(v))
+
+        def _q(name: str) -> str:
+            return f"`{name.replace('`', '``')}`"
+
+        def collect() -> tuple[list[tuple[str, str]]]:
+            """返回 [(label, sql)] 待批量执行的语句列表（无逐行 DB 往返）。"""
+            statements: list[tuple[str, str]] = []
+            qtable = _q(schema) + "." + _q(table)
             for r in range(self._model.rowCount()):
                 edits = self._model.edits_of(r)
                 if not edits:
                     continue
                 if r >= self._model.loaded_count:  # 新增行 → INSERT
-                    cols, vals = [], []
+                    cols: list[str] = []
+                    vals: list[str] = []
                     for c in sorted(edits):
                         col = columns[c]
                         raw = edits[c]
-                        vals.append(None if (raw == "" and nullable.get(col, False)) else raw)
-                        cols.append(col)
+                        vals.append(_lit(None if (raw == "" and nullable.get(col, False)) else raw))
+                        cols.append(_q(col))
                     if cols:
-                        inserts.append((cols, vals))
+                        sql = (f"INSERT INTO {qtable} ({', '.join(cols)}) "
+                               f"VALUES ({', '.join(vals)})")
+                        statements.append((f"新增行 {r + 1}", sql))
                 else:  # 已有行 → 按主键 UPDATE
-                    set_cols = [columns[c] for c in sorted(edits)]
-                    set_vals = [None if (edits[c] == "" and nullable.get(columns[c], False))
-                                else edits[c] for c in sorted(edits)]
-                    updates.append((r, set_cols, set_vals))
-            return updates, inserts
+                    set_parts = []
+                    where_parts = []
+                    for c in sorted(edits):
+                        col = columns[c]
+                        set_parts.append(f"{_q(col)} = "
+                                         f"{_lit(None if (edits[c] == '' and nullable.get(col, False)) else edits[c])}")
+                    pvs = self._model.pk_values_of(r)
+                    for name, v in zip(pk, pvs):
+                        where_parts.append(f"{_q(name)} = {_lit(v)}")
+                    sql = (f"UPDATE {qtable} SET {', '.join(set_parts)} "
+                           f"WHERE {' AND '.join(where_parts)}")
+                    statements.append((f"行 {r + 1}", sql))
+            return statements
 
         def fetch(payload) -> list[str]:
-            updates, inserts = payload
+            statements = payload
+            if not statements:
+                return []
+            results = self._data.execute_script(profile, schema,
+                                                 [s for _, s in statements])
             errs: list[str] = []
-            for r, set_cols, set_vals in updates:
-                try:
-                    self._data.update_row(profile, schema, table, pk,
-                                          self._model.pk_values_of(r),
-                                          set_cols, set_vals)
-                except Exception as exc:  # noqa: BLE001
-                    errs.append(f"行 {r + 1}: {exc}")
-            for cols, vals in inserts:
-                try:
-                    self._data.insert_row(profile, schema, table, cols, vals)
-                except Exception as exc:  # noqa: BLE001
-                    errs.append(f"新增行: {exc}")
+            for (label, _sql), res in zip(statements, results):
+                if res.get("kind") == "error":
+                    errs.append(f"{label}: {res.get('message')}")
             return errs
 
         def done(errs: list[str]) -> None:
