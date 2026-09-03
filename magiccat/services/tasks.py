@@ -116,7 +116,7 @@ def run_backup_task(task: Task, profile: ConnectionProfile, connections: Connect
         profile, task.schema, path,
         DataService(connections), MetadataService(connections), DdlService(connections))
     text = (f"OK 表{result['tables']}/视图{result['views']}/"
-            f"函数+存储过程{result['routines']}/触发器{result['triggers']} · "
+            f"函数{result['routines']}/触发器{result['triggers']} · "
             f"{result['rows']} 行 → {path.name}")
     return text
 

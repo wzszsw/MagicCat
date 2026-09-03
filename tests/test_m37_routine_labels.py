@@ -61,7 +61,7 @@ def test_tree_routine_labels(qtbot, mysql_env, connection_service):
                 return False
             texts = [node.child(i).text(0) for i in range(node.childCount())]
             joined = "\n".join(texts)
-            return ("函数 (1)" in joined and "存储过程 (1)" in joined
+            return ("函数 (2)" in joined and "存储过程" not in joined
                     and "例程" not in joined)
 
         qtbot.waitUntil(got, timeout=25_000)

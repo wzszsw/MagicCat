@@ -357,7 +357,7 @@ MagicCat/
 | M34 | Bugfix：连接信息面板启动黑块（QScrollArea 视口自填充 + 深色 QSS 覆盖） | ✅ | autofill 标志回归 |
 | M35 | 转储 SQL 保持 schema 级；标准层 catalog/schema 映射收敛（MySQL=catalog 走信息层，PG 走 catalog=null+schema） | ✅ | 71 回归全绿 |
 | M36 | 运行 SQL 文件…（库节点；以该库为默认目标，未加前缀语句落地正确） | ✅ | 任意 SQL + 目标库断言 |
-| M37 | 对象树按 Navicat 拆分「函数」与「存储过程」（原“例程”） | ✅ | 两类各1+无“例程”文案 |
+| M37 | 对象树按 Navicat 统一为「函数」分类（过程+函数同组；不再叫“例程”/“存储过程”） | ✅ | 单分类计数 + 无旧文案 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
