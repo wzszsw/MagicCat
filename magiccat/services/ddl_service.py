@@ -23,6 +23,22 @@ class DdlService:
         return get_runtime().jclass("com.magiccat.bridge.DdlApi").showCreateTable(
             profile.id, schema, table)
 
+    def show_create_view(self, profile: ConnectionProfile, schema: str, name: str) -> str:
+        self._ensure_open(profile)
+        return get_runtime().jclass("com.magiccat.bridge.DdlApi").showCreateView(
+            profile.id, schema, name)
+
+    def show_create_routine(self, profile: ConnectionProfile, schema: str, name: str,
+                             kind: str) -> str:
+        self._ensure_open(profile)
+        return get_runtime().jclass("com.magiccat.bridge.DdlApi").showCreateRoutine(
+            profile.id, schema, name, kind)
+
+    def show_create_trigger(self, profile: ConnectionProfile, schema: str, name: str) -> str:
+        self._ensure_open(profile)
+        return get_runtime().jclass("com.magiccat.bridge.DdlApi").showCreateTrigger(
+            profile.id, schema, name)
+
     def snapshot(self, profile: ConnectionProfile, schema: str, table: str) -> dict:
         """列/索引/外键/原生 DDL 快照。"""
         return {

@@ -121,6 +121,33 @@ public final class ConnectionRegistry {
         }
     }
 
+    /** 在单条连接（可先 setCatalog 指定默认库）上顺序执行语句，供脚本恢复使用。
+     * 返回 JSON 数组：[{"kind":"update","affected":N} | {"kind":"error","message":…}]。 */
+    public static String executeScript(String configId, String schema, String[] statements) {
+        List<String> results = new ArrayList<>();
+        try (Connection conn = requirePool(configId).getConnection()) {
+            if (schema != null && !schema.isBlank()) {
+                conn.setCatalog(schema);
+            }
+            for (String sql : statements) {
+                if (sql == null || sql.isBlank()) {
+                    continue;
+                }
+                try (Statement st = conn.createStatement()) {
+                    boolean hasRs = st.execute(sql);
+                    int affected = hasRs ? 0 : Math.max(st.getUpdateCount(), 0);
+                    results.add(Json.updateResult(affected));
+                } catch (SQLException e) {
+                    results.add("{\"kind\":\"error\",\"message\":"
+                            + Json.q(e.getMessage() == null ? "未知错误" : e.getMessage()) + "}");
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("执行脚本失败: " + e.getMessage(), e);
+        }
+        return "[" + String.join(",", results) + "]";
+    }
+
     private static String run(String configId, String sql, int maxRows, String token) {
         List<String[]> rows = new ArrayList<>();
         String[] columns;

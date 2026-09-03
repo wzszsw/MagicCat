@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
@@ -178,6 +179,16 @@ def run_restore_script(parent, connections: ConnectionService,
     if not ok:
         return
     profile = profiles[names.index(name)]
+    # 备份文件头含目标库：-- MagicCat 全库备份 · <schema>
+    schema = None
+    try:
+        first_lines = Path(path).read_text(encoding="utf-8").splitlines()[:3]
+        for line in first_lines:
+            if "MagicCat 全库备份 · " in line:
+                schema = line.split("· ", 1)[1].strip()
+                break
+    except OSError:
+        pass
     dialog = QMessageBox(parent)
     dialog.setWindowTitle("执行 SQL 脚本")
     dialog.setIcon(QMessageBox.Information)
@@ -201,5 +212,6 @@ def run_restore_script(parent, connections: ConnectionService,
         dialog.close()
         QMessageBox.critical(parent, "执行 SQL 脚本", err)
 
-    run_async(lambda: backup.restore_sql_file(profile, path, QueryService(connections)),
+    run_async(lambda: backup.restore_sql_file(profile, path, QueryService(connections),
+                                              schema=schema),
               done, error)

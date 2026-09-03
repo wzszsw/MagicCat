@@ -339,6 +339,7 @@ MagicCat/
 | M15 | 运行中查询取消（Statement.cancel，KILL 语义） | ✅ | SLEEP(30) 取消后 <10s 返回 |
 | M16 | 超长单元格截断(tooltip 全文)/复制导出保留全文 + 文件日志 | ✅ | 截断与全文双路径断言 |
 | M18 | 对象树名称过滤 + 窗口几何记忆 | ✅ | 过滤/恢复 + 几何落盘断言 |
+| M19 | 全库备份恢复含 视图/例程/触发器（单连接 setCatalog 恢复） | ✅ | 建表+视图+过程+触发器 备份→重建库→恢复→逐项验证 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
