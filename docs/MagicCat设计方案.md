@@ -345,6 +345,7 @@ MagicCat/
 | M22 | 视图/例程/触发器 右键（复制 CREATE/删除对象） | ✅ | DDL 取回+DROP 通路面 |
 | M23 | 便携版发行包（build_release.ps1 → zip，含内嵌 JRE/图标，关键文件校验） | ✅ | zip 68MB 校验 OK + exe 自检 |
 | M24 | 元数据实现按产品自动选择：标准 JDBC(DatabaseMetaData) vs MySQL information_schema | ✅ | 作用域回归（mysql.user 命中、不混他库） |
+| M25 | 方言注册表与 URL/标识符构造（MySQL/MariaDB 支持，PG/Oracle/SQLServer 登记待接入） | ✅ | URL/引号单测；发行包重建通过 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
