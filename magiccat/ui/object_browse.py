@@ -29,6 +29,7 @@ class ObjectBrowseView(QWidget):
     new_object = Signal()
     delete_object = Signal(str, str)  # profile_id, name
     refresh_requested = Signal()
+    selection_object = Signal(object)  # 选中行对象描述 dict（供信息面板联动）
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -140,6 +141,19 @@ class ObjectBrowseView(QWidget):
         has = self._selected_row() >= 0
         self.btn_open.setEnabled(has)
         self.btn_del.setEnabled(has)
+        if has:
+            desc = self._selection_desc()
+            if desc:
+                self.selection_object.emit(desc)
+
+    def _selection_desc(self) -> dict | None:
+        """选中行 → 对象描述 dict（供信息面板）。子类按领域覆盖。"""
+        if self._profile_id is None:
+            return None
+        name = self.selected_name()
+        if not name:
+            return None
+        return {"kind": "object", "profile_id": self._profile_id, "name": name}
 
     def _emit_open(self) -> None:
         if self._profile_id is None:

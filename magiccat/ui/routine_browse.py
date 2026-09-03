@@ -45,6 +45,20 @@ class RoutineBrowseView(ObjectBrowseView):
         kind = "FUNCTION" if typ == "FUNCTION" else "PROCEDURE"
         return self._profile_id, name, kind
 
+    def _selection_desc(self) -> dict | None:
+        if self._profile_id is None or not self._schema:
+            return None
+        name = self.selected_name()
+        if not name:
+            return None
+        row = self._selected_row()
+        typ = ""
+        item = self.table.item(row, 1) if row >= 0 else None
+        if item:
+            typ = item.text().upper()
+        return {"kind": "routine", "profile_id": self._profile_id, "schema": self._schema,
+                "name": name, "type": typ}
+
     def _emit_open(self) -> None:
         sel = self._selected()
         if sel:

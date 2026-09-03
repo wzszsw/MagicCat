@@ -42,6 +42,13 @@ class TableBrowseView(ObjectBrowseView):
             return None
         return self._profile_id, self._schema, name
 
+    def _selection_desc(self) -> dict | None:
+        sel = self._selected()
+        if not sel:
+            return None
+        return {"kind": "table", "profile_id": sel[0], "schema": sel[1],
+                "name": sel[2], "table": sel[2]}
+
     # 双击“打开”→ 打开表数据；打开按钮亦同
     def _emit_open(self) -> None:
         sel = self._selected()

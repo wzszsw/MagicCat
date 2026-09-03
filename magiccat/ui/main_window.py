@@ -177,6 +177,7 @@ class MainWindow(QMainWindow):
         self.browse_page.open_query.connect(self._open_saved_query)
         self.browse_page.delete_query.connect(self._delete_saved_query)
         self.browse_page.refresh_requested.connect(self._reload_query_browse)
+        self.browse_page.selection_object.connect(self._show_object_info)
 
     def _build_table_browse(self) -> None:
         """表领域「对象」子页：打开/设计/新建/删除表 + 当前库表列表。"""
@@ -188,6 +189,7 @@ class MainWindow(QMainWindow):
         self.table_page.new_table.connect(lambda: self._quick_create_object("table"))
         self.table_page.delete_table.connect(self._delete_table)
         self.table_page.refresh_requested.connect(self._reload_table_browse)
+        self.table_page.selection_object.connect(self._show_object_info)
 
     def _build_view_browse(self) -> None:
         """视图领域「对象」子页：打开/新建/删除视图 + 当前库视图列表。"""
@@ -198,6 +200,7 @@ class MainWindow(QMainWindow):
         self.view_page.new_view.connect(lambda: self._quick_create_object("view"))
         self.view_page.delete_view.connect(self._delete_view)
         self.view_page.refresh_requested.connect(self._reload_view_browse)
+        self.view_page.selection_object.connect(self._show_object_info)
 
     def _build_routine_browse(self) -> None:
         """函数领域「对象」子页：打开/新建/删除函数 + 当前库函数/过程列表。"""
@@ -208,6 +211,7 @@ class MainWindow(QMainWindow):
         self.routine_page.new_routine.connect(lambda: self._on_create_routine_entry())
         self.routine_page.delete_routine.connect(self._delete_routine)
         self.routine_page.refresh_requested.connect(self._reload_routine_browse)
+        self.routine_page.selection_object.connect(self._show_object_info)
 
     def _build_trigger_browse(self) -> None:
         """触发器领域「对象」子页：打开/删除触发器 + 当前库触发器列表（无新建入口）。"""
@@ -217,6 +221,7 @@ class MainWindow(QMainWindow):
         self.trigger_page.open_trigger.connect(self._open_trigger)
         self.trigger_page.delete_trigger.connect(self._delete_trigger)
         self.trigger_page.refresh_requested.connect(self._reload_trigger_browse)
+        self.trigger_page.selection_object.connect(self._show_object_info)
 
     def _on_create_routine_entry(self, profile_id: str | None = None,
                                  schema: str | None = None) -> None:
@@ -1262,6 +1267,10 @@ class MainWindow(QMainWindow):
                   done, lambda err: QMessageBox.critical(self, "删除触发器", err))
 
     def _on_selection_info(self, desc: dict) -> None:
+        self.info_panel.show_object(desc)
+
+    def _show_object_info(self, desc: dict) -> None:
+        """对象页选中某行 → 右侧「信息」面板联动。"""
         self.info_panel.show_object(desc)
 
     def _on_domain_selected(self, profile_id: str, schema: str, cat_type: str) -> None:

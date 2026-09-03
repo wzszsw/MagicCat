@@ -106,6 +106,15 @@ def test_object_browse_load_and_selection(qtbot):
     pg.btn_refresh.click()
     assert refreshed == [True]
 
+    # 选中行 → 信息面板对象描述（kind/数据库/表名）
+    descs = []
+    pg.selection_object.connect(lambda d: descs.append(d))
+    pg.table.clearSelection()  # 触发一次取消选中
+    pg.table.selectRow(0)  # 重新选中触发 itemSelectionChanged
+    assert descs and descs[-1]["kind"] == "table"
+    assert descs[-1]["schema"] == "test"
+    assert descs[-1]["name"] == "books"
+
 
 # ---- MainWindow 领域切换 + 固定占位 ----
 def test_mainwindow_domain_stack(qtbot, connection_service):

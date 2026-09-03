@@ -32,3 +32,17 @@ class QueryBrowseView(ObjectBrowseView):
         items = query_library.QueryLibrary.default().list(profile_id)
         rows = [q for q in items if (q.get("schema") or "") == schema]
         self.load(profile_id, rows)
+
+    def _selection_desc(self) -> dict | None:
+        if self._profile_id is None:
+            return None
+        name = self.selected_name()
+        if not name:
+            return None
+        row = self._selected_row()
+        schema = ""
+        item = self.table.item(row, 2) if row >= 0 else None
+        if item:
+            schema = item.text()
+        return {"kind": "saved_query", "profile_id": self._profile_id,
+                "schema": schema, "name": name}
