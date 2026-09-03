@@ -69,8 +69,8 @@ class MainWindow(QMainWindow):
         self._build_central()
         self._build_explorer_dock()
         self._build_info_dock()
-        self._build_actions()
         self._build_quick_toolbar()
+        self._build_actions()
 
         self._reload_connection_combo()
         self._new_editor()
@@ -263,17 +263,17 @@ class MainWindow(QMainWindow):
         self.act_cancel.setEnabled(False)
         self.act_cancel.triggered.connect(self._cancel_execution)
         menu_query.addSeparator()
-        act_format = menu_query.addAction("美化 SQL")
-        act_format.triggered.connect(self._format_sql)
-        act_explain = menu_query.addAction("EXPLAIN 当前语句")
-        act_explain.triggered.connect(self._explain_current)
+        self.act_format = menu_query.addAction("美化 SQL")
+        self.act_format.triggered.connect(self._format_sql)
+        self.act_explain = menu_query.addAction("EXPLAIN 当前语句")
+        self.act_explain.triggered.connect(self._explain_current)
         act_history = menu_query.addAction("最近执行的 SQL…")
         act_history.triggered.connect(self._insert_history)
         act_snippets = menu_query.addAction("SQL 收藏…")
         act_snippets.triggered.connect(self._open_snippets)
-        act_save_query = menu_query.addAction("保存查询…\tCtrl+Shift+S")
-        act_save_query.setShortcut("Ctrl+Shift+S")
-        act_save_query.triggered.connect(self._save_query_dialog)
+        self.act_save_query = menu_query.addAction("保存查询…\tCtrl+Shift+S")
+        self.act_save_query.setShortcut("Ctrl+Shift+S")
+        self.act_save_query.triggered.connect(self._save_query_dialog)
         act_close = menu_query.addAction("关闭当前标签\tCtrl+W")
         act_close.setShortcut("Ctrl+W")
         act_close.triggered.connect(lambda: self._close_editor_tab(self.editor_tabs.currentIndex()))
@@ -304,18 +304,28 @@ class MainWindow(QMainWindow):
         act_about = menu_help.addAction("关于 MagicCat…")
         act_about.triggered.connect(self._about)
 
-        toolbar = self.addToolBar("查询")
-        toolbar.addAction(act_add)
-        toolbar.addSeparator()
-        toolbar.addWidget(QLabel(" 连接: "))
+        # 查询工具栏（对标 Navicat：查询编辑区上方 连接/库 + 保存/美化/运行/停止/解释）
+        qtb = QToolBar("查询工具")
+        qtb.setObjectName("query_toolbar")
+        self.addToolBar(qtb)
+        qtb.addWidget(QLabel(" 连接: "))
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(180)
         self.profile_combo.currentIndexChanged.connect(self._on_profile_selected)
-        toolbar.addWidget(self.profile_combo)
-        toolbar.addSeparator()
-        toolbar.addAction(self.act_run)
-        toolbar.addAction(self.act_run_all)
-        toolbar.addAction(self.act_cancel)
+        qtb.addWidget(self.profile_combo)
+        qtb.addWidget(QLabel(" 库: "))
+        self.schema_combo = QComboBox()
+        self.schema_combo.setMinimumWidth(160)
+        self.schema_combo.currentIndexChanged.connect(
+            lambda _: None)  # 主要用于选择执行目标库（存入 _current_schema 供保存位置）
+        qtb.addWidget(self.schema_combo)
+        qtb.addSeparator()
+        qtb.addAction(self.act_save_query)
+        qtb.addAction(self.act_format)
+        qtb.addAction(self.act_run)
+        qtb.addAction(self.act_run_all)
+        qtb.addAction(self.act_cancel)
+        qtb.addAction(self.act_explain)
 
     # ---- 连接选择 ----
     def _reload_connection_combo(self) -> None:
@@ -337,6 +347,30 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"MagicCat — {profile.display_name}" if profile else "MagicCat")
         self._status(f"当前连接：{profile.name if profile else '未选择'}")
         self.info_panel.show_profile(self.profile_combo.currentData() if profile else None)
+        self._reload_schema_combo(profile)
+
+    def _reload_schema_combo(self, profile) -> None:
+        self.schema_combo.blockSignals(True)
+        self.schema_combo.clear()
+        self.schema_combo.setEnabled(False)
+        self.schema_combo.blockSignals(False)
+        if profile is None:
+            return
+        self.schema_combo.setEnabled(True)
+
+        def fetch() -> list[str]:
+            return [d["name"] for d in self._metadata.databases(profile)
+                    if d["name"] not in _SYSTEM_SCHEMAS]
+
+        def done(dbs: list[str]) -> None:
+            self.schema_combo.blockSignals(True)
+            self.schema_combo.clear()
+            self.schema_combo.addItems(dbs)
+            if profile.database and profile.database in dbs:
+                self.schema_combo.setCurrentText(profile.database)
+            self.schema_combo.blockSignals(False)
+
+        run_async(fetch, done, lambda err: logger.warning("加载库下拉失败: %s", err))
         if profile is not None:
             self._update_completion_words(profile)
 
@@ -704,12 +738,12 @@ class MainWindow(QMainWindow):
         name = (name or "").strip()
         if not ok or not name:
             return
-        schema = profile.database or ""
+        schema = self.schema_combo.currentText() or profile.database or ""
         lib = QueryLibrary.default()
         lib.save(profile.id, name, editor.toPlainText(), schema=schema)
         if schema:
             self.explorer.refresh_schema_queries(profile.id, schema)
-        self._status(f"查询已保存：{name}（{profile.display_name}）", 5000)
+        self._status(f"查询已保存：{name}（{profile.display_name} · {schema or '默认'}）", 5000)
 
     def _open_saved_query(self, profile_id: str, name: str) -> None:
         from magiccat.services.query_library import QueryLibrary
