@@ -349,6 +349,7 @@ MagicCat/
 | M26 | 服务器/连接信息面板（标准 JDBC DatabaseMetaData：产品/版本/驱动/URL/用户） | ✅ | 服务取证 + 面板回填断言 |
 | M27 | MySQL 完备：EXPLAIN 执行计划 + 数据页默认主键序 | ✅ | 计划行/稳定翻页断言 |
 | M28 | DDL 生成保真：列字符集/排序规则/ON UPDATE/关键字默认值(CURRENT_TIMESTAMP 免引号) | ✅ | 语法顺序修正 + 保真单测 |
+| M29 | 表设计器索引增删（普通/UNIQUE；列随删时跳过冗余 DROP） | ✅ | 加/删索引端到端 + 不重建未变索引 |
 
 - 自动化测试：`uv run pytest`（25 passed，含真实 MySQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

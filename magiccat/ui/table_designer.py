@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from magiccat.models.profile import ConnectionProfile
@@ -53,6 +54,8 @@ class TableDesignerDialog(QDialog):
         self._query = QueryService(connections)
         self._snapshot: dict = {}
         self._orig_columns: list[dict] = []
+        self._orig_indexes: list[dict] = []
+        self._indexes: list[dict] = []  # 工作副本（应用时与 _orig_indexes 求差）
         title = f"新建表 · {schema}.{table}" if new_table else f"设计表 · {schema}.{table}"
         self.setWindowTitle(f"{title}（{profile.name}）")
         self.resize(860, 620)
@@ -85,11 +88,26 @@ class TableDesignerDialog(QDialog):
         self.columns_grid.horizontalHeader().setStretchLastSection(True)
         self.tabs.addTab(self.columns_grid, "列")
 
-        # 索引 / 外键（只读）
+        # 索引（可管理：新增/删除选中）
         self.indexes_grid = QTableWidget(0, 3)
         self.indexes_grid.setHorizontalHeaderLabels(["索引", "类型", "列"])
         self.indexes_grid.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.tabs.addTab(self.indexes_grid, "索引")
+        idx_tab = QWidget()
+        idx_lay = QVBoxLayout(idx_tab)
+        idx_lay.setContentsMargins(4, 4, 4, 4)
+        idx_bar = QHBoxLayout()
+        btn_idx_add = QPushButton("新增索引…")
+        btn_idx_del = QPushButton("删除选中索引")
+        idx_bar.addWidget(btn_idx_add)
+        idx_bar.addWidget(btn_idx_del)
+        idx_bar.addStretch(1)
+        idx_lay.addLayout(idx_bar)
+        idx_lay.addWidget(self.indexes_grid, 1)
+        self.btn_idx_add = btn_idx_add
+        self.btn_idx_del = btn_idx_del
+        btn_idx_add.clicked.connect(self._add_index)
+        btn_idx_del.clicked.connect(self._remove_index_selected)
+        self.tabs.addTab(idx_tab, "索引")
 
         self.fk_grid = QTableWidget(0, 4)
         self.fk_grid.setHorizontalHeaderLabels(["约束", "列", "引用", "规则"])
@@ -137,12 +155,11 @@ class TableDesignerDialog(QDialog):
         def done(snapshot: dict) -> None:
             self._snapshot = snapshot
             self._orig_columns = list(snapshot["columns"])
+            self._orig_indexes = group_indexes(snapshot["indexes"])
+            self._indexes = [dict(g, columns=list(g["columns"]))
+                             for g in self._orig_indexes]
             self._fill_columns(snapshot["columns"])
-            self._fill_readonly(self.indexes_grid, [
-                (g["index_name"],
-                 "UNIQUE" if not _falsy(g.get("non_unique")) else "普通",
-                 ", ".join(g["columns"]))
-                for g in group_indexes(snapshot["indexes"])])
+            self._refresh_indexes_grid()
             self._fill_readonly(self.fk_grid, [
                 (g["constraint_name"], ", ".join(g["columns"]),
                  f"{g['ref_table']}({', '.join(g['ref_columns'])})",
@@ -154,6 +171,102 @@ class TableDesignerDialog(QDialog):
             self.btn_apply.setEnabled(True)
 
         run_async(fetch, done, lambda err: self.status_label.setText(f"加载失败：{err}"))
+
+    # ---- 索引管理 ----
+    def _refresh_indexes_grid(self) -> None:
+        rows = []
+        for g in self._indexes:
+            if str(g["index_name"]).upper() == "PRIMARY":
+                kind = "主键"
+            elif _falsy(g.get("non_unique")):
+                kind = "UNIQUE"
+            else:
+                kind = "普通"
+            rows.append((g["index_name"], kind, ", ".join(g["columns"])))
+        self._fill_readonly(self.indexes_grid, rows)
+
+    def _add_index(self) -> None:
+        if self.new_table:
+            self.status_label.setText("新建表模式暂不提供索引编辑，创建后再设计索引。")
+            return
+        cols = [c["name"] for c in self._read_columns()]
+        if not cols:
+            self.status_label.setText("没有可索引的列。")
+            return
+        from PySide6.QtWidgets import QInputDialog
+
+        name, ok = QInputDialog.getText(self, "新增索引", "索引名：", text=f"idx_{self.table}")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        type_text, ok2 = QInputDialog.getItem(self, "新增索引", "索引类型：",
+                                              ["普通", "UNIQUE"], 0, False)
+        if not ok2:
+            return
+        col, ok3 = QInputDialog.getItem(self, "新增索引", "索引列：", cols, 0, False)
+        if not ok3 or not col:
+            return
+        self.add_index(name, [col], unique=(type_text == "UNIQUE"))
+
+    def add_index(self, name: str, columns: list[str], unique: bool = False) -> None:
+        """编程入口（供测试/UI 复用）：追加工作副本中的索引。"""
+        if str(name).upper() == "PRIMARY":
+            raise ValueError("请通过列定义维护主键")
+        self._indexes.append({"index_name": name,
+                              "non_unique": "0" if unique else "1",
+                              "columns": list(columns)})
+        self._refresh_indexes_grid()
+        self._generate_preview()
+
+    def _remove_index_selected(self) -> None:
+        row = self.indexes_grid.currentRow()
+        if row < 0 or row >= len(self._indexes):
+            self.status_label.setText("请先选中要删除的索引行。")
+            return
+        name = self._indexes[row]["index_name"]
+        if str(name).upper() == "PRIMARY":
+            self.status_label.setText("主键需在列定义中维护（不支持删除）。")
+            return
+        if QMessageBox.question(self, "删除索引", f"删除索引 `{name}`？"
+                                ) != QMessageBox.Yes:
+            return
+        del self._indexes[row]
+        self._refresh_indexes_grid()
+        self._generate_preview()
+
+    def remove_index(self, name: str) -> None:
+        """编程入口（供测试/UI 复用）。"""
+        for i, g in enumerate(self._indexes):
+            if g["index_name"] == name:
+                del self._indexes[i]
+                break
+        self._refresh_indexes_grid()
+        self._generate_preview()
+
+    @staticmethod
+    def _index_fragments(orig: list[dict], current: list[dict],
+                         dropped_columns: list[str] | None = None) -> list[str]:
+        """比较索引工作副本，生成 ADD/DROP INDEX 片段（主键不在此管理）。
+
+        若某列同时被删除，MySQL 会随列自动删除其索引，故跳过对应的 DROP INDEX
+        以避免 “check that column/key exists” 报错。
+        """
+        dropped = set(dropped_columns or [])
+        orig_names = {g["index_name"] for g in orig if g["index_name"] != "PRIMARY"}
+        cur_names = {g["index_name"] for g in current if g["index_name"] != "PRIMARY"}
+        frags: list[str] = []
+        for name in sorted(orig_names - cur_names):
+            colset = {c for g in orig if g["index_name"] == name for c in g["columns"]}
+            if colset & dropped:
+                continue  # 索引随列删除而删除
+            frags.append(f"DROP INDEX `{name.replace('`', '``')}`")
+        cur = {g["index_name"]: g for g in current}
+        for name in sorted(cur_names - orig_names):
+            g = cur[name]
+            unique = "UNIQUE " if _falsy(g.get("non_unique")) else ""
+            cols = ", ".join(f"`{c.replace('`', '``')}`" for c in g["columns"])
+            frags.append(f"ADD {unique}INDEX `{name.replace('`', '``')}` ({cols})")
+        return frags
 
     def _fill_columns(self, columns: list[dict]) -> None:
         grid = self.columns_grid
@@ -222,6 +335,9 @@ class TableDesignerDialog(QDialog):
 
             return build_create(self.schema, self.table, edited)
         frags = alter_fragments(self._orig_columns, edited)
+        dropped_cols = [c["name"] for c in self._orig_columns
+                        if c["name"] not in {e["name"] for e in edited}]
+        frags += self._index_fragments(self._orig_indexes, self._indexes, dropped_cols)
         if not frags:
             return None
         from magiccat.services.ddl_builder import _q
