@@ -32,8 +32,11 @@ def _info(item: QTreeWidgetItem) -> dict[str, Any]:
 
 
 def _make_item(text: str, kind: str, **extra: Any) -> QTreeWidgetItem:
+    from magiccat.ui.icons import icon
+
     item = QTreeWidgetItem([text])
     item.setData(0, Qt.UserRole, {KIND_KEY: kind, DATA_KEY: extra})
+    item.setIcon(0, icon(kind, extra.get("type", "") or extra.get("kind", "")))
     return item
 
 
