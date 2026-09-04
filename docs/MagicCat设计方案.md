@@ -411,6 +411,10 @@ MagicCat/
 | M88 | 所有连接选择下拉框统一显示数据库产品图标（主查询栏、备份、任务、导入、传输），共享 profile 填充辅助 | ✅ | 11 项 UI/图标/向导回归 |
 | M89 | PG/GaussDB 初始化数据库改为必填且默认 `postgres`；数据库枚举独立查询 `pg_database`，不因初始库隐藏其它库 | ✅ | 向导默认/必填与 GaussDB 元数据回归 |
 | M90 | schema 与 table 节点改用高辨识度的 GitHub Ant Design Icons 素材，消除对象树层级图标混淆 | ✅ | 图标非空且互异回归 |
+| M91 | SQL 编辑器内核引入 monaco-editor（离线本地资源，QWebEngineView 封装 MonacoEditorWidget，接口兼容 SqlEditorWidget；MAGICCAT_EDITOR=plain 回退自研） | ✅ | 121 回归 + monaco 文本/语句/补全 POC |
+| M92 | 当前连接改为「树跟手」+ 查询领域内连接下拉：对象树激活归属连接 → 当前连接变更（无全局当前连接下拉）；查询领域连接选择每标签独立（影响不扩散） | ✅ | 121 回归 + 跟手/标签/每标签连接验证 |
+| M93 | 重构「每查询标签一套完整工作区」：QueryWorkspace（连接/库/动作条+编辑器+每标签结果区+状态行，影响不扩散）；查询执行/EXPLAIN/保存查询取当前工作区；对象浏览条（树跟手连接+库）仅对象页显示 | ✅ | 121 回归 + 每标签工作区/对象条可见性验证 |
+| M94 | SQL 编辑器上下文对象补全：当前库表/视图/列随上下文弹（FROM/JOIN→表视图、`表.`→列、SELECT/WHERE→列），上下文感知 completion + set_completion_data | ✅ | 121 回归 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

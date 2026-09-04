@@ -174,6 +174,12 @@ class SqlEditorWidget(QPlainTextEdit):
         self._completer.setFilterMode(Qt.MatchContains)
         self._completer.activated.connect(self._insert_completion)
 
+    def set_completion_data(self, data: dict) -> None:
+        """上下文补全数据（{tables, columns}）：把表/视图名并入补全词表。"""
+        names = [t.get("name") for t in data.get("tables", []) if t.get("name")]
+        if names:
+            self.set_completion_words(names)
+
     def _word_range(self) -> tuple[str, int]:
         cursor = self.textCursor()
         cursor.select(QTextCursor.WordUnderCursor)

@@ -9,6 +9,12 @@ from __future__ import annotations
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# QtWebEngine 需在 QApplication 前设置无沙箱/禁 GPU
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
+                      "--no-sandbox --disable-gpu --disable-software-rasterizer")
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+# 测试用自研编辑器（同步文本、无 WebEngine 崩溃）；monaco 用于真实应用
+os.environ.setdefault("MAGICCAT_EDITOR", "plain")
 
 import pytest
 

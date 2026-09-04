@@ -35,6 +35,33 @@
 - 连接树展开加载时显示**旋转 loading 动画**（自绘 spinner，结束恢复原图标）。
 - 右侧「信息」面板：**选中什么显示什么**（选中对象页行也联动）。
 - 顶部「其它」下拉：`aboutToShow` 时**按当前连接实时重建**（PG 含序列、MySQL 空），避免切换事件遗漏。
+- **当前连接 = 树跟手（重要，对标 Navicat）**：Navicat **全局无「当前连接选择控件」**（顶栏功能切换器不含连接下拉）。
+  当前连接取决于**用户在左侧对象树最近激活的元素**（双击连接/库/表/对象等），该元素所属连接即当前连接，顶部工具栏作用于它。
+  - MagicCat：**全局顶栏不放连接下拉**；当前连接由对象树激活（`profile_activated`）驱动。
+  - **「查询」领域工作区内部有「当前连接选择」下拉**（连接 + 库），用户可手动切换，并跟手同步树激活的连接。
+  - `ObjectExplorer` 选中任意可归属连接的对象 → emit `profile_activated(profile_id)` → `MainWindow._set_current_profile`
+    更新当前连接（profile_combo 下拉）+ 库下拉 + 查询列表。
+  - `profile_combo`（查询领域下拉）即当前连接锚点：`_current_profile` 从它读；树激活同步它；用户手动切也改变当前连接。
+  - **每查询标签一套完整工作区（`QueryWorkspace`，影响不扩散）**：每个查询标签独立持有
+    「连接下拉 + 库下拉 + 保存/运行/执行全部/停止/解释/美化/代码段/询问AI + 编辑器 + 每标签结果区 + 状态行」，
+    连接/库只影响本标签；查询执行/EXPLAIN/保存查询均从**当前工作区**取连接/库/编辑器/结果区，结果写回对应工作区。
+    `_current_profile()` 在查询标签激活时取该工作区的连接；对象浏览页（`domain_stack`）用领域级「树跟手当前连接 + 库」（对象浏览条）。
+  - **对象浏览条（全局 edit_bar）**：仅「对象」页激活时显示（当前连接树跟手 + 库），查询标签激活时隐藏。
+    全局 `edit_bar` 不再含查询动作按钮（已迁至各查询工作区）。
+  - 启动**不**自动选中连接，直到用户在树中激活或在下拉选择；未激活连接时点功能区才提示"请先选择连接"。
+
+## 3.1 SQL 编辑器（monaco-editor）
+
+- **SQL/代码编辑器内核用 monaco-editor（VS Code 内核）**，替代自研 `QPlainTextEdit` 高亮/补全，降低语法提示与高亮成本。
+- `MonacoEditorWidget`（`magiccat/ui/monaco_editor.py`）用 QWebEngineView 加载**本地 monaco 资源**
+  （`magiccat/resources/monaco/vs`，离线，PyInstaller 随 `resources` 打包）。
+- **对外接口与旧 `SqlEditorWidget` 兼容**：`text()`/`all_text()`/`toPlainText()`/`current_sql()`/
+  `statements()`/`set_completion_words()`；上层（MainWindow）经这些接口拿文本与补全，逻辑不变。
+- 补全词表：Python 传 `set_completion_words` → JS 注册 monaco completion provider（含已连库表/列）。
+- **自研 `SqlEditorWidget` 保留**（`magiccat/ui/editor.py`）作回退：`MAGICCAT_EDITOR=plain` 时使用，
+  便于无桌面渲染/测试等环境（WebEngine 在 pytest-offscreen 下退出有崩溃隐患）。**真实应用默认 monaco**。
+- QtWebEngine 需在 QApplication 前 import（AA_ShareOpenGLContexts）并设
+  `QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu"`；`app.py`/`conftest` 已设置。
 - 所有“连接选择”下拉框（查询、备份、任务、导入、传输等）条目必须显示对应数据库产品图标，
   统一按 `provider_key` 路由，不能只显示纯文本。
 - 对象树中的 schema 与 table 必须使用不同的开源图标，避免层级语义混淆；优先使用 GitHub 可商用素材。
@@ -56,6 +83,11 @@
 - **避免 N+1**：循环内不做数据库 I/O；同类信息尽量**一次批查**（用户明确定义 N+1 = 循环内网络 IO）。
 - 跨库枚举（如 PG 某库的 schema/对象）需**临时连到目标库**查询。
 - 连接配置有 `provider_key`（方言/驱动 key），贯穿 open/test/连接图标/元数据。
+- GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；
+  JDBC 驱动 `gaussdbjdbc.jar` 受版权约束，不随软件分发。用户通过「工具 → 环境」指定本机 JAR，
+  设置保存于 SQLite，连接打开时动态加载。
+- PostgreSQL / GaussDB 的连接配置中“初始化数据库”为必填项，默认值统一为 `postgres`；
+  该值只决定首次连接目标，数据库树仍必须枚举服务器上的其它数据库。
 - GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；
   JDBC 驱动 `gaussdbjdbc.jar` 受版权约束，不随软件分发。用户通过「工具 → 环境」指定本机 JAR，
   设置保存于 SQLite，连接打开时动态加载。
