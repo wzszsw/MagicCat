@@ -436,9 +436,16 @@ class ObjectExplorer(QTreeWidget):
         return None
 
     def _show_error(self, item: QTreeWidgetItem, message: str) -> None:
-        if item.treeWidget() is None:
-            return
-        _replace_children(item, [_make_item(message, KIND_ERROR)])
+        """加载失败：弹出 MessageBox 提示，并折叠该节点（不把错误当树内容展示）。"""
+        from PySide6.QtWidgets import QMessageBox
+
+        from magiccat.utils.errors import clean_java_error
+
+        # 折叠节点并移除占位内容，保持树整洁
+        if item.treeWidget() is not None:
+            item.setExpanded(False)
+            item.takeChildren()
+        QMessageBox.critical(self, "加载失败", clean_java_error(message))
 
     # ---- 过滤 ----
     def apply_name_filter(self, text: str) -> None:
