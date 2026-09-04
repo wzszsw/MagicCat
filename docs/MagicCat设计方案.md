@@ -400,9 +400,10 @@ MagicCat/
 | M77 | 「查询」可在 database 级与 schema 级新建：两级右键菜单均有「新建查询」，正确发出 profile_id+database+schema | ✅ | 107 回归 + 两级别 new_query 断言 |
 | M78 | 顶部「其它」领域按钮（永驻）：下拉按库型增减，PG 含「序列」（无索引），MySQL 空；序列列表页+编辑/新建对话框（常规字段+SQL预览） | ✅ | 110 回归 + 真实 PG 序列元数据 |
 | M79 | Bugfix：「其它」下拉改为 aboutToShow 时按当前连接实时重建（修复连接经树打开/combo未变时 PG 菜单为空） | ✅ | 110 回归 + aboutToShow 含序列断言 |
-| M80 | 数据库产品连接图标按 provider_key 区分（自绘 MySQL/PostgreSQL/MariaDB/Oracle/SQL Server，未知回退通用） | ✅ | 112 回归 + 互异/节点图标断言 |
+| M80 | 数据库产品连接图标按 provider_key 区分（devicon 彩色 logo 资产，MIT 许可；缺失回退自绘） | ✅ | 112 回归 + 互异/节点图标断言 |
+| M81 | 新建连接改为 Navicat 式两步向导：第1页产品选择（MySQL/MariaDB/PostgreSQL，移除 Oracle 等），第2页按产品定制表单与默认值；编辑锁定产品 | ✅ | 115 回归 + 向导默认值/锁定断言 |
 
-- 自动化测试：`uv run pytest`（112 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（115 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

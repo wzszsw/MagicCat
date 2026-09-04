@@ -1,9 +1,9 @@
-"""自有矢量小图标（Qt 自绘，无第三方版权；商业可安全使用）。
+"""图标。
 
-色彩参考 Navicat 常见配色，16px 供对象树/列表使用：
-  - 函数 fx（蓝）、存储过程 P（绿）、表(蓝网格)、视图(橙)、触发器(黄闪电)、
-  - 数据库(绿圆柱)、连接(服务器)、查询/收藏夹(蓝相)、分组/夹(米黄)。
-所有图标由 QPainter 绘制并缓存；未知类型返回 None（Qt 使用默认）。
+- 通用对象树/列表小图标：Qt 自绘（QPainter），无第三方版权，商业可安全使用。
+- 数据库产品连接图标：优先使用 devicon 彩色 logo PNG 资产（MIT 许可，
+  见 magiccat/resources/logos/），缺失或未知产品回退到自绘图标。
+所有图标按 kind/subtype 分发并缓存；未知类型返回 None（Qt 使用默认）。
 """
 
 from __future__ import annotations
@@ -367,8 +367,15 @@ def _bi() -> QImage:
 
 
 @cache
-def _conn_by_provider(provider_key: str) -> QImage:
-    """按数据库产品 key 返回连接图标；未知/空回退通用连接图标。"""
+def _conn_by_provider(provider_key: str) -> QImage | None:
+    """按数据库产品 key 返回连接图标。
+
+    优先加载 devicon 彩色 logo PNG 资产（MIT 许可，见 magiccat/resources/logos/）；
+    资产缺失（如未打包资源/未知产品）回退到自绘图标。
+    """
+    logo = _logo_image(provider_key)
+    if logo is not None:
+        return logo
     return {
         "mysql": _conn_mysql(),
         "postgresql": _conn_postgres(),
@@ -376,6 +383,25 @@ def _conn_by_provider(provider_key: str) -> QImage:
         "oracle": _conn_oracle(),
         "sqlserver": _conn_sqlserver(),
     }.get(provider_key, _connection())
+
+
+@cache
+def _logo_image(provider_key: str) -> QImage | None:
+    """从资源目录读取产品 logo PNG。
+
+    优先用 64px（矢量源头渲染，Qt 缩放到 16/32 目标更清晰），缺失再回退 32px。
+    文件缺失/读取失败返回 None（由调用方回退自绘图标）。
+    """
+    from magiccat.resources import resource_dir
+
+    base = resource_dir() / "logos"
+    for size in (64, 32, 16):
+        path = base / f"{provider_key}-{size}.png"
+        if path.exists():
+            img = QImage(str(path))
+            if not img.isNull():
+                return img
+    return None
 
 
 @cache
