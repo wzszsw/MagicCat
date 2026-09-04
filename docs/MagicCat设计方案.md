@@ -404,6 +404,7 @@ MagicCat/
 | M81 | 新建连接改为 Navicat 式两步向导：第1页产品选择（MySQL/MariaDB/PostgreSQL，移除 Oracle 等），第2页按产品定制表单与默认值；编辑锁定产品 | ✅ | 115 回归 + 向导默认值/锁定断言 |
 | M82 | Bugfix：PG 表数据全闭环——TableDataApi 标识符/分页/主键按方言（双引号+LIMIT n OFFSET m+pg_index 主键），列元数据走标准 JDBC getColumns，data_table 排序/筛选按方言转义 | ✅ | 116 回归 + 真实 PG 表 CRUD |
 | M83 | 日期时间统一显示为 `YYYY-MM-DD HH:MM:SS`（本地时区）：新增 format_datetime，对象页「修改日期」列与结果网格统一接入 | ✅ | 121 回归 + 格式断言 |
+| M84 | 数据页加载失败改用 MessageBox 统一报错（清理 Java 前缀）；AGENTS.md 沉淀限定名分隔引号与报错统一约定 | ✅ | 121 回归 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

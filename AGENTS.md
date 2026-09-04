@@ -41,6 +41,9 @@
 - **MySQL：database ≡ schema**（两级即连接→库→分类）；**PostgreSQL：database 与 schema 是两级**（连接→库→schema→分类）。
 - **PostgreSQL 元数据尽量用 JDBC 标准 API**（`DatabaseMetaData`），避免手拼方言敏感的 information_schema SQL；MySQL 可走 information_schema 富信息层。
 - 标识符/分页语法**按方言**：PG 双引号 + `LIMIT n OFFSET m`，MySQL 反引号 + `LIMIT offset, limit`。
+- **限定名 = 每个标识符分别加引号，再以 `.` 连接**：`"schema"."table"`（PG）、`` `schema`.`table` ``（MySQL）。
+  **绝不能把整个 `schema.table` 当成一个标识符包进一对引号**（即 `"schema.table"` 或 `` `schema.table` ``），
+  否则 PG/MySQL 都报 "relation does not exist / 找不到"。
 - **避免 N+1**：循环内不做数据库 I/O；同类信息尽量**一次批查**（用户明确定义 N+1 = 循环内网络 IO）。
 - 跨库枚举（如 PG 某库的 schema/对象）需**临时连到目标库**查询。
 - 连接配置有 `provider_key`（方言/驱动 key），贯穿 open/test/连接图标/元数据。
@@ -65,6 +68,8 @@
 
 - 类型注解全覆盖；`uv run ruff check .` 必须通过。
 - `uv run pytest` 全绿（含真实 MySQL/PostgreSQL 集成；JVM 相关测试避免 faulthandler 误报）。
+- **报错统一风格**：错误提示统一用 `QMessageBox` 弹出（`warning`/`critical`），并清理 Java 重复前缀
+  （`clean_java_error`）；运行期错误不要只在状态栏/日志里静默带过。表数据/连接/对象加载失败均弹 MessageBox。
 - 改 Java 后需重新 `mvn package` 构建 jar（开发态走 `java-bridge/target/`）。
 - **打包**（exe + 便携 zip + `--selftest`）：仅在用户**明确要求**时执行；否则只 commit，不打包。
 - 提交信息用中文、单引号包裹、避免 PowerShell 花括号/括号被吞的写法；每次改动一个里程碑语义，附修订记录（M编号）。

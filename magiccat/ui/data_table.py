@@ -246,8 +246,13 @@ class DataTableWidget(QWidget):
         def error(msg: str) -> None:
             self._busy = False
             self._set_buttons_enabled(True)
-            self.status_label.setText(f"加载失败：{msg}")
+            from magiccat.utils.errors import clean_java_error
+
+            self.status_label.setText(f"加载失败：{clean_java_error(msg)}")
             logger.error("数据页加载失败: %s", msg)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, "数据页", f"加载失败：\n{clean_java_error(msg)}")
 
         run_async(fetch, done, error)
 
