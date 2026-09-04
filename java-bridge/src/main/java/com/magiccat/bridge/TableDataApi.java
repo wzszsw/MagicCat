@@ -32,15 +32,22 @@ public final class TableDataApi {
         return quoteIdent(name);
     }
 
-    /** 分页读表：返回 {columns, rows, total, pk, truncated}。offset 从 0 开始。 */
+    /** 分页读表（无跨库）：database 由连接池默认库承载。 */
     public static String page(String configId, String schema, String table,
+                              int offset, int limit, String orderBy, String where) {
+        return page(configId, "", schema, table, offset, limit, orderBy, where);
+    }
+
+    /** 分页读表：返回 {columns, rows, total, pk, truncated}。offset 从 0 开始。
+     *  database 仅对 PG 有意义（跨库时临时连到该库），MySQL 传空即可。 */
+    public static String page(String configId, String database, String schema, String table,
                               int offset, int limit, String orderBy, String where) {
         String qtable = quoteIdent(configId, schema) + "." + quoteIdent(configId, table);
         String whereClause = (where == null || where.isBlank()) ? " WHERE 1=1" : " WHERE " + where.trim();
         long total;
         List<String[]> rows = new ArrayList<>();
         String[] columns;
-        try (Connection conn = requireConnection(configId);
+        try (Connection conn = requireConnection(configId, database);
              PreparedStatement countPs = conn.prepareStatement(
                      "SELECT COUNT(*) FROM " + qtable + whereClause);
              ResultSet countRs = countPs.executeQuery()) {
@@ -55,7 +62,7 @@ public final class TableDataApi {
                 ? " LIMIT " + Math.max(limit, 1) + " OFFSET " + Math.max(offset, 0)
                 : " LIMIT " + Math.max(offset, 0) + ", " + Math.max(limit, 1);
         String sql = "SELECT * FROM " + qtable + whereClause + orderSql + limitSql;
-        try (Connection conn = requireConnection(configId);
+        try (Connection conn = requireConnection(configId, database);
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             ResultSetMetaData md = rs.getMetaData();
@@ -74,12 +81,18 @@ public final class TableDataApi {
         } catch (SQLException e) {
             throw new IllegalStateException("读取数据失败: " + e.getMessage(), e);
         }
-        String[] pk = primaryKey(configId, schema, table);
+        String[] pk = primaryKey(configId, database, schema, table);
         return Json.dataset(columns, rows, total, pk, rows.size() >= Math.max(limit, 1));
     }
 
     /** 主键列（按 ORDINAL_POSITION 排序），无主键返回空数组。 */
     public static String[] primaryKey(String configId, String schema, String table) {
+        return primaryKey(configId, "", schema, table);
+    }
+
+    /** 主键列；database 仅 PG 跨库有意义。 */
+    public static String[] primaryKey(String configId, String database,
+                                      String schema, String table) {
         List<String> pk = new ArrayList<>();
         String sql;
         if (ConnectionRegistry.isPostgres(configId)) {
@@ -96,7 +109,7 @@ public final class TableDataApi {
                     + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' "
                     + "ORDER BY ORDINAL_POSITION";
         }
-        try (Connection conn = requireConnection(configId);
+        try (Connection conn = requireConnection(configId, database);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, schema);
             ps.setString(2, table);
@@ -113,6 +126,13 @@ public final class TableDataApi {
 
     /** 按主键更新一行；返回受影响行数。vals 中 null 表示 NULL。 */
     public static long updateRow(String configId, String schema, String table,
+                                 String[] pkCols, String[] pkVals,
+                                 String[] setCols, String[] setVals) {
+        return updateRow(configId, "", schema, table, pkCols, pkVals, setCols, setVals);
+    }
+
+    /** 按主键更新一行；database 仅 PG 跨库有意义。 */
+    public static long updateRow(String configId, String database, String schema, String table,
                                  String[] pkCols, String[] pkVals,
                                  String[] setCols, String[] setVals) {
         if (pkCols == null || pkCols.length == 0) {
@@ -137,7 +157,7 @@ public final class TableDataApi {
         }
         String sql = "UPDATE " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table)
                 + set + where;
-        try (Connection conn = requireConnection(configId);
+        try (Connection conn = requireConnection(configId, database);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             int idx = 1;
             for (String v : setVals) {
@@ -155,6 +175,12 @@ public final class TableDataApi {
     /** 按主键删除一行。 */
     public static long deleteRow(String configId, String schema, String table,
                                  String[] pkCols, String[] pkVals) {
+        return deleteRow(configId, "", schema, table, pkCols, pkVals);
+    }
+
+    /** 按主键删除一行；database 仅 PG 跨库有意义。 */
+    public static long deleteRow(String configId, String database, String schema, String table,
+                                 String[] pkCols, String[] pkVals) {
         if (pkCols == null || pkCols.length == 0) {
             throw new IllegalStateException("该表没有主键，无法安全定位删除");
         }
@@ -166,7 +192,7 @@ public final class TableDataApi {
             where.append(quoteIdent(configId, pkCols[i])).append(" = ?");
         }
         String sql = "DELETE FROM " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table) + where;
-        try (Connection conn = requireConnection(configId);
+        try (Connection conn = requireConnection(configId, database);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < pkVals.length; i++) {
                 bind(ps, i + 1, pkVals[i]);
@@ -179,6 +205,12 @@ public final class TableDataApi {
 
     /** 插入一行（cols 为空 → INSERT INTO t () VALUES ()，用默认值）。 */
     public static long insertRow(String configId, String schema, String table,
+                                 String[] cols, String[] vals) {
+        return insertRow(configId, "", schema, table, cols, vals);
+    }
+
+    /** 插入一行；database 仅 PG 跨库有意义。 */
+    public static long insertRow(String configId, String database, String schema, String table,
                                  String[] cols, String[] vals) {
         String sql;
         if (cols == null || cols.length == 0) {
@@ -197,7 +229,7 @@ public final class TableDataApi {
             sql = "INSERT INTO " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table)
                     + " (" + names + ") VALUES (" + marks + ")";
         }
-        try (Connection conn = requireConnection(configId);
+        try (Connection conn = requireConnection(configId, database);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (cols != null && cols.length > 0) {
                 for (int i = 0; i < vals.length; i++) {
@@ -238,5 +270,9 @@ public final class TableDataApi {
 
     private static Connection requireConnection(String configId) throws SQLException {
         return ConnectionRegistry.requirePool(configId).getConnection();
+    }
+
+    private static Connection requireConnection(String configId, String database) throws SQLException {
+        return ConnectionRegistry.connectionTo(configId, database);
     }
 }

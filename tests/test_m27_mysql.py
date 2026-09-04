@@ -47,7 +47,7 @@ def test_data_page_default_pk_order(qtbot, mysql_env, connection_service):
         q.execute(profile, f"CREATE TABLE `{table}` (id INT PRIMARY KEY, v INT)")
         q.execute(profile, f"INSERT INTO `{table}` VALUES (3,33),(1,11),(2,22)")
 
-        w = DataTableWidget(profile, "test", table,
+        w = DataTableWidget(profile, "test", "test", table,
                             DataService(connection_service),
                             MetadataService(connection_service))
         qtbot.addWidget(w)

@@ -131,10 +131,11 @@ class EditableTableModel(QAbstractTableModel):
 class DataTableWidget(QWidget):
     """单表数据页。tab_key 供去重。"""
 
-    def __init__(self, profile: ConnectionProfile, schema: str, table: str,
+    def __init__(self, profile: ConnectionProfile, database: str, schema: str, table: str,
                  data: DataService, metadata: MetadataService, parent=None) -> None:
         super().__init__(parent)
         self.profile = profile
+        self.database = database
         self.schema = schema
         self.table = table
         self.tab_key = f"{schema}.{table}"
@@ -226,12 +227,14 @@ class DataTableWidget(QWidget):
         profile, schema, table = self.profile, self.schema, self.table
 
         def fetch() -> tuple[list[dict], list[str], dict]:
-            cols_meta = self._columns_meta or self._metadata.columns(profile, schema, table)
-            pk = self._data.primary_key(profile, schema, table)
+            cols_meta = self._columns_meta or self._metadata.columns(
+                profile, schema, table, database=self.database)
+            pk = self._data.primary_key(profile, schema, table, database=self.database)
             page = self._data.load_page(profile, schema, table,
                                         offset=self._offset, limit=self._limit,
                                         order_by=self._order_for(pk, self._sort) or None,
-                                        where=self._where or None)
+                                        where=self._where or None,
+                                        database=self.database)
             return cols_meta, pk, page
 
         def done(payload) -> None:
@@ -252,7 +255,7 @@ class DataTableWidget(QWidget):
             logger.error("数据页加载失败: %s", msg)
             from PySide6.QtWidgets import QMessageBox
 
-            QMessageBox.warning(self, "数据页", f"加载失败：\n{clean_java_error(msg)}")
+            QMessageBox.critical(self, "数据页", f"加载失败：\n{clean_java_error(msg)}")
 
         run_async(fetch, done, error)
 
@@ -344,7 +347,8 @@ class DataTableWidget(QWidget):
             for r in sorted(loaded):
                 try:
                     self._data.delete_row(profile, schema, table,
-                                          pk, self._model.pk_values_of(r))
+                                          pk, self._model.pk_values_of(r),
+                                          database=self.database)
                 except Exception as exc:  # noqa: BLE001
                     errs.append(f"行 {r + 1}: {exc}")
             return errs
@@ -424,7 +428,8 @@ class DataTableWidget(QWidget):
             if not statements:
                 return []
             results = self._data.execute_script(profile, schema,
-                                                 [s for _, s in statements])
+                                                 [s for _, s in statements],
+                                                 database=self.database)
             errs: list[str] = []
             for (label, _sql), res in zip(statements, results):
                 if res.get("kind") == "error":

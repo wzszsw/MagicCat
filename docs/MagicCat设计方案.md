@@ -406,6 +406,7 @@ MagicCat/
 | M83 | 日期时间统一显示为 `YYYY-MM-DD HH:MM:SS`（本地时区）：新增 format_datetime，对象页「修改日期」列与结果网格统一接入 | ✅ | 121 回归 + 格式断言 |
 | M84 | 数据页加载失败改用 MessageBox 统一报错（清理 Java 前缀）；AGENTS.md 沉淀限定名分隔引号与报错统一约定 | ✅ | 121 回归 |
 | M85 | 本地存储重构为三合一（对标 Navicat，不兼容旧结构、不留包袱）：连接→注册表、查询内容→.sql 文件、元数据/历史/收藏/设置/片段/任务/窗口状态→SQLite | ✅ | 121 回归 |
+| M86 | 修复 PG 打开表数据报错：thread 目录级 database(catalog) 到 page/columns/primaryKey/executeScript，PG 下临时连目标库；报错对话框改 error(critical) | ✅ | 121 回归 + 真实 PG 跨库 db3.cicsdev 表 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

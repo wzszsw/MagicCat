@@ -39,6 +39,12 @@
 ## 4. 数据访问与方言
 
 - **MySQL：database ≡ schema**（两级即连接→库→分类）；**PostgreSQL：database 与 schema 是两级**（连接→库→schema→分类）。
+- **JDBC catalog / schema 语义（重要，用户强调）**：
+  - **MySQL JDBC**：只有 **catalog（= database）**，**无 schema**（`getXxx(schema=null, catalog=database, ...)`）。
+    元数据查询时把数据库名放 **catalog** 参数；schema 传 `null`。拼限定名时用 `database.table`（反引号）。
+  - **PostgreSQL JDBC**：有标准的 **database（catalog）** 和 **schema** 两个概念；
+    `getXxx(catalog=database, schema=schema, ...)` **两者都传**。拼限定名用 `"db"` 只到 `"schema"."table"`（库在连接层，不在表限定名里）。
+  - **跨库（PG）**：打开/枚举某库的对象时，需把目标库作为 catalog 传入，并在该库连接上执行（PG 表限定名 `"schema"."table"` 只含 schema，库由连接决定）。
 - **PostgreSQL 元数据尽量用 JDBC 标准 API**（`DatabaseMetaData`），避免手拼方言敏感的 information_schema SQL；MySQL 可走 information_schema 富信息层。
 - 标识符/分页语法**按方言**：PG 双引号 + `LIMIT n OFFSET m`，MySQL 反引号 + `LIMIT offset, limit`。
 - **限定名 = 每个标识符分别加引号，再以 `.` 连接**：`"schema"."table"`（PG）、`` `schema`.`table` ``（MySQL）。

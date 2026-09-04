@@ -68,11 +68,17 @@ public final class JdbcStandardMetadata {
     // ---- 列定义（标准 DatabaseMetaData.getColumns）：name, data_type, nullable, key,
     //      default_value, extra, charset, collation, comment, ordinal ----
     public static String columns(String configId, String schema, String table) {
+        return columns(configId, "", schema, table);
+    }
+
+    /** 列定义；catalog（PG=数据库）可传入以跨库取元数据。 */
+    public static String columns(String configId, String catalog, String schema, String table) {
+        String useCatalog = (catalog == null || catalog.isBlank()) ? null : catalog;
         // 收集主键列（用于标记 key=PRI）
         Set<String> pkCols = new LinkedHashSet<>();
-        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getPrimaryKeys(null, schema, table)) {
+            try (ResultSet rs = md.getPrimaryKeys(useCatalog, schema, table)) {
                 while (rs.next()) {
                     pkCols.add(rs.getString("COLUMN_NAME"));
                 }
@@ -81,9 +87,9 @@ public final class JdbcStandardMetadata {
             throw new IllegalStateException("读取主键失败: " + e.getMessage(), e);
         }
         List<String[]> rows = new ArrayList<>();
-        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getColumns(null, schema, table, "%")) {
+            try (ResultSet rs = md.getColumns(useCatalog, schema, table, "%")) {
                 while (rs.next()) {
                     String name = rs.getString("COLUMN_NAME");
                     if (name == null) {

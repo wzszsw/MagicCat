@@ -68,8 +68,9 @@ class MetadataService:
     def triggers(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "triggers", schema)
 
-    def columns(self, profile: ConnectionProfile, schema: str, table: str) -> list[dict]:
-        return self._meta(profile, "columns", schema, table)
+    def columns(self, profile: ConnectionProfile, schema: str, table: str,
+                database: str = "") -> list[dict]:
+        return self._meta(profile, "columns", database, schema, table)
 
     def indexes(self, profile: ConnectionProfile, schema: str, table: str) -> list[dict]:
         return self._meta(profile, "indexes", schema, table)

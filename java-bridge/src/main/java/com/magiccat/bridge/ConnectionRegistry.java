@@ -139,10 +139,16 @@ public final class ConnectionRegistry {
      * 返回 JSON 数组：[{"kind":"update","affected":N} | {"kind":"error","message":…}]。
      * 默认库切换：PostgreSQL 用 setSchema，MySQL/MariaDB 用 setCatalog。 */
     public static String executeScript(String configId, String schema, String[] statements) {
+        return executeScript(configId, "", schema, statements);
+    }
+
+    /** 批量执行；database 仅 PG 跨库时有意义（连到目标库）。 */
+    public static String executeScript(String configId, String database,
+                                       String schema, String[] statements) {
         List<String> results = new ArrayList<>();
-        try (Connection conn = requirePool(configId).getConnection()) {
+        try (Connection conn = connectionTo(configId, database)) {
             if (schema != null && !schema.isBlank()) {
-                boolean pg = isPostgres(conn);
+                boolean pg = isPostgres(configId);
                 if (pg) {
                     conn.setSchema(schema);
                 } else {
@@ -240,6 +246,19 @@ public final class ConnectionRegistry {
         return p != null && "postgresql".equalsIgnoreCase(p.flavor());
     }
 
+    /** 若是 PG 且指定了 database，则对【该库】建临时连接（跨库访问）；否则用连接池连接。 */
+    static Connection connectionTo(String configId, String database) throws SQLException {
+        ConnectParams p = PARAMS.get(configId);
+        if (p == null) {
+            throw new IllegalStateException("连接参数缺失: " + configId);
+        }
+        if (database != null && !database.isBlank() && isPostgres(configId)) {
+            return newDataSource(p.flavor(), p.host(), p.port(),
+                    database, p.user(), p.password()).getConnection();
+        }
+        return requirePool(configId).getConnection();
+    }
+
     /** 当前打开的配置 ID 集合（调试/状态显示用）。 */
     public static String[] openIds() {
         return POOLS.keySet().toArray(new String[0]);
@@ -301,9 +320,9 @@ public final class ConnectionRegistry {
         }
     }
 
-    private static HikariDataSource newDataSource(String flavor, String host, int port,
-                                                  String database, String user,
-                                                  String password) {
+    static HikariDataSource newDataSource(String flavor, String host, int port,
+                                          String database, String user,
+                                          String password) {
         HikariConfig cfg = new HikariConfig();
         cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
         cfg.setUsername(user);

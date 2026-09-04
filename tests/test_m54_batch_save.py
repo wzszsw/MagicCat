@@ -24,7 +24,7 @@ def test_save_all_batch_updates(qtbot, mysql_env, connection_service):
     try:
         q.execute(profile, f"CREATE TABLE `{table}` (id INT PRIMARY KEY, v VARCHAR(20))")
         q.execute(profile, f"INSERT INTO `{table}` VALUES (1, 'a'), (2, 'b')")
-        w = DataTableWidget(profile, "test", table, DataService(connection_service),
+        w = DataTableWidget(profile, "test", "test", table, DataService(connection_service),
                             MetadataService(connection_service))
         qtbot.addWidget(w)
 

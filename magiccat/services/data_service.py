@@ -34,43 +34,45 @@ class DataService:
 
     def load_page(self, profile: ConnectionProfile, schema: str, table: str,
                   offset: int = 0, limit: int = 100,
-                  order_by: str | None = None, where: str | None = None) -> dict:
-        """返回 {columns, rows, total, pk, truncated}。"""
+                  order_by: str | None = None, where: str | None = None,
+                  database: str = "") -> dict:
+        """返回 {columns, rows, total, pk, truncated}。database 仅 PG 跨库时传目标库。"""
         self._ensure_open(profile)
-        raw = self._api().page(profile.id, schema, table, int(offset), int(limit),
+        raw = self._api().page(profile.id, database, schema, table, int(offset), int(limit),
                                order_by or "", where or "")
         return json.loads(raw)
 
-    def primary_key(self, profile: ConnectionProfile, schema: str, table: str) -> list[str]:
+    def primary_key(self, profile: ConnectionProfile, schema: str, table: str,
+                    database: str = "") -> list[str]:
         self._ensure_open(profile)
-        raw = self._api().primaryKey(profile.id, schema, table)
+        raw = self._api().primaryKey(profile.id, database, schema, table)
         return list(raw)
 
     def update_row(self, profile: ConnectionProfile, schema: str, table: str,
                    pk_cols: list[str], pk_vals: list, set_cols: list[str],
-                   set_vals: list) -> int:
+                   set_vals: list, database: str = "") -> int:
         self._ensure_open(profile)
         return int(self._api().updateRow(
-            profile.id, schema, table,
+            profile.id, database, schema, table,
             to_java_string_array(pk_cols), to_java_string_array(pk_vals),
             to_java_string_array(set_cols), to_java_string_array(set_vals)))
 
     def delete_row(self, profile: ConnectionProfile, schema: str, table: str,
-                   pk_cols: list[str], pk_vals: list) -> int:
+                   pk_cols: list[str], pk_vals: list, database: str = "") -> int:
         self._ensure_open(profile)
-        return int(self._api().deleteRow(profile.id, schema, table,
+        return int(self._api().deleteRow(profile.id, database, schema, table,
                                          to_java_string_array(pk_cols),
                                          to_java_string_array(pk_vals)))
 
     def insert_row(self, profile: ConnectionProfile, schema: str, table: str,
-                   cols: list[str], vals: list) -> int:
+                   cols: list[str], vals: list, database: str = "") -> int:
         self._ensure_open(profile)
-        return int(self._api().insertRow(profile.id, schema, table,
+        return int(self._api().insertRow(profile.id, database, schema, table,
                                          to_java_string_array(cols),
                                          to_java_string_array(vals)))
 
     def execute_script(self, profile: ConnectionProfile, schema: str,
-                       statements: list[str]) -> list[dict]:
+                       statements: list[str], database: str = "") -> list[dict]:
         """单连接批量执行（避免“循环内逐条 DB 调用”的网络往返）。
 
         返回 [{kind:'update',affected:N} | {kind:'error',message}]，顺序与输入一致。
@@ -78,5 +80,5 @@ class DataService:
         self._ensure_open(profile)
         raw = get_runtime().jclass(
             "com.magiccat.bridge.ConnectionRegistry").executeScript(
-            profile.id, schema, to_java_string_array(statements))
+            profile.id, database, schema, to_java_string_array(statements))
         return json.loads(raw)

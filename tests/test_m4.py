@@ -113,7 +113,7 @@ def test_data_table_widget_editing(qtbot, mysql_env, connection_service):
 
         data = DataService(connection_service)
         meta = MetadataService(connection_service)
-        w = DataTableWidget(profile, "test", table, data, meta)
+        w = DataTableWidget(profile, "test", "test", table, data, meta)
         qtbot.addWidget(w)
 
         def loaded() -> bool:
@@ -136,7 +136,7 @@ def test_data_table_widget_editing(qtbot, mysql_env, connection_service):
         assert model.rowCount() == 2
 
         # 无主键表 → 只读
-        w2 = DataTableWidget(profile, "test", nopk, data, meta)
+        w2 = DataTableWidget(profile, "test", "test", nopk, data, meta)
         qtbot.addWidget(w2)
 
         def loaded2() -> bool:

@@ -60,7 +60,7 @@ def _replace_children(parent: QTreeWidgetItem, children: list[QTreeWidgetItem]) 
 class ObjectExplorer(QTreeWidget):
     """连接与数据库对象导航树。"""
 
-    open_table_requested = Signal(str, str, str)  # profile_id, schema, table
+    open_table_requested = Signal(str, str, str, str)  # profile_id, database, schema, table
     design_table_requested = Signal(str, str, str)  # profile_id, schema, table
     er_database_requested = Signal(str, str)  # profile_id, schema
     create_table_requested = Signal(str, str)  # profile_id, schema
@@ -512,7 +512,8 @@ class ObjectExplorer(QTreeWidget):
             profile = self._profile_of(item)
             if profile is not None:
                 self.open_table_requested.emit(
-                    profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
+                    profile.id, self._database_of(item),
+                    info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
         elif kind == "database":
             item.setExpanded(not item.isExpanded())
 

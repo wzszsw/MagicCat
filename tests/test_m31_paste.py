@@ -25,7 +25,7 @@ def test_paste_tsv_marks_dirty(qtbot, mysql_env, connection_service):
     try:
         q.execute(profile, f"CREATE TABLE `{table}` (id INT PRIMARY KEY, a VARCHAR(10), b INT)")
         q.execute(profile, f"INSERT INTO `{table}` VALUES (1, 'old', 0), (2, 'old2', 1)")
-        w = DataTableWidget(profile, "test", table, DataService(connection_service),
+        w = DataTableWidget(profile, "test", "test", table, DataService(connection_service),
                             MetadataService(connection_service))
         qtbot.addWidget(w)
 

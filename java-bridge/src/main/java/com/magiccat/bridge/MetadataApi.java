@@ -172,8 +172,14 @@ public final class MetadataApi {
      *  collation, comment, ordinal。MySQL 走 information_schema（富信息），
      *  其它库走标准 DatabaseMetaData.getColumns（JDBC 标准 API，跨库稳）。 */
     public static String columns(String configId, String schema, String table) {
+        return columns(configId, "", schema, table);
+    }
+
+    /** 列定义；database（PG 的 catalog）传入时对该库取元数据（跨库）。 */
+    public static String columns(String configId, String database,
+                                 String schema, String table) {
         if (isPostgresFamily(configId)) {
-            return JdbcStandardMetadata.columns(configId, schema, table);
+            return JdbcStandardMetadata.columns(configId, database, schema, table);
         }
         return ConnectionRegistry.executeJson(
                 configId,

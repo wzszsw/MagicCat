@@ -985,7 +985,7 @@ class MainWindow(QMainWindow):
             lambda version: self._status(f"「{profile.name}」连接成功：{version}", 5000),
             lambda err: QMessageBox.warning(self, "测试连接", f"「{profile.name}」失败：\n{err}"))
 
-    def _on_open_table(self, profile_id: str, schema: str, table: str) -> None:
+    def _on_open_table(self, profile_id: str, database: str, schema: str, table: str) -> None:
         profile = self._connections.get(profile_id)
         if profile is None:
             return
@@ -998,7 +998,7 @@ class MainWindow(QMainWindow):
         from magiccat.services.data_service import DataService
         from magiccat.ui.data_table import DataTableWidget
 
-        widget = DataTableWidget(profile, schema, table,
+        widget = DataTableWidget(profile, database, schema, table,
                                  DataService(self._connections), self._metadata)
         index = self.editor_tabs.addTab(widget, key)
         self.editor_tabs.setCurrentIndex(index)
