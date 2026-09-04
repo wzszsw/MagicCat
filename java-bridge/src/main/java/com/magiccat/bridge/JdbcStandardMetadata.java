@@ -19,7 +19,7 @@ import java.util.TreeMap;
  *   <li>MySQL / MariaDB：database 即 catalog、schema 恒为 null；但 mysql-connector-j 的
  *       getTables(catalog=库) 实测返回 0、schema 参数又跨库返回全部 —— catalog 语义不可靠，
  *       因此 MySQL 由 {@link MetadataApi} 走 information_schema 富信息层，不进入本类。
- *   <li>PostgreSQL / Oracle / SQL Server 等：catalog=null、schemaPattern=具体模式
+ *   <li>PostgreSQL / GaussDB / Oracle / SQL Server 等：catalog=null、schemaPattern=具体模式
  *       （PG 风格），本类按此**唯一正确路径**调用，不再用“两种参数次序都试”掩盖方言怪癖。
  * </ul>
  * 行结构刻意与 information_schema 输出一致（列名/取值语义），不波及 Python 侧。

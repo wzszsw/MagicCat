@@ -167,6 +167,27 @@ def _conn_postgres() -> QImage:
     return image
 
 
+@cache
+def _github_svg(name: str) -> QImage | None:
+    """从随资源分发的 GitHub 开源 SVG 渲染通用对象图标。"""
+    from PySide6.QtSvg import QSvgRenderer
+
+    from magiccat.resources import resource_dir
+
+    path = resource_dir() / "icons" / f"{name}.svg"
+    if not path.exists():
+        return None
+    renderer = QSvgRenderer(str(path))
+    if not renderer.isValid():
+        return None
+    image = QImage(64, 64, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    renderer.render(painter, QRectF(0, 0, 64, 64))
+    painter.end()
+    return image
+
+
 def _conn_mariadb() -> QImage:
     """MariaDB：黄绿色牌 + 海豚（与 MySQL 区分色）。"""
     image = _canvas()
@@ -370,10 +391,13 @@ def _bi() -> QImage:
 def _conn_by_provider(provider_key: str) -> QImage | None:
     """按数据库产品 key 返回连接图标。
 
-    优先加载 devicon 彩色 logo PNG 资产（MIT 许可，见 magiccat/resources/logos/）；
-    资产缺失（如未打包资源/未知产品）回退到自绘图标。
+    优先加载 GitHub 彩色 logo 资产（见 magiccat/resources/logos/）；
+    资产缺失时，已接入产品回退到项目既有图标，GaussDB 不使用自绘品牌图形。
     """
     logo = _logo_image(provider_key)
+    if provider_key == "gaussdb":
+        # GaussDB 使用 GitHub Simple Icons 的 Huawei 素材；缺失时不回退自绘。
+        return logo
     if logo is not None:
         return logo
     return {
@@ -387,7 +411,7 @@ def _conn_by_provider(provider_key: str) -> QImage | None:
 
 @cache
 def _logo_image(provider_key: str) -> QImage | None:
-    """从资源目录读取产品 logo PNG。
+    """从资源目录读取产品 logo PNG 或 SVG。
 
     优先用 64px（矢量源头渲染，Qt 缩放到 16/32 目标更清晰），缺失再回退 32px。
     文件缺失/读取失败返回 None（由调用方回退自绘图标）。
@@ -401,6 +425,20 @@ def _logo_image(provider_key: str) -> QImage | None:
             img = QImage(str(path))
             if not img.isNull():
                 return img
+    if provider_key == "gaussdb":
+        # SVG 源文件直接由 QtSvg 渲染，避免重新绘制品牌图形。
+        svg_path = base / "huawei.svg"
+        if svg_path.exists():
+            from PySide6.QtSvg import QSvgRenderer
+
+            image = QImage(64, 64, QImage.Format_ARGB32)
+            image.fill(Qt.transparent)
+            renderer = QSvgRenderer(str(svg_path))
+            if renderer.isValid():
+                painter = QPainter(image)
+                renderer.render(painter, QRectF(0, 0, 64, 64))
+                painter.end()
+                return image
     return None
 
 
@@ -411,13 +449,15 @@ def _icon_image(kind: str, subtype: str = "") -> QImage | None:
     if kind == "procedure" or (kind == "routine" and subtype == "PROCEDURE"):
         return _procedure()
     if kind == "table":
-        return _table()
+        return _github_svg("table") or _table()
     if kind == "view":
         return _view()
     if kind == "trigger":
         return _trigger()
-    if kind in ("database", "schema"):
-        return _database()
+    if kind == "database":
+        return _github_svg("database") or _database()
+    if kind == "schema":
+        return _github_svg("schema") or _folder(_COLORS["cream"])
     if kind in ("profile", "connection"):
         return _conn_by_provider(subtype)
     if kind in ("saved_query", "query"):

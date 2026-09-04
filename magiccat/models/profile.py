@@ -41,7 +41,8 @@ class ConnectionProfile:
 
     @property
     def is_postgres(self) -> bool:
-        return self.provider_key == "postgresql"
+        """是否使用 PostgreSQL 兼容的 catalog/schema 与 SQL 语义。"""
+        return self.provider_key in ("postgresql", "gaussdb")
 
     def to_dict(self) -> dict:
         """序列化（不含明文密码；密码由 ProfileStore 加密后单独落盘）。"""

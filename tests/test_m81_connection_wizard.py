@@ -1,6 +1,6 @@
 """M81 测试：连接编辑向导（产品选择页 → 表单页，产品默认值正确，编辑锁定产品）。
 
-- 新建：第1页产品网格（MySQL/MariaDB/PostgreSQL，不含 Oracle/SQL Server）；
+- 新建：第1页产品网格（MySQL/MariaDB/PostgreSQL/GaussDB，不含 Oracle/SQL Server）；
 - 选 PG → 表单页默认 localhost/5432/postgres；切 MySQL → localhost/3306/root；
 - 编辑：直接落表单页，产品类型锁定，保留原主机/端口。
 """
@@ -17,7 +17,7 @@ def test_wizard_product_page_and_defaults(qtbot):
     qtbot.addWidget(d)
     # 新建：落在产品页
     assert d._stack.currentWidget() is d._product_page
-    assert sorted(d._cards.keys()) == ["mariadb", "mysql", "postgresql"]
+    assert sorted(d._cards.keys()) == ["gaussdb", "mariadb", "mysql", "postgresql"]
     assert "oracle" not in d._cards, "Oracle 不应出现在可选产品"
 
     d._select_product("postgresql")
@@ -25,10 +25,16 @@ def test_wizard_product_page_and_defaults(qtbot):
     assert d.host_edit.text() in ("127.0.0.1", "localhost")
     assert d.port_spin.value() == 5432
     assert d.user_edit.text() == "postgres"
+    assert d.db_edit.text() == "postgres"
 
     d.type_combo.setCurrentIndex(d.type_combo.findData("mysql"))
     assert d.port_spin.value() == 3306
     assert d.user_edit.text() == "root"
+
+    d.type_combo.setCurrentIndex(d.type_combo.findData("gaussdb"))
+    assert d.port_spin.value() == 5432
+    assert d.user_edit.text() == "gaussdb"
+    assert d.db_edit.text() == "postgres"
 
 
 def test_wizard_edit_locks_product_and_preserves(qtbot):

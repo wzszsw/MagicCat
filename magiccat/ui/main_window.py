@@ -34,7 +34,7 @@ from magiccat.services.metadata_service import MetadataService
 from magiccat.services.query_service import QueryService
 from magiccat.services.settings import AppSettings
 from magiccat.services.sql_text import format_sql
-from magiccat.ui.dialogs import ConnectionEditDialog
+from magiccat.ui.dialogs import ConnectionEditDialog, EnvironmentDialog
 from magiccat.ui.editor import SqlEditorWidget
 from magiccat.ui.job import run_async
 from magiccat.ui.object_explorer import ObjectExplorer
@@ -710,6 +710,9 @@ class MainWindow(QMainWindow):
         act_copy.triggered.connect(self._open_copy_dialog)
         act_restore = menu_tools.addAction("执行 SQL 脚本（恢复）…")
         act_restore.triggered.connect(self._open_restore_dialog)
+        menu_tools.addSeparator()
+        act_environment = menu_tools.addAction("环境…")
+        act_environment.triggered.connect(self._open_environment)
 
         menu_view = self.menuBar().addMenu("视图(&V)")
         self.act_dark = menu_view.addAction("深色主题")
@@ -726,13 +729,14 @@ class MainWindow(QMainWindow):
         act_about.triggered.connect(self._about)
 
     # ---- 连接选择 ----
+    def _open_environment(self) -> None:
+        EnvironmentDialog(self).exec()
+
     def _reload_connection_combo(self) -> None:
-        self.profile_combo.blockSignals(True)
-        self.profile_combo.clear()
-        self.profile_combo.addItem("<未选择连接>", None)
-        for p in self._connections.profiles:
-            self.profile_combo.addItem(p.display_name, p.id)
-        self.profile_combo.blockSignals(False)
+        from magiccat.ui.profile_combo import populate_profile_combo
+
+        populate_profile_combo(self.profile_combo, self._connections.profiles,
+                               "<未选择连接>")
 
     def _current_profile(self) -> ConnectionProfile | None:
         pid = self.profile_combo.currentData()
@@ -959,7 +963,7 @@ class MainWindow(QMainWindow):
             f"<h3>MagicCat {magiccat.__version__}</h3>"
             "<p>对标 Navicat 的跨数据库桌面管理工具（开发版）。</p>"
             "<p>技术栈：PySide6 · JPype(内嵌 JVM) · JDBC(HikariCP + mysql-connector-j)<br>"
-            "首发支持：MySQL / MariaDB（Windows）</p>")
+            "支持：MySQL / MariaDB / PostgreSQL / GaussDB（Windows）</p>")
 
     def _add_connection(self) -> None:
         dialog = ConnectionEditDialog(self, groups=self._connections.groups)

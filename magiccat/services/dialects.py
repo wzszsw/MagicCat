@@ -1,7 +1,8 @@
 """数据库方言注册表与连接 URL 构造（M25：为跨库扩展预留的接缝）。
 
 当前实际支持：MySQL / MariaDB（mysql-connector-j，元数据走 information_schema）、
-PostgreSQL（postgresql 驱动，元数据走标准 DatabaseMetaData）。
+PostgreSQL（postgresql 驱动，元数据走标准 DatabaseMetaData）、GaussDB
+（PG 兼容语义，用户手动指定受版权约束的 JDBC JAR）。
 Oracle / SQL Server：已在标准层就绪，接入时只需 pom 加驱动 + 此处 state 置 supported。
 """
 
@@ -20,6 +21,7 @@ class Provider:
     quote_close: str = '"'
     state: str = "planned"    # supported | planned
     standard_metadata: bool = True  # 其它库走标准 DatabaseMetaData
+    requires_external_driver: bool = False
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -36,6 +38,11 @@ PROVIDERS: dict[str, Provider] = {
         driver_class="org.postgresql.Driver",
         url_template="jdbc:postgresql://{host}:{port}/{database}",
         state="supported", standard_metadata=True),
+    "gaussdb": Provider(
+        key="gaussdb", display="GaussDB",
+        driver_class="com.huawei.gaussdb.jdbc.Driver",
+        url_template="jdbc:gaussdb://{host}:{port}/{database}",
+        state="supported", standard_metadata=True, requires_external_driver=True),
     "oracle": Provider(
         key="oracle", display="Oracle", driver_class="oracle.jdbc.OracleDriver",
         url_template="jdbc:oracle:thin:@//{host}:{port}/{database}",
@@ -65,7 +72,7 @@ def planned_keys() -> list[str]:
 def build_jdbc_url(key: str, host: str, port: int, database: str = "") -> str:
     p = provider(key)
     base = p.url_template.format(host=host, port=port, database=database)
-    if key == "postgresql":
+    if key in ("postgresql", "gaussdb"):
         return base + "?connectTimeout=5&socketTimeout=30"
     return base
 

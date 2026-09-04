@@ -2,6 +2,11 @@ package com.magiccat.bridge;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -25,33 +30,38 @@ public final class ConnectionRegistry {
     private static final ConcurrentHashMap<String, Statement> ACTIVE = new ConcurrentHashMap<>();
     /** 每个配置的连接参数（用于对目标 database 临时建连，供跨库元数据）。 */
     private static final ConcurrentHashMap<String, ConnectParams> PARAMS = new ConcurrentHashMap<>();
+    /** 外置版权驱动的 classloader：只保留引用，不复制 JAR 内容。 */
+    private static final ConcurrentHashMap<String, URLClassLoader> EXTERNAL_DRIVER_LOADERS =
+            new ConcurrentHashMap<>();
 
-    /** 连接参数（host/port/database/user/pass/flavor）。 */
+    /** 连接参数（host/port/database/user/pass/flavor/外置驱动）。 */
     public record ConnectParams(String configId, String flavor, String host, int port,
-                                String database, String user, String password) {}
+                                String database, String user, String password,
+                                String driverJar) {}
 
     private ConnectionRegistry() {}
 
     /** 打开（或替换）一个连接池。重复 open 会先关闭旧池。 */
     public static String open(String configId, String host, int port, String database,
                               String user, String password) {
-        return open(configId, "mysql", host, port, database, user, password);
+        return open(configId, "mysql", host, port, database, user, password, "");
     }
 
     /** 打开（或替换）一个连接池；flavor 为方言 key（mysql/mariadb/postgresql…）。 */
     public static String open(String configId, String flavor, String host, int port,
                               String database, String user, String password) {
+        return open(configId, flavor, host, port, database, user, password, "");
+    }
+
+    /** 打开或替换连接池；GaussDB 的 driverJar 是用户通过“环境”指定的本地 JAR。 */
+    public static String open(String configId, String flavor, String host, int port,
+                              String database, String user, String password,
+                              String driverJar) {
         close(configId);
         PARAMS.put(configId, new ConnectParams(configId, flavor, host, port, database,
-                user, password));
-        HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
-        cfg.setUsername(user);
-        cfg.setPassword(password == null ? "" : password);
-        cfg.setMaximumPoolSize(8);
-        cfg.setConnectionTimeout(10_000);
-        cfg.setPoolName("mc-" + configId);
-        POOLS.put(configId, new HikariDataSource(cfg));
+                user, password, driverJar));
+        POOLS.put(configId, newDataSource(flavor, host, port, database, user, password,
+                driverJar, 8, "mc-" + configId));
         return configId;
     }
 
@@ -240,10 +250,11 @@ public final class ConnectionRegistry {
         }
     }
 
-    /** 该配置是否为 PostgreSQL（按连接时的 flavor 判定；未记录时不视为 PG）。 */
+    /** 该配置是否为 PostgreSQL 兼容产品（按连接时的 flavor 判定）。 */
     public static boolean isPostgres(String configId) {
         ConnectParams p = PARAMS.get(configId);
-        return p != null && "postgresql".equalsIgnoreCase(p.flavor());
+        return p != null && ("postgresql".equalsIgnoreCase(p.flavor())
+                || "gaussdb".equalsIgnoreCase(p.flavor()));
     }
 
     /** 若是 PG 且指定了 database，则对【该库】建临时连接（跨库访问）；否则用连接池连接。 */
@@ -254,7 +265,8 @@ public final class ConnectionRegistry {
         }
         if (database != null && !database.isBlank() && isPostgres(configId)) {
             return newDataSource(p.flavor(), p.host(), p.port(),
-                    database, p.user(), p.password()).getConnection();
+                    database, p.user(), p.password(), p.driverJar(), 2,
+                    "mc-tmp-" + p.host() + ":" + p.port() + "/" + database).getConnection();
         }
         return requirePool(configId).getConnection();
     }
@@ -287,7 +299,8 @@ public final class ConnectionRegistry {
             throw new IllegalStateException("连接参数缺失: " + configId);
         }
         try (HikariDataSource ds = newDataSource(p.flavor(), p.host(), p.port(),
-                                                 database, p.user(), p.password());
+                                                 database, p.user(), p.password(), p.driverJar(), 2,
+                                                 "mc-tmp-" + p.host() + ":" + p.port() + "/" + database);
              Connection conn = ds.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (maxRows > 0) {
@@ -321,15 +334,49 @@ public final class ConnectionRegistry {
     }
 
     static HikariDataSource newDataSource(String flavor, String host, int port,
-                                          String database, String user,
-                                          String password) {
-        HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
-        cfg.setUsername(user);
-        cfg.setPassword(password == null ? "" : password);
-        cfg.setMaximumPoolSize(2);
-        cfg.setConnectionTimeout(10_000);
-        cfg.setPoolName("mc-tmp-" + host + ":" + port + "/" + database);
-        return new HikariDataSource(cfg);
+                                          String database, String user, String password,
+                                          String driverJar, int maxPoolSize,
+                                          String poolName) {
+        ClassLoader previous = Thread.currentThread().getContextClassLoader();
+        if ("gaussdb".equalsIgnoreCase(flavor)) {
+            Thread.currentThread().setContextClassLoader(externalDriverLoader(driverJar));
+        }
+        try {
+            HikariConfig cfg = new HikariConfig();
+            cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
+            cfg.setUsername(user);
+            cfg.setPassword(password == null ? "" : password);
+            cfg.setMaximumPoolSize(maxPoolSize);
+            cfg.setConnectionTimeout(10_000);
+            cfg.setPoolName(poolName);
+            if (!"gaussdb".equalsIgnoreCase(flavor)) {
+                return new HikariDataSource(cfg);
+            }
+            cfg.setDriverClassName("com.huawei.gaussdb.jdbc.Driver");
+            return new HikariDataSource(cfg);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previous);
+        }
+    }
+
+    private static URLClassLoader externalDriverLoader(String driverJar) {
+        if (driverJar == null || driverJar.isBlank()) {
+            throw new IllegalArgumentException("GaussDB 需要在“工具 → 环境”指定本地 JDBC 驱动 JAR");
+        }
+        Path jarPath = Path.of(driverJar).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(jarPath)) {
+            throw new IllegalArgumentException("GaussDB JDBC 驱动不存在: " + jarPath);
+        }
+        String key = jarPath.toString();
+        return EXTERNAL_DRIVER_LOADERS.computeIfAbsent(key, ConnectionRegistry::newDriverLoader);
+    }
+
+    private static URLClassLoader newDriverLoader(String jarPath) {
+        try {
+            URL url = Path.of(jarPath).toUri().toURL();
+            return new URLClassLoader(new URL[] {url}, ConnectionRegistry.class.getClassLoader());
+        } catch (MalformedURLException e) {
+            throw new IllegalArgumentException("GaussDB JDBC 驱动路径无效: " + jarPath, e);
+        }
     }
 }

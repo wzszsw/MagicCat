@@ -165,9 +165,9 @@ class ImportCsvDialog(QDialog):
 
     # ---- 装载 ----
     def _populate_profiles(self) -> None:
-        self.profile_combo.clear()
-        for p in self._connections.profiles:
-            self.profile_combo.addItem(p.display_name, p.id)
+        from magiccat.ui.profile_combo import populate_profile_combo
+
+        populate_profile_combo(self.profile_combo, self._connections.profiles)
 
     def _current_profile(self):
         pid = self.profile_combo.currentData()
@@ -314,9 +314,9 @@ class CopyTableDialog(QDialog):
         self.src_schema_combo.currentIndexChanged.connect(self._on_schema_changed)
 
     def _populate_profiles(self) -> None:
-        self.profile_combo.clear()
-        for p in self._connections.profiles:
-            self.profile_combo.addItem(p.display_name, p.id)
+        from magiccat.ui.profile_combo import populate_profile_combo
+
+        populate_profile_combo(self.profile_combo, self._connections.profiles)
 
     def _current_profile(self):
         pid = self.profile_combo.currentData()

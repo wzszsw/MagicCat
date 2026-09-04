@@ -10,7 +10,7 @@ import java.sql.SQLException;
  *   <li>MySQL / MariaDB：使用 information_schema —— 实测 mysql-connector-j 的
  *       DatabaseMetaData.getTables(catalog=库) 返回 0、schema 参数又跨库返回全部，
  *       catalog 语义不可靠；且 JDBC 也拿不到完整列类型/EXTRA/触发器。
- *   <li>其它数据库（PostgreSQL / Oracle / SQL Server…）：走 {@link JdbcStandardMetadata}
+     *   <li>其它数据库（PostgreSQL / GaussDB / Oracle / SQL Server…）：走 {@link JdbcStandardMetadata}
  *       （标准 DatabaseMetaData，不拼方言 SQL），实现换库零改动。
  * </ul>
  */
@@ -30,12 +30,9 @@ public final class MetadataApi {
     }
 
     private static boolean isPostgresFamily(String configId) {
-        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
-            String product = conn.getMetaData().getDatabaseProductName();
-            return product != null && product.toLowerCase().contains("postgresql");
-        } catch (SQLException e) {
-            throw new IllegalStateException("读取数据库产品失败: " + e.getMessage(), e);
-        }
+        // 以连接配置方言为准：openGauss 的 product name 在不同驱动版本中
+        // 可能返回 openGauss、GaussDB 或 PostgreSQL，不能只匹配产品字符串。
+        return ConnectionRegistry.isPostgres(configId);
     }
 
     private static String tablesSql(String configId, String schema) {
@@ -93,6 +90,14 @@ public final class MetadataApi {
                     configId,
                     "SELECT SCHEMA_NAME AS name FROM information_schema.SCHEMATA "
                             + "ORDER BY SCHEMA_NAME",
+                    null, 0);
+        }
+        if (isPostgresFamily(configId)) {
+            // 初始 database 只是登录目标；pg_database 才能列出服务器上的全部数据库。
+            return ConnectionRegistry.executeJson(
+                    configId,
+                    "SELECT datname AS name FROM pg_database "
+                            + "WHERE datallowconn ORDER BY datname",
                     null, 0);
         }
         return JdbcStandardMetadata.databases(configId);

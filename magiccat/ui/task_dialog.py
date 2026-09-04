@@ -156,8 +156,9 @@ class _TaskEditDialog(QDialog):
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("任务名称（用于备份文件名）")
         self.profile_combo = QComboBox()
-        for p in connections.profiles:
-            self.profile_combo.addItem(p.display_name, p.id)
+        from magiccat.ui.profile_combo import populate_profile_combo
+
+        populate_profile_combo(self.profile_combo, connections.profiles)
         self.schema_combo = QComboBox()
         self.schema_combo.setEnabled(False)
         self.interval_spin = QSpinBox()

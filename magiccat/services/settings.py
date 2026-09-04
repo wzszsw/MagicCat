@@ -7,7 +7,7 @@ from pathlib import Path
 from magiccat.storage import home_dir
 from magiccat.storage.sqlite_store import SqliteStore
 
-DEFAULTS = {"theme": "light"}
+DEFAULTS = {"theme": "light", "gaussdb_driver_jar": ""}
 
 
 class AppSettings:

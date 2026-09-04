@@ -407,6 +407,10 @@ MagicCat/
 | M84 | 数据页加载失败改用 MessageBox 统一报错（清理 Java 前缀）；AGENTS.md 沉淀限定名分隔引号与报错统一约定 | ✅ | 121 回归 |
 | M85 | 本地存储重构为三合一（对标 Navicat，不兼容旧结构、不留包袱）：连接→注册表、查询内容→.sql 文件、元数据/历史/收藏/设置/片段/任务/窗口状态→SQLite | ✅ | 121 回归 |
 | M86 | 修复 PG 打开表数据报错：thread 目录级 database(catalog) 到 page/columns/primaryKey/executeScript，PG 下临时连目标库；报错对话框改 error(critical) | ✅ | 121 回归 + 真实 PG 跨库 db3.cicsdev 表 |
+| M87 | GaussDB 扩展：PG 兼容对象树/数据页、`jdbc:gaussdb://` 与华为 JDBC 驱动动态加载；「工具 → 环境」指定本机 JAR，驱动不进入发行包 | ✅ | 方言/向导/环境设置/外置 classloader 回归 + openGauss 容器冒烟 |
+| M88 | 所有连接选择下拉框统一显示数据库产品图标（主查询栏、备份、任务、导入、传输），共享 profile 填充辅助 | ✅ | 11 项 UI/图标/向导回归 |
+| M89 | PG/GaussDB 初始化数据库改为必填且默认 `postgres`；数据库枚举独立查询 `pg_database`，不因初始库隐藏其它库 | ✅ | 向导默认/必填与 GaussDB 元数据回归 |
+| M90 | schema 与 table 节点改用高辨识度的 GitHub Ant Design Icons 素材，消除对象树层级图标混淆 | ✅ | 图标非空且互异回归 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

@@ -30,7 +30,7 @@ public final class Facade {
                 + "&connectTimeout=5000&socketTimeout=30000&serverTimezone=UTC";
     }
 
-    /** 按方言构造 JDBC URL（MySQL/MariaDB 含参数；PostgreSQL 走 PG 官方协议）。 */
+    /** 按方言构造 JDBC URL（MySQL/MariaDB 含参数；PG 兼容产品走各自协议）。 */
     public static String buildUrlByFlavor(String flavor, String host, int port,
                                           String database) {
         String db = (database == null || database.isBlank()) ? "" : database;
@@ -38,6 +38,10 @@ public final class Facade {
         if ("postgresql".equals(f)) {
             // 连接库可空（默认连 postgres），驱动自动带 connect/socket 超时
             return "jdbc:postgresql://" + host + ":" + port + "/" + db
+                    + "?connectTimeout=5&socketTimeout=30";
+        }
+        if ("gaussdb".equals(f)) {
+            return "jdbc:gaussdb://" + host + ":" + port + "/" + db
                     + "?connectTimeout=5&socketTimeout=30";
         }
         // 默认按 MySQL/MariaDB 处理

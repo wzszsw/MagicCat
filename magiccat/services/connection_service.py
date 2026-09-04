@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from magiccat.models.profile import ConnectionProfile
 from magiccat.services.profile_store import ProfileStore
 from magiccat.services.runtime import get_runtime
+from magiccat.services.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +70,9 @@ class ConnectionService:
         """打开连接池并返回数据库版本；已在打开状态则直接 ping。"""
         runtime = get_runtime()
         Registry = runtime.jclass("com.magiccat.bridge.ConnectionRegistry")
+        driver_jar = self._driver_jar(profile)
         Registry.open(profile.id, profile.provider_key, profile.host, profile.port,
-                      profile.database, profile.username, profile.password)
+                      profile.database, profile.username, profile.password, driver_jar)
         version = Registry.ping(profile.id)
         self._open.add(profile.id)
         logger.info("已打开连接 [%s] -> %s", profile.name, version)
@@ -90,12 +93,24 @@ class ConnectionService:
         """测试连接（临时打开并立即关闭，返回版本或抛异常）。"""
         runtime = get_runtime()
         Registry = runtime.jclass("com.magiccat.bridge.ConnectionRegistry")
+        driver_jar = self._driver_jar(profile)
         Registry.open(profile.id, profile.provider_key, profile.host, profile.port,
-                      profile.database, profile.username, profile.password)
+                      profile.database, profile.username, profile.password, driver_jar)
         try:
             return Registry.ping(profile.id)
         finally:
             Registry.close(profile.id)
+
+    @staticmethod
+    def _driver_jar(profile: ConnectionProfile) -> str:
+        if profile.provider_key != "gaussdb":
+            return ""
+        path = str(AppSettings.default().get("gaussdb_driver_jar", "") or "").strip()
+        if not path:
+            raise ValueError("GaussDB 尚未配置 JDBC 驱动，请打开“工具 → 环境”指定本机 gaussdbjdbc.jar。")
+        if not Path(path).is_file():
+            raise FileNotFoundError(f"GaussDB JDBC 驱动不存在：{path}")
+        return path
 
     def server_info(self, profile: ConnectionProfile) -> dict:
         """基于标准 JDBC DatabaseMetaData 的产品/版本/URL/用户等（需已打开）。"""

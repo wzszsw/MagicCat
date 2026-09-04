@@ -1,23 +1,28 @@
 """连接配置编辑对话框——Navicat 式两步向导。
 
 - 第 1 页：产品选择（图标网格 + 搜索），只列出已支持的产品
-  （MySQL/MariaDB/PostgreSQL；Oracle/SQL Server 等未做，不列出）。
+  （MySQL/MariaDB/PostgreSQL/GaussDB；Oracle/SQL Server 等未做，不列出）。
 - 第 2 页：连接表单，按所选产品定制字段与默认值
-  （MySQL：localhost/3306/root；PostgreSQL：localhost/5432/postgres）。
+  （MySQL：localhost/3306/root；PostgreSQL：localhost/5432/postgres；
+  GaussDB：localhost/5432/gaussdb）。
 编辑已有连接时直接进入第 2 页，产品类型已锁定。
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QStackedWidget,
@@ -28,6 +33,8 @@ from PySide6.QtWidgets import (
 
 from magiccat.models.profile import DEFAULT_GROUP, ConnectionProfile
 from magiccat.services.dialects import PROVIDERS, supported_keys
+from magiccat.services.settings import AppSettings
+from magiccat.utils.errors import clean_java_error
 
 
 class _ProductCard(QToolButton):
@@ -113,7 +120,7 @@ class ConnectionEditDialog(QDialog):
         grid = QGridLayout(grid_host)
         grid.setSpacing(10)
         self._cards: dict[str, _ProductCard] = {}
-        # 只列已支持产品（MySQL/MariaDB/PostgreSQL）
+        # 只列已支持产品（MySQL/MariaDB/PostgreSQL/GaussDB）
         for i, key in enumerate(supported_keys()):
             p = PROVIDERS[key]
             card = _ProductCard(key, p.display)
@@ -138,9 +145,16 @@ class ConnectionEditDialog(QDialog):
         page = QWidget()
         form = QFormLayout(page)
         src = profile or ConnectionProfile(name="")
+        spec = self._product_form_spec(self._selected_key)
+
+        title = QLabel(spec["title"])
+        title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        form.addRow("", title)
 
         self.name_edit = QLineEdit(src.name)
         self.type_combo = QComboBox()
+        # 产品已在第 1 页选择；保留控件供旧配置/自动化调用，但不在产品表单中重复显示。
+        self.type_combo.setVisible(False)
         self.type_combo.setEnabled(not self._editing)  # 编辑态锁定产品
         for key in supported_keys():
             self.type_combo.addItem(PROVIDERS[key].display, key)
@@ -154,7 +168,7 @@ class ConnectionEditDialog(QDialog):
         self.pass_edit = QLineEdit(src.password)
         self.pass_edit.setEchoMode(QLineEdit.Password)
         self.db_edit = QLineEdit(src.database)
-        self.db_edit.setPlaceholderText("可选：默认连接到的数据库")
+        self.db_edit.setPlaceholderText(spec["database_placeholder"])
         self.group_combo = QComboBox()
         for g in groups or []:
             self.group_combo.addItem(g)
@@ -167,12 +181,20 @@ class ConnectionEditDialog(QDialog):
 
         form.addRow("连接名称 *", self.name_edit)
         form.addRow("分组", self.group_combo)
-        form.addRow("数据库类型", self.type_combo)
+        self._type_label = QLabel("数据库类型")
+        self._type_label.setVisible(False)
+        form.addRow(self._type_label, self.type_combo)
         form.addRow("主机", self.host_edit)
         form.addRow("端口", self.port_spin)
         form.addRow("用户名", self.user_edit)
         form.addRow("密码", self.pass_edit)
-        form.addRow("数据库", self.db_edit)
+        self._database_label = QLabel(spec["database_label"])
+        form.addRow(self._database_label, self.db_edit)
+        hint = QLabel(spec["hint"])
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #666; padding: 2px 0 6px 0;")
+        form.addRow("", hint)
+        self._product_hint = hint
 
         # 底部「测试连接」按钮在向导底栏，故这里仅放保存密码提示
         self._form_page = page
@@ -183,6 +205,11 @@ class ConnectionEditDialog(QDialog):
         self._selected_key = self.type_combo.currentData() or "mysql"
         # 切换到新产品：采用该产品的默认 主机/端口/用户名
         self._apply_defaults(force_user=True)
+        spec = self._product_form_spec(self._selected_key)
+        if hasattr(self, "_database_label"):
+            self._database_label.setText(spec["database_label"])
+            self.db_edit.setPlaceholderText(spec["database_placeholder"])
+            self._product_hint.setText(spec["hint"])
 
     def _apply_defaults(self, force_user: bool = False) -> None:
         """按当前产品应用默认主机/端口/用户名。
@@ -192,12 +219,13 @@ class ConnectionEditDialog(QDialog):
         """
         key = self._selected_key
         defaults = {
-            "mysql": ("localhost", 3306, "root"),
-            "mariadb": ("localhost", 3306, "root"),
-            "postgresql": ("localhost", 5432, "postgres"),
+            "mysql": ("localhost", 3306, "root", ""),
+            "mariadb": ("localhost", 3306, "root", ""),
+            "postgresql": ("localhost", 5432, "postgres", "postgres"),
+            "gaussdb": ("localhost", 5432, "gaussdb", "postgres"),
         }.get(key)
         if defaults:
-            host, port, user = defaults
+            host, port, user, database = defaults
             if not self.host_edit.text().strip():
                 self.host_edit.setText(host)
             # 端口仅在仍是默认端口之一、或强制应用时跟随
@@ -205,6 +233,43 @@ class ConnectionEditDialog(QDialog):
                 self.port_spin.setValue(port)
             if force_user or not self.user_edit.text().strip():
                 self.user_edit.setText(user)
+            if database and (force_user or not self.db_edit.text().strip()):
+                self.db_edit.setText(database)
+
+    @staticmethod
+    def _product_form_spec(key: str) -> dict[str, str]:
+        """每种产品独立的常规表单文案与字段语义。"""
+        return {
+            "mysql": {
+                "title": "MySQL 连接",
+                "database_label": "数据库（可选）",
+                "database_placeholder": "可选：默认连接到的数据库",
+                "hint": "MySQL：database 与 schema 等价，连接后将列出服务器上的全部数据库。",
+            },
+            "mariadb": {
+                "title": "MariaDB 连接",
+                "database_label": "数据库（可选）",
+                "database_placeholder": "可选：默认连接到的数据库",
+                "hint": "MariaDB：database 与 schema 等价，连接后将列出服务器上的全部数据库。",
+            },
+            "postgresql": {
+                "title": "PostgreSQL 连接",
+                "database_label": "初始化数据库 *",
+                "database_placeholder": "必填，默认 postgres",
+                "hint": "PostgreSQL：初始化数据库用于首次连接，连接后仍会列出其它数据库。",
+            },
+            "gaussdb": {
+                "title": "GaussDB 连接",
+                "database_label": "初始化数据库 *",
+                "database_placeholder": "必填，默认 postgres",
+                "hint": "GaussDB：初始化数据库用于首次连接；JDBC 驱动在“工具 → 环境”中指定。",
+            },
+        }.get(key, {
+            "title": "数据库连接",
+            "database_label": "数据库",
+            "database_placeholder": "默认连接到的数据库",
+            "hint": "",
+        })
 
     # ---- 导航 ----
     def _go_back(self) -> None:
@@ -232,8 +297,6 @@ class ConnectionEditDialog(QDialog):
         self.btn_test.setVisible(is_form or self._editing)
 
     def _test_connection(self) -> None:
-        from PySide6.QtWidgets import QMessageBox
-
         from magiccat.services.connection_service import ConnectionService
         from magiccat.services.profile_store import ProfileStore
 
@@ -242,12 +305,17 @@ class ConnectionEditDialog(QDialog):
             ver = ConnectionService(ProfileStore.default()).test(prof)
             QMessageBox.information(self, "测试连接", f"连接成功：{ver}")
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "测试连接", f"连接失败：\n{exc}")
+            QMessageBox.warning(self, "测试连接", f"连接失败：\n{clean_java_error(exc)}")
 
     def _validate_accept(self) -> None:
         if not self.name_edit.text().strip():
             self.name_edit.setFocus()
             self.name_edit.setPlaceholderText("名称不能为空")
+            return
+        if (self.type_combo.currentData() in ("postgresql", "gaussdb")
+                and not self.db_edit.text().strip()):
+            QMessageBox.warning(self, "初始数据库", "PostgreSQL/GaussDB 连接必须指定初始数据库。")
+            self.db_edit.setFocus()
             return
         self.accept()
 
@@ -263,3 +331,60 @@ class ConnectionEditDialog(QDialog):
         base.password = self.pass_edit.text()
         base.database = self.db_edit.text().strip()
         return base
+
+
+class EnvironmentDialog(QDialog):
+    """Navicat 式“工具 → 环境”：配置不随软件分发的外部数据库驱动。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("环境")
+        self.setMinimumWidth(620)
+        settings = AppSettings.default()
+        self._settings = settings
+
+        root = QVBoxLayout(self)
+        form = QFormLayout()
+        self.gaussdb_driver_edit = QLineEdit(
+            str(settings.get("gaussdb_driver_jar", "") or ""))
+        self.gaussdb_driver_edit.setPlaceholderText(
+            "选择本机 gaussdbjdbc.jar；版权驱动不会被复制或打包")
+        browse = QPushButton("浏览…")
+        browse.clicked.connect(self._browse_gaussdb_driver)
+        row = QWidget()
+        row_lay = QHBoxLayout(row)
+        row_lay.setContentsMargins(0, 0, 0, 0)
+        row_lay.addWidget(self.gaussdb_driver_edit, 1)
+        row_lay.addWidget(browse)
+        form.addRow("GaussDB JDBC 驱动 JAR", row)
+        hint = QLabel("GaussDB 连接使用 jdbc:gaussdb://；请先指定华为提供的本地驱动 JAR。")
+        hint.setWordWrap(True)
+        form.addRow("说明", hint)
+        root.addLayout(form)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        ok = QPushButton("确定")
+        ok.clicked.connect(self._save)
+        cancel = QPushButton("取消")
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(ok)
+        buttons.addWidget(cancel)
+        root.addLayout(buttons)
+
+    def _browse_gaussdb_driver(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择 GaussDB JDBC 驱动", self.gaussdb_driver_edit.text(),
+            "JAR 文件 (*.jar)")
+        if path:
+            self.gaussdb_driver_edit.setText(path)
+
+    def _save(self) -> None:
+        path = self.gaussdb_driver_edit.text().strip()
+        if path and not Path(path).is_file():
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, "环境", f"驱动 JAR 不存在：{path}")
+            return
+        self._settings.set("gaussdb_driver_jar", path)
+        self.accept()
