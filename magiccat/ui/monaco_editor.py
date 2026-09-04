@@ -57,79 +57,61 @@ function __getSelection() {
   var m = __editor.getModel();
   return [m.getOffsetAt(s.getStartPosition()), m.getOffsetAt(s.getEndPosition())];
 }
-function __setCompletionData(data) {
-  if (!__editor || !monaco) return;
-  var CDATA = data || { keywords: [], tables: [], columns: {} };
-  var trigger = [' ', '(', ',', '.', '=', '<', '>'];
+var __CDATA = { keywords: [], tables: [], columns: {} };
+function __completionFor(text, data) {
+  var CDATA = data || __CDATA;
   var TABLE_CTX = ['FROM','JOIN','INTO','UPDATE','TABLE','REFERENCES','DELETE'];
   var COL_CTX = ['SELECT','WHERE','ON','HAVING','AND','OR','BY','GROUP','ORDER','SET'];
-  function lastKeyword(text) {
-    var m = text.toUpperCase().match(/(\b[A-Z]+)\s*$/);
-    return m ? m[1] : '';
+  var up = (text || '').toUpperCase();
+  var out = [];
+  function push(label) {
+    if (out.indexOf(label) < 0) out.push(label);
   }
-  function tableAfter(text) {
-    // 找最近 FROM/JOIN <table> 的表名（简化：取最后一个 FROM/JOIN 后的标识符）
-    var m = text.toUpperCase().match(/\b(?:FROM|JOIN|UPDATE)\s+([A-Za-z_][A-Za-z0-9_]*)/gi);
-    if (!m) return null;
-    var last = m[m.length - 1];
-    var t = last.split(/\s+/).slice(-1)[0];
-    return t;
+  var dotM = (text || '').match(/([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*$/);
+  if (dotM) {
+    (CDATA.columns[dotM[1]] || []).forEach(push);
+    return out;
   }
-  function item(label, kind, range) {
-    return { label: label, kind: kind, insertText: label, range: range };
+  var lkM = up.match(/(\b[A-Z]+)\s*$/);
+  var lk = lkM ? lkM[1] : '';
+  if (TABLE_CTX.indexOf(lk) >= 0) {
+    (CDATA.tables || []).forEach(function (t) { push(t.name); });
+    return out;
   }
+  if (COL_CTX.indexOf(lk) >= 0) {
+    var seen = {};
+    (CDATA.tables || []).forEach(function (t) {
+      (CDATA.columns[t.name] || []).forEach(function (c) { if (!seen[c]) { seen[c] = 1; push(c); } });
+    });
+    (CDATA.tables || []).forEach(function (t) { push(t.name); });
+    return out;
+  }
+  (CDATA.tables || []).forEach(function (t) { push(t.name); });
+  (CDATA.keywords || []).forEach(push);
+  return out;
+}
+function __testCompletion(text) {
+  return JSON.stringify(__completionFor(text, __CDATA));
+}
+function __setCompletionData(data) {
+  if (!__editor || !monaco) return;
+  __CDATA = data || { keywords: [], tables: [], columns: {} };
+  var trigger = [' ', '(', ',', '.', '=', '<', '>'];
   monaco.languages.registerCompletionItemProvider('sql', {
     triggerCharacters: trigger,
     provideCompletionItems: function (model, position) {
       var word = model.getWordUntilPosition(position);
       var span = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
                     startColumn: word.startColumn, endColumn: word.endColumn };
-      // 光标前文本（本行 + 上一行末尾），去掉当前正在输入的词
       var line = model.getLineContent(position.lineNumber);
       var before = line.slice(0, position.column - 1);
       var priorLine = position.lineNumber > 1 ? model.getLineContent(position.lineNumber - 1) : '';
-      var text = (priorLine + ' ' + before).replace(/\S+$/, ''); // 去掉当前词
-      var up = text.toUpperCase();
-      var sugg = [];
-      // 1) <表名>. → 该表列
-      var dotM = up.match(/([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*$/);
-      if (dotM) {
-        var tn = dotM[1];
-        (CDATA.columns[tn] || []).forEach(function (c) {
-          sugg.push(item(c, monaco.languages.CompletionItemKind.Field, span));
-        });
-        return { suggestions: sugg };
-      }
-      var lk = lastKeyword(text);
-      var fromTable = tableAfter(text);
-      // 2) FROM/JOIN/... → 表/视图
-      if (TABLE_CTX.indexOf(lk) >= 0) {
-        (CDATA.tables || []).forEach(function (t) {
-          sugg.push(item(t.name,
-            t.kind === 'view' ? monaco.languages.CompletionItemKind.Interface
-                              : monaco.languages.CompletionItemKind.Class, span));
-        });
-        return { suggestions: sugg };
-      }
-      // 3) SELECT/WHERE/... → 列（来自 FROM 表）+ 表 + 关键字
-      if (COL_CTX.indexOf(lk) >= 0) {
-        var seen = {};
-        (CDATA.tables || []).forEach(function (t) {
-          (CDATA.columns[t.name] || []).forEach(function (c) {
-            if (!seen[c]) { seen[c] = true; sugg.push(item(c, monaco.languages.CompletionItemKind.Field, span)); }
-          });
-        });
-        (CDATA.tables || []).forEach(function (t) {
-          sugg.push(item(t.name, monaco.languages.CompletionItemKind.Class, span));
-        });
-        return { suggestions: sugg };
-      }
-      // 4) 默认 → 表 + 关键字
-      (CDATA.tables || []).forEach(function (t) {
-        sugg.push(item(t.name, monaco.languages.CompletionItemKind.Class, span));
-      });
-      (CDATA.keywords || []).forEach(function (k) {
-        sugg.push(item(k, monaco.languages.CompletionItemKind.Keyword, span));
+      var text = (priorLine + ' ' + before).replace(/\S+$/, '');
+      var labels = __completionFor(text, __CDATA);
+      // 推断 kind：优先看作 Field（列），否则按表/关键字；这里统一 Keyword/Class 混合简化为 Field
+      var kind = monaco.languages.CompletionItemKind.Field;
+      var sugg = labels.map(function (label) {
+        return { label: label, kind: kind, insertText: label, range: span };
       });
       return { suggestions: sugg };
     }
