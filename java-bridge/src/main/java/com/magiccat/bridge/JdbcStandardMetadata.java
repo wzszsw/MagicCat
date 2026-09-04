@@ -29,8 +29,7 @@ public final class JdbcStandardMetadata {
     private JdbcStandardMetadata() {}
 
     // ---- 库/模式列表：name ----
-    public static String databases(String configId) {
-        List<String[]> rows = new ArrayList<>();
+    public static String databases(String configId) {        List<String[]> rows = new ArrayList<>();
         try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
             DatabaseMetaData md = conn.getMetaData();
             Set<String> names = new LinkedHashSet<>();
@@ -64,6 +63,56 @@ public final class JdbcStandardMetadata {
         } catch (SQLException e) {
             throw new IllegalStateException("读取数据库列表失败: " + e.getMessage(), e);
         }
+    }
+
+    // ---- 列定义（标准 DatabaseMetaData.getColumns）：name, data_type, nullable, key,
+    //      default_value, extra, charset, collation, comment, ordinal ----
+    public static String columns(String configId, String schema, String table) {
+        // 收集主键列（用于标记 key=PRI）
+        Set<String> pkCols = new LinkedHashSet<>();
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getPrimaryKeys(null, schema, table)) {
+                while (rs.next()) {
+                    pkCols.add(rs.getString("COLUMN_NAME"));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取主键失败: " + e.getMessage(), e);
+        }
+        List<String[]> rows = new ArrayList<>();
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getColumns(null, schema, table, "%")) {
+                while (rs.next()) {
+                    String name = rs.getString("COLUMN_NAME");
+                    if (name == null) {
+                        continue;
+                    }
+                    String type = rs.getString("TYPE_NAME");
+                    String nullable = rs.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls
+                            ? "NO" : "YES";
+                    String def = rs.getString("COLUMN_DEF");
+                    String extra = "";
+                    try {
+                        if (rs.getInt("IS_AUTOINCREMENT") == 1
+                                || "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT"))) {
+                            extra = "auto_increment";
+                        }
+                    } catch (SQLException ignore) {
+                        // 驱动可能不支持 IS_AUTOINCREMENT 列
+                    }
+                    String key = pkCols.contains(name) ? "PRI" : "";
+                    rows.add(new String[] {name, type, nullable, key, def, extra,
+                            "", "", "", String.valueOf(rs.getInt("ORDINAL_POSITION"))});
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取列失败: " + e.getMessage(), e);
+        }
+        rows.sort(Comparator.comparingInt(r -> Integer.parseInt(r[9])));
+        return Json.table(new String[] {"name", "data_type", "nullable", "key",
+                "default_value", "extra", "charset", "collation", "comment", "ordinal"}, rows);
     }
 
     // ---- 表/视图：name, type(BASE TABLE|VIEW)  （PG 风格：catalog=null, schema=name） ----

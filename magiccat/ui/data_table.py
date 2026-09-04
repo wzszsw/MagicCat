@@ -201,15 +201,21 @@ class DataTableWidget(QWidget):
         root.addWidget(self.status_label)
 
     # ---- 数据加载 ----
-    @staticmethod
-    def _order_for(pk: list[str], sort: tuple | None) -> str:
+    def _order_for(self, pk: list[str], sort: tuple | None) -> str:
+        q = self._quote_ident
         if sort:
             col, direction = sort
-            return f"`{col.replace('`', '``')}` {direction}"
+            return f"{q(col)} {direction}"
         # 无用户排序时默认按主键升序，保证翻页稳定（无主键则交给数据库默认序）
         if pk:
-            return f"`{pk[0].replace('`', '``')}` ASC"
+            return f"{q(pk[0])} ASC"
         return ""
+
+    def _quote_ident(self, name: str) -> str:
+        """按连接方言转义标识符（PG 双引号，MySQL 反引号）。"""
+        from magiccat.services.dialects import quote_ident
+
+        return quote_ident(self.profile.provider_key, name)
 
     def _reload(self) -> None:
         """后台拉取 列元数据(首次) + 当前页 + 总行数。"""

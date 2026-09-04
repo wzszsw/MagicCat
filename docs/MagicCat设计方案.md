@@ -402,8 +402,9 @@ MagicCat/
 | M79 | Bugfix：「其它」下拉改为 aboutToShow 时按当前连接实时重建（修复连接经树打开/combo未变时 PG 菜单为空） | ✅ | 110 回归 + aboutToShow 含序列断言 |
 | M80 | 数据库产品连接图标按 provider_key 区分（devicon 彩色 logo 资产，MIT 许可；缺失回退自绘） | ✅ | 112 回归 + 互异/节点图标断言 |
 | M81 | 新建连接改为 Navicat 式两步向导：第1页产品选择（MySQL/MariaDB/PostgreSQL，移除 Oracle 等），第2页按产品定制表单与默认值；编辑锁定产品 | ✅ | 115 回归 + 向导默认值/锁定断言 |
+| M82 | Bugfix：PG 表数据全闭环——TableDataApi 标识符/分页/主键按方言（双引号+LIMIT n OFFSET m+pg_index 主键），列元数据走标准 JDBC getColumns，data_table 排序/筛选按方言转义 | ✅ | 116 回归 + 真实 PG 表 CRUD |
 
-- 自动化测试：`uv run pytest`（115 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（116 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

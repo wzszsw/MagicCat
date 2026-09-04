@@ -234,6 +234,12 @@ public final class ConnectionRegistry {
         }
     }
 
+    /** 该配置是否为 PostgreSQL（按连接时的 flavor 判定；未记录时不视为 PG）。 */
+    public static boolean isPostgres(String configId) {
+        ConnectParams p = PARAMS.get(configId);
+        return p != null && "postgresql".equalsIgnoreCase(p.flavor());
+    }
+
     /** 当前打开的配置 ID 集合（调试/状态显示用）。 */
     public static String[] openIds() {
         return POOLS.keySet().toArray(new String[0]);

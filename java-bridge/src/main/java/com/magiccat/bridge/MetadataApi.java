@@ -169,8 +169,12 @@ public final class MetadataApi {
     }
 
     /** 列定义（富信息）：name, data_type, nullable, key, default_value, extra, charset,
-     *  collation, comment, ordinal。 */
+     *  collation, comment, ordinal。MySQL 走 information_schema（富信息），
+     *  其它库走标准 DatabaseMetaData.getColumns（JDBC 标准 API，跨库稳）。 */
     public static String columns(String configId, String schema, String table) {
+        if (isPostgresFamily(configId)) {
+            return JdbcStandardMetadata.columns(configId, schema, table);
+        }
         return ConnectionRegistry.executeJson(
                 configId,
                 "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS data_type, "

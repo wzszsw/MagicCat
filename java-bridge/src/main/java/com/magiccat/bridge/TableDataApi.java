@@ -19,15 +19,23 @@ public final class TableDataApi {
 
     private TableDataApi() {}
 
-    /** 反引号转义标识符。 */
+    /** 反引号转义标识符（MySQL/MariaDB 默认）。 */
     public static String quoteIdent(String name) {
         return "`" + name.replace("`", "``") + "`";
+    }
+
+    /** 按方言转义标识符：PG 用双引号，MySQL/MariaDB 用反引号。 */
+    public static String quoteIdent(String configId, String name) {
+        if (ConnectionRegistry.isPostgres(configId)) {
+            return "\"" + name.replace("\"", "\"\"") + "\"";
+        }
+        return quoteIdent(name);
     }
 
     /** 分页读表：返回 {columns, rows, total, pk, truncated}。offset 从 0 开始。 */
     public static String page(String configId, String schema, String table,
                               int offset, int limit, String orderBy, String where) {
-        String qtable = quoteIdent(schema) + "." + quoteIdent(table);
+        String qtable = quoteIdent(configId, schema) + "." + quoteIdent(configId, table);
         String whereClause = (where == null || where.isBlank()) ? " WHERE 1=1" : " WHERE " + where.trim();
         long total;
         List<String[]> rows = new ArrayList<>();
@@ -42,8 +50,11 @@ public final class TableDataApi {
             throw new IllegalStateException("统计行数失败: " + e.getMessage(), e);
         }
         String orderSql = (orderBy == null || orderBy.isBlank()) ? "" : " ORDER BY " + orderBy;
-        String sql = "SELECT * FROM " + qtable + whereClause + orderSql
-                + " LIMIT " + Math.max(offset, 0) + ", " + Math.max(limit, 1);
+        // MySQL: LIMIT offset, limit; PostgreSQL: LIMIT limit OFFSET offset
+        String limitSql = ConnectionRegistry.isPostgres(configId)
+                ? " LIMIT " + Math.max(limit, 1) + " OFFSET " + Math.max(offset, 0)
+                : " LIMIT " + Math.max(offset, 0) + ", " + Math.max(limit, 1);
+        String sql = "SELECT * FROM " + qtable + whereClause + orderSql + limitSql;
         try (Connection conn = requireConnection(configId);
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {
@@ -70,9 +81,21 @@ public final class TableDataApi {
     /** 主键列（按 ORDINAL_POSITION 排序），无主键返回空数组。 */
     public static String[] primaryKey(String configId, String schema, String table) {
         List<String> pk = new ArrayList<>();
-        String sql = "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
-                + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' "
-                + "ORDER BY ORDINAL_POSITION";
+        String sql;
+        if (ConnectionRegistry.isPostgres(configId)) {
+            // PostgreSQL：主键来自 pg_index + pg_attribute
+            sql = "SELECT a.attname FROM pg_index i "
+                    + "JOIN pg_class t ON t.oid = i.indrelid "
+                    + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                    + "JOIN pg_class c ON c.oid = i.indexrelid "
+                    + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey) "
+                    + "WHERE i.indisprimary AND n.nspname = ? AND t.relname = ? "
+                    + "ORDER BY array_position(i.indkey, a.attnum)";
+        } else {
+            sql = "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
+                    + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' "
+                    + "ORDER BY ORDINAL_POSITION";
+        }
         try (Connection conn = requireConnection(configId);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, schema);
@@ -103,16 +126,16 @@ public final class TableDataApi {
             if (i > 0) {
                 set.append(", ");
             }
-            set.append(quoteIdent(setCols[i])).append(" = ?");
+            set.append(quoteIdent(configId, setCols[i])).append(" = ?");
         }
         StringBuilder where = new StringBuilder(" WHERE ");
         for (int i = 0; i < pkCols.length; i++) {
             if (i > 0) {
                 where.append(" AND ");
             }
-            where.append(quoteIdent(pkCols[i])).append(" = ?");
+            where.append(quoteIdent(configId, pkCols[i])).append(" = ?");
         }
-        String sql = "UPDATE " + quoteIdent(schema) + "." + quoteIdent(table)
+        String sql = "UPDATE " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table)
                 + set + where;
         try (Connection conn = requireConnection(configId);
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -140,9 +163,9 @@ public final class TableDataApi {
             if (i > 0) {
                 where.append(" AND ");
             }
-            where.append(quoteIdent(pkCols[i])).append(" = ?");
+            where.append(quoteIdent(configId, pkCols[i])).append(" = ?");
         }
-        String sql = "DELETE FROM " + quoteIdent(schema) + "." + quoteIdent(table) + where;
+        String sql = "DELETE FROM " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table) + where;
         try (Connection conn = requireConnection(configId);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < pkVals.length; i++) {
@@ -159,7 +182,7 @@ public final class TableDataApi {
                                  String[] cols, String[] vals) {
         String sql;
         if (cols == null || cols.length == 0) {
-            sql = "INSERT INTO " + quoteIdent(schema) + "." + quoteIdent(table) + " () VALUES ()";
+            sql = "INSERT INTO " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table) + " () VALUES ()";
         } else {
             StringBuilder names = new StringBuilder();
             StringBuilder marks = new StringBuilder();
@@ -168,10 +191,10 @@ public final class TableDataApi {
                     names.append(", ");
                     marks.append(", ");
                 }
-                names.append(quoteIdent(cols[i]));
+                names.append(quoteIdent(configId, cols[i]));
                 marks.append("?");
             }
-            sql = "INSERT INTO " + quoteIdent(schema) + "." + quoteIdent(table)
+            sql = "INSERT INTO " + quoteIdent(configId, schema) + "." + quoteIdent(configId, table)
                     + " (" + names + ") VALUES (" + marks + ")";
         }
         try (Connection conn = requireConnection(configId);
@@ -190,9 +213,27 @@ public final class TableDataApi {
     private static void bind(PreparedStatement ps, int idx, String v) throws SQLException {
         if (v == null) {
             ps.setObject(idx, null);
-        } else {
-            ps.setObject(idx, v);
+            return;
         }
+        String s = v.trim();
+        // 数值型字符串按数值绑定：避免 PG 的 bigint = varchar 类型不匹配
+        if (!s.isEmpty()) {
+            try {
+                long l = Long.parseLong(s);
+                ps.setLong(idx, l);
+                return;
+            } catch (NumberFormatException ignore) {
+                // 非整型，继续尝试浮点/文本
+            }
+            try {
+                double d = Double.parseDouble(s);
+                ps.setDouble(idx, d);
+                return;
+            } catch (NumberFormatException ignore) {
+                // 文本
+            }
+        }
+        ps.setString(idx, v);
     }
 
     private static Connection requireConnection(String configId) throws SQLException {
