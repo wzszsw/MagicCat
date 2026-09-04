@@ -16,6 +16,12 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--selftest" in args:
         return _selftest()
+
+    # QtWebEngine 需要在 QApplication 前设置（无沙箱/禁 GPU，兼容无显示/offscreen 环境）
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
+                          "--no-sandbox --disable-gpu --disable-software-rasterizer")
+    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+
     from magiccat.services.profile_store import ProfileStore
     from magiccat.utils.logging_setup import configure_logging
 

@@ -35,8 +35,8 @@ from magiccat.services.query_service import QueryService
 from magiccat.services.settings import AppSettings
 from magiccat.services.sql_text import format_sql
 from magiccat.ui.dialogs import ConnectionEditDialog
-from magiccat.ui.editor import SqlEditorWidget
 from magiccat.ui.job import run_async
+from magiccat.ui.monaco_editor import MonacoEditorWidget
 from magiccat.ui.object_explorer import ObjectExplorer
 from magiccat.ui.result_panel import ResultPanel
 from magiccat.ui.theme import apply_theme
@@ -44,6 +44,13 @@ from magiccat.ui.theme import apply_theme
 logger = logging.getLogger(__name__)
 
 _SYSTEM_SCHEMAS = {"information_schema", "performance_schema", "mysql", "sys"}
+
+
+def _is_editor(widget) -> bool:
+    """判断是否为 SQL 编辑器（monaco 或自研）。"""
+    from magiccat.ui.editor import SqlEditorWidget
+
+    return isinstance(widget, (MonacoEditorWidget, SqlEditorWidget))
 
 
 class MainWindow(QMainWindow):
@@ -256,7 +263,7 @@ class MainWindow(QMainWindow):
         - 「对象」页 / 表等其它标签 → 隐藏编辑态动作。
         返回「对象」页时刷新当前领域列表。"""
         widget = self.editor_tabs.widget(index)
-        is_editor = isinstance(widget, SqlEditorWidget)
+        is_editor = _is_editor(widget)
         for btn in self._edit_actions:
             btn.setVisible(is_editor)
         if widget is self.domain_stack:
@@ -796,17 +803,24 @@ class MainWindow(QMainWindow):
         run_async(fetch, done, lambda err: logger.warning("加载补全词表失败: %s", err))
 
     # ---- 编辑器管理 ----
-    def _new_editor(self) -> SqlEditorWidget:
+    def _make_editor(self):
+        import os as _os
+
+        if _os.environ.get("MAGICCAT_EDITOR") == "plain":
+            from magiccat.ui.editor import SqlEditorWidget
+
+            return SqlEditorWidget()
+        return MonacoEditorWidget()
+
+    def _new_editor(self):
         self._tab_seq += 1
-        editor = SqlEditorWidget()
-        editor.setPlaceholderText(
-            "输入 SQL（Ctrl+Space 补全，F5 执行当前语句/选中，Ctrl+Shift+Enter 执行全部）")
+        editor = self._make_editor()
         index = self.editor_tabs.addTab(editor, f"查询 {self._tab_seq}")
         self.editor_tabs.setCurrentIndex(index)
         editor.setFocus()
         return editor
 
-    def _open_object_tab(self, tab_key: str, title: str, content: str) -> SqlEditorWidget:
+    def _open_object_tab(self, tab_key: str, title: str, content: str):
         """打开一个对象标签并保证单例：同 tab_key 已开 → 定位到该标签；
         否则新建编辑器标签并写入内容。返回（可能已存在的）编辑器。"""
         for i in range(self.editor_tabs.count()):
@@ -820,9 +834,9 @@ class MainWindow(QMainWindow):
         self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor), title)
         return editor
 
-    def _active_editor(self) -> SqlEditorWidget | None:
+    def _active_editor(self):
         widget = self.editor_tabs.currentWidget()
-        return widget if isinstance(widget, SqlEditorWidget) else None
+        return widget if _is_editor(widget) else None
 
     def _close_editor_tab(self, index: int) -> None:
         if index <= 0:  # 第 0 页「对象」为固定占位，不可关闭

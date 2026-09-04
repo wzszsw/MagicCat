@@ -36,6 +36,19 @@
 - 右侧「信息」面板：**选中什么显示什么**（选中对象页行也联动）。
 - 顶部「其它」下拉：`aboutToShow` 时**按当前连接实时重建**（PG 含序列、MySQL 空），避免切换事件遗漏。
 
+## 3.1 SQL 编辑器（monaco-editor）
+
+- **SQL/代码编辑器内核用 monaco-editor（VS Code 内核）**，替代自研 `QPlainTextEdit` 高亮/补全，降低语法提示与高亮成本。
+- `MonacoEditorWidget`（`magiccat/ui/monaco_editor.py`）用 QWebEngineView 加载**本地 monaco 资源**
+  （`magiccat/resources/monaco/vs`，离线，PyInstaller 随 `resources` 打包）。
+- **对外接口与旧 `SqlEditorWidget` 兼容**：`text()`/`all_text()`/`toPlainText()`/`current_sql()`/
+  `statements()`/`set_completion_words()`；上层（MainWindow）经这些接口拿文本与补全，逻辑不变。
+- 补全词表：Python 传 `set_completion_words` → JS 注册 monaco completion provider（含已连库表/列）。
+- **自研 `SqlEditorWidget` 保留**（`magiccat/ui/editor.py`）作回退：`MAGICCAT_EDITOR=plain` 时使用，
+  便于无桌面渲染/测试等环境（WebEngine 在 pytest-offscreen 下退出有崩溃隐患）。**真实应用默认 monaco**。
+- QtWebEngine 需在 QApplication 前 import（AA_ShareOpenGLContexts）并设
+  `QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu"`；`app.py`/`conftest` 已设置。
+
 ## 4. 数据访问与方言
 
 - **MySQL：database ≡ schema**（两级即连接→库→分类）；**PostgreSQL：database 与 schema 是两级**（连接→库→schema→分类）。
