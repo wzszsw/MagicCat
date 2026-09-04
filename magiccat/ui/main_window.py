@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
 
     # ---- 布局 ----
     def _build_central(self) -> None:
-        # 查询领域工作区：连接/库（查询领域当前连接选择）+ 编辑态动作按钮
+        # 对象浏览条：领域级「当前连接（树跟手）+ 库」，仅在「对象」页激活时显示
         self.edit_bar = QWidget()
         bar = QHBoxLayout(self.edit_bar)
         bar.setContentsMargins(4, 2, 4, 2)
@@ -117,14 +117,8 @@ class MainWindow(QMainWindow):
         self.schema_combo.setMinimumWidth(150)
         self.schema_combo.currentIndexChanged.connect(self._reload_query_browse)
         bar.addWidget(self.schema_combo)
-        bar.addSpacing(8)
-        # 编辑态专属动作
-        self.btn_save_query = self._query_btn("保存查询", self._save_query_dialog, bar)
-        self.btn_run = self._query_btn("运行", self._run_current, bar)
-        self.query_stop_btn = self._query_btn("停止", self._cancel_execution, bar)
-        self.query_stop_btn.setEnabled(False)
-        self._edit_actions = (self.btn_save_query, self.btn_run, self.query_stop_btn)
         bar.addStretch(1)
+        self._edit_actions = ()  # 查询动作条已移至各查询工作区
 
         # 中央工作区标签页：第 1 页固定「对象」（各功能领域的列表/浏览态占位）
         self.editor_tabs = QTabWidget()
@@ -245,10 +239,11 @@ class MainWindow(QMainWindow):
 
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
-        """当前标签切换：仅当回到「对象」页时刷新当前领域列表。
-        （查询标签自带独立工作区与动作条，无需全局切换。）"""
+        """当前标签切换：对象页激活 → 显示对象浏览条并刷新；查询标签激活 → 隐藏对象浏览条。"""
         widget = self.editor_tabs.widget(index)
-        if widget is self.domain_stack:
+        is_object_page = widget is self.domain_stack
+        self.edit_bar.setVisible(is_object_page)
+        if is_object_page:
             self._reload_current_domain()
 
     def _show_query_domain(self) -> None:
