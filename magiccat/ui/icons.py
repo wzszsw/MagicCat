@@ -136,6 +136,80 @@ def _connection() -> QImage:
     return image
 
 
+# ---- 数据库产品连接图标（自绘，无第三方依赖；按 provider_key 路由） ----
+
+def _conn_mysql() -> QImage:
+    """MySQL：绿色椭圆形牌 + 白色海豚剪影抽象。"""
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#2E7D32"), 1.0))
+    p.setBrush(QBrush(QColor("#00758F")))  # MySQL 品牌色
+    p.drawEllipse(QRectF(2, 2, _SIZE - 4, _SIZE - 4))
+    p.setBrush(QBrush(QColor("#FFFFFF")))
+    p.drawEllipse(QRectF(4.5, 5.5, 4, 4))  # 头
+    p.drawRoundedRect(QRectF(7, 8, 4.5, 3), 1, 1)  # 身
+    p.end()
+    return image
+
+
+def _conn_postgres() -> QImage:
+    """PostgreSQL：蓝色牌 + 白色大象头抽象。"""
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#1E4E79"), 1.0))
+    p.setBrush(QBrush(QColor("#336791")))  # PostgreSQL 品牌色
+    p.drawRoundedRect(QRectF(2, 2, _SIZE - 4, _SIZE - 4), 3, 3)
+    p.setBrush(QBrush(QColor("#FFFFFF")))
+    p.drawRoundedRect(QRectF(5, 5, 4.5, 4.5), 2, 2)  # 头
+    p.drawRoundedRect(QRectF(8.5, 6, 3, 2.5), 1, 1)  # 鼻
+    p.drawRect(QRectF(4.5, 9.5, 2.5, 3))  # 耳
+    p.end()
+    return image
+
+
+def _conn_mariadb() -> QImage:
+    """MariaDB：黄绿色牌 + 海豚（与 MySQL 区分色）。"""
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#6A7A1E"), 1.0))
+    p.setBrush(QBrush(QColor("#A9BA26")))
+    p.drawEllipse(QRectF(2, 2, _SIZE - 4, _SIZE - 4))
+    p.setBrush(QBrush(QColor("#FFFFFF")))
+    p.drawEllipse(QRectF(4.5, 5.5, 4, 4))
+    p.drawRoundedRect(QRectF(7, 8, 4.5, 3), 1, 1)
+    p.end()
+    return image
+
+
+def _conn_oracle() -> QImage:
+    """Oracle：红色牌 + 白色「O」标志。"""
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#8A0D0D"), 1.0))
+    p.setBrush(QBrush(QColor("#C74634")))  # Oracle 红
+    p.drawRoundedRect(QRectF(2, 2, _SIZE - 4, _SIZE - 4), 3, 3)
+    p.setPen(QPen(QColor("#FFFFFF"), 2.0))
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(4.5, 4.5, 7, 7))
+    p.end()
+    return image
+
+
+def _conn_sqlserver() -> QImage:
+    """SQL Server：青色牌 + 白色数据立方。"""
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#1F3A4A"), 1.0))
+    p.setBrush(QBrush(QColor("#2E5A77")))
+    p.drawRoundedRect(QRectF(2, 2, _SIZE - 4, _SIZE - 4), 3, 3)
+    p.setBrush(QBrush(QColor("#5CBAE0")))
+    p.drawRect(QRectF(4, 4.5, 8, 7))  # 立方主体
+    p.setPen(QPen(QColor("#FFFFFF"), 1.0))
+    p.drawLine(4, 4.5, 8, 7)  # 斜线示意数据
+    p.end()
+    return image
+
+
 def _folder(color: str) -> QImage:
     image = _canvas()
     p = _painter(image)
@@ -293,6 +367,18 @@ def _bi() -> QImage:
 
 
 @cache
+def _conn_by_provider(provider_key: str) -> QImage:
+    """按数据库产品 key 返回连接图标；未知/空回退通用连接图标。"""
+    return {
+        "mysql": _conn_mysql(),
+        "postgresql": _conn_postgres(),
+        "mariadb": _conn_mariadb(),
+        "oracle": _conn_oracle(),
+        "sqlserver": _conn_sqlserver(),
+    }.get(provider_key, _connection())
+
+
+@cache
 def _icon_image(kind: str, subtype: str = "") -> QImage | None:
     if kind == "function" or (kind == "routine" and subtype != "PROCEDURE"):
         return _function()
@@ -306,8 +392,8 @@ def _icon_image(kind: str, subtype: str = "") -> QImage | None:
         return _trigger()
     if kind in ("database", "schema"):
         return _database()
-    if kind == "profile" or kind == "connection":
-        return _connection()
+    if kind in ("profile", "connection"):
+        return _conn_by_provider(subtype)
     if kind in ("saved_query", "query"):
         return _query()
     if kind == "run":

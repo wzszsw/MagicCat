@@ -152,7 +152,9 @@ class ObjectExplorer(QTreeWidget):
             group_item.setExpanded(True)
 
     def _add_profile_item(self, parent: QTreeWidgetItem, profile: ConnectionProfile) -> None:
-        item = _make_item(profile.display_name, "profile", profile_id=profile.id)
+        # type=provider_key → 连接图标按数据库产品区分（MySQL/PostgreSQL/…）
+        item = _make_item(profile.display_name, "profile", profile_id=profile.id,
+                          type=profile.provider_key)
         _placeholder(item)
         parent.addChild(item)
 
