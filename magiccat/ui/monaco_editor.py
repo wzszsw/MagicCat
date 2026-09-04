@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from magiccat.resources import resource_dir
 from magiccat.services.sql_text import split_sql_statements, statement_at_cursor
 
-_HTML_SOURCE = """<!DOCTYPE html>
+_HTML_SOURCE = r"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 html, body, #container { height: 100%; margin: 0; padding: 0; }
 </style></head>
@@ -57,19 +57,81 @@ function __getSelection() {
   var m = __editor.getModel();
   return [m.getOffsetAt(s.getStartPosition()), m.getOffsetAt(s.getEndPosition())];
 }
-function __setCompletionWords(words) {
+function __setCompletionData(data) {
   if (!__editor || !monaco) return;
+  var CDATA = data || { keywords: [], tables: [], columns: {} };
+  var trigger = [' ', '(', ',', '.', '=', '<', '>'];
+  var TABLE_CTX = ['FROM','JOIN','INTO','UPDATE','TABLE','REFERENCES','DELETE'];
+  var COL_CTX = ['SELECT','WHERE','ON','HAVING','AND','OR','BY','GROUP','ORDER','SET'];
+  function lastKeyword(text) {
+    var m = text.toUpperCase().match(/(\b[A-Z]+)\s*$/);
+    return m ? m[1] : '';
+  }
+  function tableAfter(text) {
+    // 找最近 FROM/JOIN <table> 的表名（简化：取最后一个 FROM/JOIN 后的标识符）
+    var m = text.toUpperCase().match(/\b(?:FROM|JOIN|UPDATE)\s+([A-Za-z_][A-Za-z0-9_]*)/gi);
+    if (!m) return null;
+    var last = m[m.length - 1];
+    var t = last.split(/\s+/).slice(-1)[0];
+    return t;
+  }
+  function item(label, kind, range) {
+    return { label: label, kind: kind, insertText: label, range: range };
+  }
   monaco.languages.registerCompletionItemProvider('sql', {
-    triggerCharacters: [' ', '(', ','],
+    triggerCharacters: trigger,
     provideCompletionItems: function (model, position) {
       var word = model.getWordUntilPosition(position);
       var span = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
                     startColumn: word.startColumn, endColumn: word.endColumn };
-      var suggestions = (words || []).map(function (w) {
-        return { label: w, kind: monaco.languages.CompletionItemKind.Keyword,
-                  insertText: w, range: span };
+      // 光标前文本（本行 + 上一行末尾），去掉当前正在输入的词
+      var line = model.getLineContent(position.lineNumber);
+      var before = line.slice(0, position.column - 1);
+      var priorLine = position.lineNumber > 1 ? model.getLineContent(position.lineNumber - 1) : '';
+      var text = (priorLine + ' ' + before).replace(/\S+$/, ''); // 去掉当前词
+      var up = text.toUpperCase();
+      var sugg = [];
+      // 1) <表名>. → 该表列
+      var dotM = up.match(/([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*$/);
+      if (dotM) {
+        var tn = dotM[1];
+        (CDATA.columns[tn] || []).forEach(function (c) {
+          sugg.push(item(c, monaco.languages.CompletionItemKind.Field, span));
+        });
+        return { suggestions: sugg };
+      }
+      var lk = lastKeyword(text);
+      var fromTable = tableAfter(text);
+      // 2) FROM/JOIN/... → 表/视图
+      if (TABLE_CTX.indexOf(lk) >= 0) {
+        (CDATA.tables || []).forEach(function (t) {
+          sugg.push(item(t.name,
+            t.kind === 'view' ? monaco.languages.CompletionItemKind.Interface
+                              : monaco.languages.CompletionItemKind.Class, span));
+        });
+        return { suggestions: sugg };
+      }
+      // 3) SELECT/WHERE/... → 列（来自 FROM 表）+ 表 + 关键字
+      if (COL_CTX.indexOf(lk) >= 0) {
+        var seen = {};
+        (CDATA.tables || []).forEach(function (t) {
+          (CDATA.columns[t.name] || []).forEach(function (c) {
+            if (!seen[c]) { seen[c] = true; sugg.push(item(c, monaco.languages.CompletionItemKind.Field, span)); }
+          });
+        });
+        (CDATA.tables || []).forEach(function (t) {
+          sugg.push(item(t.name, monaco.languages.CompletionItemKind.Class, span));
+        });
+        return { suggestions: sugg };
+      }
+      // 4) 默认 → 表 + 关键字
+      (CDATA.tables || []).forEach(function (t) {
+        sugg.push(item(t.name, monaco.languages.CompletionItemKind.Class, span));
       });
-      return { suggestions: suggestions };
+      (CDATA.keywords || []).forEach(function (k) {
+        sugg.push(item(k, monaco.languages.CompletionItemKind.Keyword, span));
+      });
+      return { suggestions: sugg };
     }
   });
 }
@@ -95,7 +157,7 @@ class MonacoEditorWidget(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._completion_words: list[str] = []
+        self._completion_data: dict = {"keywords": [], "tables": [], "columns": {}}
         self._cached_text = ""
         self._ready_flag = False
         self._bridge = _Bridge()
@@ -174,14 +236,28 @@ class MonacoEditorWidget(QWidget):
 
     # ---- 补全 ----
     def set_completion_words(self, words: list[str]) -> None:
-        self._completion_words = list(words)
+        # 兼容旧接口：仅传入关键字词表
+        self._completion_data = {
+            "keywords": list(words or []),
+            "tables": [],
+            "columns": {},
+        }
+        self._sync_words()
+
+    def set_completion_data(self, data: dict) -> None:
+        """上下文感知补全数据：{keywords, tables:[{name,kind}], columns:{table:[col,...]}}。"""
+        self._completion_data = {
+            "keywords": list(data.get("keywords", []) or []),
+            "tables": list(data.get("tables", []) or []),
+            "columns": dict(data.get("columns", {}) or {}),
+        }
         self._sync_words()
 
     def _sync_words(self) -> None:
         if not self._ready():
             return
         self._view.page().runJavaScript(
-            f"__setCompletionWords({json.dumps(self._completion_words)})", 0)
+            f"__setCompletionData({json.dumps(self._completion_data)})", 0)
 
     def cursor_pos(self) -> int:
         return int(self._evaluate("__getCursorOffset()", 0) or 0)

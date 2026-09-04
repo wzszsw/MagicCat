@@ -33,8 +33,14 @@ def test_parallel_execution_qt(qtbot, mysql_env, connection_service):
     win._run_all()
 
     def both_done() -> bool:
-        log = win.result_panel._log.toPlainText()
-        return "SELECT 1 AS a1" in log and "SELECT 2 AS a2" in log and log.count("[OK]") >= 2
+        # 每查询标签独立结果面板：分别看两个工作区的日志
+        logs = [getattr(ws, "result_panel", None) for ws in [editor1, editor2]]
+        texts = []
+        for lp in logs:
+            if lp is not None and hasattr(lp, "_log"):
+                texts.append(lp._log.toPlainText())
+        joined = "\n".join(texts)
+        return "SELECT 1 AS a1" in joined and "SELECT 2 AS a2" in joined and joined.count("[OK]") >= 2
 
     qtbot.waitUntil(both_done, timeout=30_000)
     connection_service.close(profile.id)

@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QSplitter,
     QStackedWidget,
     QTabWidget,
     QToolBar,
@@ -38,7 +37,6 @@ from magiccat.ui.dialogs import ConnectionEditDialog
 from magiccat.ui.job import run_async
 from magiccat.ui.monaco_editor import MonacoEditorWidget
 from magiccat.ui.object_explorer import ObjectExplorer
-from magiccat.ui.result_panel import ResultPanel
 from magiccat.ui.theme import apply_theme
 
 logger = logging.getLogger(__name__)
@@ -47,10 +45,10 @@ _SYSTEM_SCHEMAS = {"information_schema", "performance_schema", "mysql", "sys"}
 
 
 def _is_editor(widget) -> bool:
-    """判断是否为 SQL 编辑器（monaco 或自研）。"""
-    from magiccat.ui.editor import SqlEditorWidget
+    """判断是否为查询工作区（内部持有编辑器）。"""
+    from magiccat.ui.query_workspace import QueryWorkspace
 
-    return isinstance(widget, (MonacoEditorWidget, SqlEditorWidget))
+    return isinstance(widget, QueryWorkspace)
 
 
 class MainWindow(QMainWindow):
@@ -164,17 +162,7 @@ class MainWindow(QMainWindow):
         work_lay.setSpacing(0)
         work_lay.addWidget(self.edit_bar)
         work_lay.addWidget(self.editor_tabs, 1)
-        self.edit_page = work
-
-        self.result_panel = ResultPanel()
-        splitter = QSplitter(Qt.Vertical)
-        splitter.addWidget(self.edit_page)
-        splitter.addWidget(self.result_panel)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        self.setCentralWidget(splitter)
-        # Navicat：消息窗默认不显示，有消息/结果时自动出现
-        self.result_panel.setVisible(False)
+        self.setCentralWidget(work)
 
     def _build_query_browse(self) -> None:
         """查询领域「对象」子页：新建/删除查询 + 已存查询表格（不做“设计查询”）。"""
@@ -257,20 +245,9 @@ class MainWindow(QMainWindow):
 
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
-        """顶部动作行随当前激活标签类型切换：
-        - 查询编辑器标签 → 显示编辑态动作（保存/运行/停止）；
-        - 「对象」页 / 表等其它标签 → 隐藏编辑态动作。
-        返回「对象」页时刷新当前领域列表。"""
+        """当前标签切换：仅当回到「对象」页时刷新当前领域列表。
+        （查询标签自带独立工作区与动作条，无需全局切换。）"""
         widget = self.editor_tabs.widget(index)
-        is_editor = _is_editor(widget)
-        for btn in self._edit_actions:
-            btn.setVisible(is_editor)
-        if is_editor:
-            self._restoring_tab_conn = True
-            try:
-                self._apply_editor_conn(widget)
-            finally:
-                self._restoring_tab_conn = False
         if widget is self.domain_stack:
             self._reload_current_domain()
 
@@ -757,10 +734,21 @@ class MainWindow(QMainWindow):
             self._on_profile_selected()
 
     def _current_profile(self) -> ConnectionProfile | None:
+        # 查询标签激活时：当前连接取自该标签自己的连接下拉（影响不扩散）
+        ws = self._current_query_ws()
+        if ws is not None and ws.profile_combo.currentData():
+            pid = ws.profile_combo.currentData()
+            return self._connections.get(pid)
+        # 否则（对象页浏览）用全局当前连接（树跟手）
         pid = self.profile_combo.currentData()
         if not pid:
             return None
         return self._connections.get(pid)
+
+    @property
+    def result_panel(self):
+        ws = self._current_query_ws()
+        return ws.result_panel if ws is not None else None
 
     def _on_profile_selected(self) -> None:
         profile = self._current_profile()
@@ -769,9 +757,6 @@ class MainWindow(QMainWindow):
         self.info_panel.show_profile(self.profile_combo.currentData() if profile else None)
         self._reload_schema_combo(profile)
         self._reload_query_browse()
-        # 头部条连接/库变更 → 写回当前编辑器标签（影响不扩散）；标签恢复时不写回
-        if not getattr(self, "_restoring_tab_conn", False):
-            self._write_conn_to_editor(self._active_editor())
 
     def _reload_schema_combo(self, profile) -> None:
         self.schema_combo.blockSignals(True)
@@ -800,25 +785,35 @@ class MainWindow(QMainWindow):
             self._update_completion_words(profile)
 
     def _update_completion_words(self, profile: ConnectionProfile) -> None:
-        def fetch() -> list[str]:
-            from magiccat.services.query_service import QueryService
+        """构建当前库/模式的上下文补全数据（表+视图+列，一次批查），供 SQL 对象提示。"""
+        schema = self.schema_combo.currentText() or profile.database or ""
+        meta = self._metadata
 
-            # 一次批查所有用户库的表名（消除“每库一次查询”的 N+1）
-            excluded = "', '".join(sorted(_SYSTEM_SCHEMAS))
-            res = QueryService(self._connections).execute(profile, (
-                "SELECT TABLE_NAME AS name FROM information_schema.TABLES "
-                f"WHERE TABLE_TYPE = 'BASE TABLE' "
-                f"AND TABLE_SCHEMA NOT IN ('{excluded}')"))[0]
-            cols = res.get("columns", [])
-            return [row[cols.index("name")] for row in res.get("rows", []) if cols]
+        def fetch() -> dict:
+            # 一次批查当前 schema 的表/视图 + 所有列（无 N+1）
+            tables = []
+            t_rows = meta.schema_tables(profile, schema)
+            for t in t_rows:
+                name = t.get("name")
+                if name:
+                    kind = "view" if str(t.get("type", "")).upper() == "VIEW" else "table"
+                    tables.append({"name": name, "kind": kind})
+            columns: dict[str, list[str]] = {}
+            for c in meta.schema_columns(profile, schema):
+                tn = c.get("table_name")
+                cn = c.get("name")
+                if tn and cn:
+                    columns.setdefault(tn, []).append(cn)
+            return {"tables": tables, "columns": columns}
 
-        def done(words: list[str]) -> None:
+        def done(data: dict) -> None:
             editor = self._active_editor()
-            if editor is not None:
-                editor.set_completion_words(words)
-            self._status(f"补全词表已更新（{len(words)} 个对象）")
+            if editor is not None and hasattr(editor, "set_completion_data"):
+                editor.set_completion_data(data)
+            n = len(data.get("tables", []))
+            self._status(f"对象提示已更新（{n} 个表/视图）")
 
-        run_async(fetch, done, lambda err: logger.warning("加载补全词表失败: %s", err))
+        run_async(fetch, done, lambda err: logger.warning("加载补全对象失败: %s", err))
 
     # ---- 编辑器管理 ----
     def _make_editor(self):
@@ -831,14 +826,72 @@ class MainWindow(QMainWindow):
         return MonacoEditorWidget()
 
     def _new_editor(self):
+        from magiccat.ui.query_workspace import QueryWorkspace
+
         self._tab_seq += 1
         editor = self._make_editor()
-        editor._conn_profile_id = self.profile_combo.currentData()
-        editor._conn_schema = self.schema_combo.currentText()
-        index = self.editor_tabs.addTab(editor, f"查询 {self._tab_seq}")
+        ws = QueryWorkspace(editor)
+        ws.run_requested.connect(self._run_current)
+        ws.run_all_requested.connect(self._run_all)
+        ws.stop_requested.connect(self._cancel_execution)
+        ws.explain_requested.connect(self._explain_current)
+        ws.save_requested.connect(self._save_query_dialog)
+        ws.format_requested.connect(self._format_sql)
+        ws.snippet_requested.connect(lambda: self._insert_snippet(ws))
+        ws.ask_ai_requested.connect(lambda: self._ask_ai(ws))
+        ws.profile_combo.currentIndexChanged.connect(
+            lambda _i: self._on_ws_profile_changed(ws))
+        ws.set_profile(self.profile_combo.currentData())
+        self._populate_ws_combos(ws, profile=self.profile_combo.currentData())
+        ws.editor.workspace = ws
+        index = self.editor_tabs.addTab(ws, f"查询 {self._tab_seq}")
         self.editor_tabs.setCurrentIndex(index)
-        editor.setFocus()
-        return editor
+        ws.editor.setFocus()
+        return ws
+
+    def _populate_ws_combos(self, ws, profile: str | None = None) -> None:
+        """填充查询工作区的连接下拉 + 库下拉（影响只在本标签）。"""
+        ws.profile_combo.blockSignals(True)
+        ws.profile_combo.clear()
+        ws.profile_combo.addItem("<未选择连接>", None)
+        for p in self._connections.profiles:
+            ws.profile_combo.addItem(p.display_name, p.id)
+        ws.profile_combo.blockSignals(False)
+        if profile:
+            idx = ws.profile_combo.findData(profile)
+            if idx >= 0:
+                ws.profile_combo.setCurrentIndex(idx)
+            prof = self._connections.get(profile)
+            if prof is not None:
+                # 库下拉：复用全局 schema 列表加载（只填本标签）
+                self._reload_ws_schema_combo(ws, prof)
+
+    def _reload_ws_schema_combo(self, ws, profile) -> None:
+        def fetch() -> list[str]:
+            return [d["name"] for d in self._metadata.databases(profile)
+                    if d["name"] not in _SYSTEM_SCHEMAS]
+
+        def done(dbs: list[str]) -> None:
+            ws.schema_combo.blockSignals(True)
+            ws.schema_combo.clear()
+            ws.schema_combo.addItems(dbs)
+            if profile and profile.database and profile.database in dbs:
+                ws.schema_combo.setCurrentText(profile.database)
+            ws.schema_combo.blockSignals(False)
+
+        run_async(fetch, done, lambda err: logger.warning("加载工作区库下拉失败: %s", err))
+
+    def _on_ws_profile_changed(self, ws) -> None:
+        """某查询工作区切换连接 → 重载该工作区自己的库下拉。"""
+        prof = self._connections.get(ws.profile_combo.currentData())
+        if prof is not None:
+            self._reload_ws_schema_combo(ws, prof)
+
+    def _current_query_ws(self):
+        from magiccat.ui.query_workspace import QueryWorkspace
+
+        w = self.editor_tabs.currentWidget()
+        return w if isinstance(w, QueryWorkspace) else None
 
     def _open_object_tab(self, tab_key: str, title: str, content: str):
         """打开一个对象标签并保证单例：同 tab_key 已开 → 定位到该标签；
@@ -848,42 +901,14 @@ class MainWindow(QMainWindow):
             if getattr(w, "tab_key", None) == tab_key:
                 self.editor_tabs.setCurrentIndex(i)
                 return w
-        editor = self._new_editor()
-        editor.tab_key = tab_key
-        editor.setPlainText(content)
-        self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor), title)
-        return editor
+        ws = self._new_editor()
+        ws.tab_key = tab_key
+        ws.setPlainText(content)
+        self.editor_tabs.setTabText(self.editor_tabs.indexOf(ws), title)
+        return ws
 
     def _active_editor(self):
-        widget = self.editor_tabs.currentWidget()
-        return widget if _is_editor(widget) else None
-
-    # ---- 每查询标签记忆自身连接/库（影响不扩散） ----
-    def _editor_conn(self, editor) -> tuple[str | None, str]:
-        """取某编辑器记忆的连接/库（无则回退 nil/空）。"""
-        return (getattr(editor, "_conn_profile_id", None),
-                getattr(editor, "_conn_schema", ""))
-
-    def _apply_editor_conn(self, editor) -> None:
-        """切换标签时：把该编辑器记忆的连接/库加载到头条，使头部条反映当前标签。"""
-        pid, schema = self._editor_conn(editor)
-        idx = self.profile_combo.findData(pid) if pid else 0
-        if pid is None:
-            self.profile_combo.setCurrentIndex(0)
-        elif idx >= 0 and self.profile_combo.currentData() != pid:
-            self.profile_combo.setCurrentIndex(idx)
-        if schema:
-            si = self.schema_combo.findText(schema)
-            if si >= 0:
-                self.schema_combo.setCurrentIndex(si)
-
-    def _write_conn_to_editor(self, editor) -> None:
-        """改变头部条连接/库时：写回当前编辑器，实现“只影响本标签”。"""
-        if editor is None:
-            return
-        pid = self.profile_combo.currentData()
-        editor._conn_profile_id = pid
-        editor._conn_schema = self.schema_combo.currentText()
+        return self._current_query_ws()
 
     def _close_editor_tab(self, index: int) -> None:
         if index <= 0:  # 第 0 页「对象」为固定占位，不可关闭
@@ -900,26 +925,29 @@ class MainWindow(QMainWindow):
         self._run_sql(all_statements=True)
 
     def _run_sql(self, all_statements: bool) -> None:
+        ws = self._current_query_ws()
+        if ws is None:
+            return
         profile = self._current_profile()
         if profile is None:
             QMessageBox.information(self, "执行 SQL", "请先在工具栏选择要执行的连接。")
             return
-        editor = self._active_editor()
-        if editor is None:
-            return
+        editor = ws.editor
         sql = editor.all_text() if all_statements else (editor.current_sql() or "")
         if not sql.strip():
             self._status("无可执行内容：请选中文本或把光标放在语句上")
             return
         self._status(f"正在执行（{profile.name}）…")
-        self.result_panel.append_message(f"──── 执行 · {profile.name} · {sql}")
-        # 支持多标签并行：每次执行独立入池，结果完成时刷新下方结果区
+        ws.result_panel.append_message(f"──── 执行 · {profile.name} · {sql}")
+        if ws.status_label is not None:
+            ws.set_status(f"正在执行（{profile.name}）…")
+        # 支持多标签并行：每次执行独立入池，结果写回对应工作区
         self._running += 1
         self.act_cancel.setEnabled(True)
         run_async(
             lambda: self._query.execute(profile, sql),
-            lambda results: self._on_executed(results),
-            lambda err: self._on_exec_error(err))
+            lambda results: self._on_executed(results, ws, editor),
+            lambda err: self._on_exec_error(err, ws))
 
     def _cancel_execution(self) -> None:
         count = self._query.cancel_all()
@@ -927,10 +955,11 @@ class MainWindow(QMainWindow):
         if count == 0:
             self.act_cancel.setEnabled(False)
 
-    def _on_executed(self, results: list[dict]) -> None:
+    def _on_executed(self, results: list[dict], ws=None, editor=None) -> None:
         self._running = max(0, self._running - 1)
         self.act_cancel.setEnabled(self._running > 0)
-        self.result_panel.show_results(results)
+        if ws is not None:
+            ws.result_panel.show_results(results)
         cancelled = any(r.get("cancelled") for r in results)
         errors = [r for r in results if r.get("kind") == "error"]
         total = round(sum(float(r.get("time_ms", 0)) for r in results), 1)
@@ -940,14 +969,14 @@ class MainWindow(QMainWindow):
             self._status(f"完成，{len(errors)}/{len(results)} 条语句失败（共 {total} ms）", 8000)
         else:
             self._status(f"完成：{len(results)} 条语句全部成功（共 {total} ms）", 5000)
-        editor = self._active_editor()
         if editor is not None:
             self._history.push(editor.all_text())
 
-    def _on_exec_error(self, err: str) -> None:
+    def _on_exec_error(self, err: str, ws=None) -> None:
         self._running = max(0, self._running - 1)
         self.act_cancel.setEnabled(self._running > 0)
-        self.result_panel.append_message(f"[执行失败] {err}")
+        if ws is not None:
+            ws.result_panel.append_message(f"[执行失败] {err}")
         self._status("执行失败", 8000)
 
     # ---- 其它动作 ----
