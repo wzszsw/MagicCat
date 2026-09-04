@@ -193,6 +193,7 @@ class ObjectExplorer(QTreeWidget):
         if profile is None:
             _replace_children(item, [_make_item("连接配置不存在", KIND_ERROR)])
             return
+        self._begin_load(item)
 
         def fetch() -> tuple[str, list[dict]]:
             if not self._connections.is_open(profile.id):
@@ -200,6 +201,7 @@ class ObjectExplorer(QTreeWidget):
             return profile.id, self._metadata.databases(profile)
 
         def done(payload: tuple[str, list[dict]]) -> None:
+            self._end_load(item)
             if item.treeWidget() is None:
                 return
             _profile_id, dbs = payload
@@ -209,7 +211,7 @@ class ObjectExplorer(QTreeWidget):
             _replace_children(item, children)
             item.setToolTip(0, f"{len(dbs)} 个数据库")
 
-        run_async(fetch, done, lambda err: self._show_error(item, f"连接失败：{err}"))
+        run_async(fetch, done, lambda err: self._fail_load(item, f"连接失败：{err}"))
 
     def refresh_schema_queries(self, profile_id: str, schema: str) -> None:
         """保存/删除查询后刷新【库级】“查询”分类（连接级无查询节点，与 Navicat 一致）。"""
@@ -259,12 +261,14 @@ class ObjectExplorer(QTreeWidget):
     def _load_database_schemas(self, item: QTreeWidgetItem, profile: ConnectionProfile,
                                database: str) -> None:
         """PostgreSQL：展开库 → 拉到该库下的 schema（须临时连到该库）。"""
+        self._begin_load(item)
         _placeholder(item)
 
         def fetch() -> list[dict]:
             return self._metadata.schemas(profile, database)
 
         def done(schemas: list[dict]) -> None:
+            self._end_load(item)
             if item.treeWidget() is None:
                 return
             children = [_make_item(s["name"], "schema", schema=s["name"],
@@ -274,7 +278,7 @@ class ObjectExplorer(QTreeWidget):
                 _placeholder(c)
             _replace_children(item, children)
 
-        run_async(fetch, done, lambda err: self._show_error(item, f"读取 schema 失败：{err}"))
+        run_async(fetch, done, lambda err: self._fail_load(item, f"读取 schema 失败：{err}"))
 
     def _load_schema(self, item: QTreeWidgetItem) -> None:
         """PostgreSQL：展开 schema → 分类骨架（表/视图/函数/触发器/查询）。"""
@@ -334,6 +338,7 @@ class ObjectExplorer(QTreeWidget):
         if profile is None or not schema:
             return
         pg = profile.is_postgres
+        self._begin_load(item)
 
         def fetch() -> list:
             if pg:
@@ -353,11 +358,12 @@ class ObjectExplorer(QTreeWidget):
             return []
 
         def done(objects: list) -> None:
+            self._end_load(item)
             if item.treeWidget() is None:
                 return
             _replace_children(item, [self._category_leaf(o, cat_type, schema) for o in objects])
 
-        run_async(fetch, done, lambda err: self._show_error(item, f"读取失败：{err}"))
+        run_async(fetch, done, lambda err: self._fail_load(item, f"读取失败：{err}"))
 
     def _fetch_pg_category(self, profile: ConnectionProfile, database: str,
                            schema: str, cat_type: str) -> list:
@@ -401,11 +407,13 @@ class ObjectExplorer(QTreeWidget):
         profile = self._profile_of(item)
         if profile is None:
             return
+        self._begin_load(item)
 
         def fetch() -> list[dict]:
             return self._metadata.columns(profile, schema, table)
 
         def done(cols: list[dict]) -> None:
+            self._end_load(item)
             if item.treeWidget() is None:
                 return
             children = []
@@ -423,7 +431,7 @@ class ObjectExplorer(QTreeWidget):
                 children.append(leaf)
             _replace_children(item, children)
 
-        run_async(fetch, done, lambda err: self._show_error(item, f"读取失败：{err}"))
+        run_async(fetch, done, lambda err: self._fail_load(item, f"读取失败：{err}"))
 
     def _profile_of(self, item: QTreeWidgetItem) -> ConnectionProfile | None:
         """向上找所属连接。"""
@@ -442,10 +450,27 @@ class ObjectExplorer(QTreeWidget):
         from magiccat.utils.errors import clean_java_error
 
         # 折叠节点并移除占位内容，保持树整洁
+        self._end_load(item)
         if item.treeWidget() is not None:
             item.setExpanded(False)
             item.takeChildren()
         QMessageBox.critical(self, "加载失败", clean_java_error(message))
+
+    def _fail_load(self, item: QTreeWidgetItem, message: str) -> None:
+        """加载失败入口：停掉 loading 后走 _show_error（折叠 + MessageBox）。"""
+        self._show_error(item, message)
+
+    def _begin_load(self, item: QTreeWidgetItem) -> None:
+        """开始加载：显示 loading 动画图标。"""
+        from magiccat.ui.loading import start_loading
+
+        start_loading(item)
+
+    def _end_load(self, item: QTreeWidgetItem) -> None:
+        """加载结束：停掉 loading，恢复节点原图标。"""
+        from magiccat.ui.loading import stop_loading
+
+        stop_loading(item)
 
     # ---- 过滤 ----
     def apply_name_filter(self, text: str) -> None:

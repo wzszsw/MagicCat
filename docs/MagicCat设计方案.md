@@ -395,8 +395,9 @@ MagicCat/
 | M72 | PostgreSQL 三级树 db→schema→表/视图/实体化视图/函数/触发器/查询（跨库临时连枚举 schema），MySQL 两级不变 | ✅ | 97 回归 + 真实 PG 树逐级展开 |
 | M73 | SQL 转储/运行 SQL 文件 改用 Navicat 风格进度对话框（服务器/库/模式/路径/处理/错误/行/时长 + 日志视图 + 进度条 + 打开） | ✅ | 100 回归 + dump 带 log/progress 回证实 |
 | M74 | 连接/对象加载失败改为 MessageBox 弹出 + 树节点折叠（不再用错误占位节点展示），异常前缀清理 | ✅ | 101 回归 + MessageBox/折叠断言 |
+| M75 | 对象树展开加载时显示旋转 loading 动画图标（自绘 spinner，加载结束恢复原图标；连接/库/分类/列均接入） | ✅ | 103 回归 + start/stop 图标断言 |
 
-- 自动化测试：`uv run pytest`（101 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（103 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）
