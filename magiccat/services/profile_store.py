@@ -1,67 +1,36 @@
-"""连接配置文件存储（profiles.json）。
+"""连接配置文件存储 —— 迁移到 Windows 注册表（对标 Navicat）。
 
-- 存储位置：$MAGICCAT_HOME（未设置则 %APPDATA%\\MagicCat），开发测试可指向临时目录。
-- 密码字段以 DPAPI 密文落盘，见 utils/dpapi.py。
+- 连接配置存于 `HKCU\\Software\\MagicCat\\Servers\\<conn_id>`（见 magiccat/storage/registry_store.py）。
+- 密码用 Windows DPAPI 加密。
+- `root` 属性保留（指向 MAGICCAT_HOME），供日志等位置使用。
+- **不兼容旧 profiles.json**：旧文件弃用、不迁移（不留历史包袱）。
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from pathlib import Path
 
 from magiccat.models.profile import ConnectionProfile
-from magiccat.utils import dpapi
+from magiccat.storage import home_dir
+from magiccat.storage.registry_store import RegistryStore
 
 logger = logging.getLogger(__name__)
 
-CONFIG_VERSION = 1
-_FILE_NAME = "profiles.json"
-
-
-def _default_root() -> Path:
-    override = os.environ.get("MAGICCAT_HOME")
-    if override:
-        return Path(override)
-    base = os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "MagicCat"
-
 
 class ProfileStore:
-    def __init__(self, root: Path | None = None) -> None:
-        self.root = root or _default_root()
-        self.file = self.root / _FILE_NAME
+    """连接配置存储（注册表实现），接口兼容旧 ProfileStore：load()/save()/root。"""
+
+    def __init__(self, root: Path | None = None, servers_key: str | None = None) -> None:
+        self.root = root or home_dir()
+        self._reg = RegistryStore(servers_key)
 
     @classmethod
     def default(cls) -> ProfileStore:
-        return cls(_default_root())
+        return cls(home_dir())
 
     def load(self) -> list[ConnectionProfile]:
-        if not self.file.exists():
-            return []
-        try:
-            raw = json.loads(self.file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("profiles.json 读取失败，按空配置处理: %s", exc)
-            return []
-        profiles: list[ConnectionProfile] = []
-        for item in raw.get("profiles", []):
-            try:
-                enc = item.get("password_enc", "")
-                profiles.append(ConnectionProfile.from_dict(item, password=dpapi.decrypt_text(enc)))
-            except (KeyError, ValueError) as exc:
-                logger.warning("跳过损坏的连接配置 %s: %s", item.get("name", "<unknown>"), exc)
-        return profiles
+        return self._reg.load()
 
     def save(self, profiles: list[ConnectionProfile]) -> None:
-        payload = {
-            "version": CONFIG_VERSION,
-            "profiles": [
-                {**p.to_dict(), "password_enc": dpapi.encrypt_text(p.password)} for p in profiles
-            ],
-        }
-        self.root.mkdir(parents=True, exist_ok=True)
-        tmp = self.file.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.file)
+        self._reg.save(profiles)

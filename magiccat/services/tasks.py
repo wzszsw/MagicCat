@@ -1,6 +1,6 @@
 """计划任务（M6b 轻量版）：应用运行期间按间隔自动执行备份任务。
 
-- 任务定义 JSON 持久化（MAGICCAT_HOME/tasks.json）；
+- 任务定义存 SQLite（metacache.db，favorites kind='task'）；
 - 调度：MainWindow 内 QTimer 周期性调用 TasksScheduler.scan_due(now)，
   到期任务在后台线程执行（数据库访问不阻塞 UI）；
 - 记录 last_run / last_status 便于 UI 展示。
@@ -54,38 +54,40 @@ class Task:
 
 
 class TaskStore:
+    """计划任务存储（SQLite favorites，kind='task'，name=task.id）。"""
+
     def __init__(self, root: Path) -> None:
-        self.file = root / "tasks.json"
+        from magiccat.storage.sqlite_store import SqliteStore
+
+        self._db = SqliteStore(root / "metacache.db")
+        self._profile = "tasks"
 
     @classmethod
     def default(cls) -> TaskStore:
-        from magiccat.services.profile_store import _default_root
+        from magiccat.storage import home_dir
 
-        return cls(_default_root())
+        return cls(home_dir())
 
     def load(self) -> list[Task]:
         import json
 
-        if not self.file.exists():
-            return []
-        try:
-            data = json.loads(self.file.read_text(encoding="utf-8"))
-            return [Task.from_dict(t) for t in data.get("tasks", []) if t.get("name")]
-        except (json.JSONDecodeError, OSError, TypeError) as exc:
-            logger.warning("tasks.json 读取失败: %s", exc)
-            return []
+        out = []
+        for f in self._db.favorites(self._profile, "task"):
+            try:
+                out.append(Task.from_dict(json.loads(f["payload"])))
+            except (ValueError, TypeError) as exc:
+                logger.warning("任务反序列化失败: %s", exc)
+        return out
 
     def save(self, tasks: list[Task]) -> None:
         import json
 
-        try:
-            self.file.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.file.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps({"tasks": [t.to_dict() for t in tasks]},
-                                      ensure_ascii=False, indent=1), encoding="utf-8")
-            tmp.replace(self.file)
-        except OSError as exc:
-            logger.warning("tasks 写入失败: %s", exc)
+        existing = self._db.favorites(self._profile, "task")
+        for f in existing:
+            self._db.favorite_delete(self._profile, "task", f["name"])
+        for t in tasks:
+            self._db.favorite_save(self._profile, "task", t.id,
+                                   json.dumps(t.to_dict(), ensure_ascii=False))
 
 
 def _due(task: Task, now: float | None = None) -> bool:

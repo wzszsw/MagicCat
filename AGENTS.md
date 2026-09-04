@@ -99,5 +99,11 @@
 - **日志**：`Documents\Navicat\Premium\logs\history.log`，每条形如
   `[2026-09-03 23:29:37.687][localhost_3306][...][MYSQL][]`（即 `YYYY-MM-DD HH:MM:SS.mmm`）。
 - 结论：Navicat 对"简单数据/缓存/历史"确实用 **SQLite**；配置多为注册表/JSON；SQL 文件用文件系统。
-  我们当前用 `profiles.json`(DPAPI) / `queries/*.json` / `history.json` 的方式可保留，
-  若需对齐可将"查询历史/最近使用"等改存 SQLite（视后续需求，不强制）。
+- **MagicCat 已按此重构本地存储**（三合一，对标 Navicat；不兼容旧 profiles.json/query.json/history.json，
+  旧数据弃用、不迁移、不留兼容代码）：
+  - 连接配置 → **注册表** `HKCU\Software\MagicCat\Servers\<conn_id>`（密码 DPAPI）。
+  - 查询 SQL 内容 → **.sql 文件** `<MAGICCAT_HOME>/queries/<profile_id>/<schema>/<name>.sql`。
+  - 元数据缓存/历史/收藏/设置/片段/任务/窗口状态 → **SQLite** `metacache.db`（kv / metadata_cache / history / favorites 表）。
+  - 统一入口：`magiccat/storage/{__init__,registry_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`。
+  - 相关服务（ProfileStore/QueryLibrary/HistoryStore/AppSettings/SnippetStore/TaskStore）接口保持，
+    内部实现改为上述新存储。

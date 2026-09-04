@@ -178,7 +178,7 @@ class ConnectionInfoPanel(QWidget):
         self._labels["端口"].setText(str(profile.port))
         self._labels["初始数据库"].setText(profile.database or "（默认）")
         self._labels["用户名"].setText(profile.username)
-        self._labels["配置文件"].setText(str(self._connections._store.file))
+        self._labels["配置文件"].setText("注册表 (HKCU\\Software\\MagicCat)")
 
         def fetch() -> dict:
             return self._connections.server_info(profile)

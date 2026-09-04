@@ -125,12 +125,10 @@ def test_main_window_run_flow(qtbot, mysql_env, connection_service):
     assert headers == ["one", "greeting"]
     assert model.data(model.index(0, 1)) == "你好"
 
-    # 历史落盘
-    import json
+    # 历史落盘（现为 SQLite）
+    from magiccat.services.history import HistoryStore
 
-    history_file = connection_service._store.root / "history.json"
-    assert history_file.exists()
-    recent = json.loads(history_file.read_text(encoding="utf-8"))["recent"]
+    recent = HistoryStore(connection_service._store.root).load()
     assert any("SELECT 1 AS one" in s for s in recent)
 
     connection_service.close(profile.id)

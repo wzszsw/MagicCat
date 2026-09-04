@@ -61,9 +61,23 @@ def pg_env() -> dict:
 @pytest.fixture()
 def profile_store(tmp_path, monkeypatch):
     monkeypatch.setenv("MAGICCAT_HOME", str(tmp_path))
+    # 隔离注册表键，测试后删除，避免污染真实 HKCU\Software\MagicCat
+    import uuid
+    import winreg
+
     from magiccat.services.profile_store import ProfileStore
 
-    return ProfileStore(tmp_path)
+    key = r"Software\MagicCat\Tests\conn_" + uuid.uuid4().hex
+    store = ProfileStore(tmp_path, servers_key=key)
+    yield store
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+    except OSError:
+        pass
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\MagicCat\Tests")
+    except OSError:
+        pass
 
 
 @pytest.fixture()

@@ -17,13 +17,22 @@ def _profile(mysql_env: dict, name: str = "本地测试") -> ConnectionProfile:
 
 
 def test_profile_persistence_password_encrypted(tmp_path, profile_store, connection_service):
-    """口令 DPAPI 加密回环；磁盘文件无明文口令。"""
+    """口令经 DPAPI 加密存入注册表；注册表值无明文口令。"""
+    import winreg
+
     profile = _profile({"host": "h", "port": 1, "user": "u", "password": ""}, "配置测试")
     profile.password = "s3cret中文!@#pass"
     connection_service.add(profile)
 
-    raw = (tmp_path / "profiles.json").read_text(encoding="utf-8")
-    assert profile.password not in raw, "口令不应明文落盘"
+    # 从注册表读取，确认无明文口令
+    servers_key = profile_store._reg.servers_key
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, servers_key + "\\" + profile.id) as sub:
+        enc = ""
+        try:
+            enc, _t = winreg.QueryValueEx(sub, "password_enc")
+        except OSError:
+            pass
+    assert profile.password not in (enc or ""), "口令不应明文存注册表"
 
     from magiccat.services.connection_service import ConnectionService
 

@@ -31,6 +31,6 @@ def configure_logging(root: Path | None = None, level: int = logging.INFO) -> No
 
 
 def _default_root() -> Path:
-    from magiccat.services.profile_store import _default_root
+    from magiccat.storage import home_dir
 
-    return _default_root()
+    return home_dir()

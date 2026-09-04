@@ -170,7 +170,7 @@ Server
 
 | 模块 | 关键实现 | 说明 |
 |---|---|---|
-| ConnectionManager | `ConnectionService` + `profiles.json` 加密存储 | 分组树、复制连接、测试连接、批量导入连接配置 |
+| ConnectionManager | `ConnectionService` + 注册表存储（`HKCU\Software\MagicCat\Servers\<conn_id>`，口令 DPAPI） | 分组树、复制连接、测试连接、批量导入连接配置 |
 | ObjectExplorer | `ObjectTreeModel` + 右键菜单 | 按 4.2 对象树展示；双击表 → 表设计/数据页 |
 | SqlEditor | `SqlEditorWidget`（自研） | 多标签；语法高亮（QSyntaxHighlighter，MySQL 关键字/字符串/注释/变量）；**自动补全**：关键字 + 已连库的表/列（元数据缓存驱动 QCompleter）；语句级执行/选中执行/全部执行；sqlparse 美化；查询历史落盘 |
 | ResultGrid | `ResultTableModel` + `ResultTableView` | 虚拟滚动（单次最多取页大小，滚动到底自动取下一页）；类型化渲染与编辑；右键：复制行/复制带表头/导出当前结果/筛选排序追加 SQL |
@@ -222,7 +222,7 @@ JPype 下不需要序列化，但仍需**稳定的跨语言类型映射**（避�
 
 | 项 | 方案 |
 |---|---|
-| 连接口令存储 | `profiles.json`（含连接配置、分组、口令密文）；密文 = AES-256-GCM，密钥二选一：<br>① 用户设置主密码 → PBKDF2-HMAC-SHA256(≥210k 次) 派生；<br>② 未设主密码 → Windows DPAPI（`CryptProtectData`，绑定当前用户） |
+| 连接口令存储 | 注册表 `HKCU\Software\MagicCat\Servers\<conn_id>`（含连接配置、分组、口令密文）；密文 = Windows DPAPI（`CryptProtectData`，绑定当前用户） |
 | 内存中的口令 | 连接建立后即从内存配置中清除明文引用；日志一律脱敏（`****`） |
 | 传输 | 直连 JDBC，无自建网络层；无中间人面 |
 | SQL 安全 | 编辑类 SQL 只允许主键定位的 UPDATE/DELETE 由程序生成；用户自定义 SQL 属用户行为，提供"事务提交前确认"开关 |
@@ -405,6 +405,7 @@ MagicCat/
 | M82 | Bugfix：PG 表数据全闭环——TableDataApi 标识符/分页/主键按方言（双引号+LIMIT n OFFSET m+pg_index 主键），列元数据走标准 JDBC getColumns，data_table 排序/筛选按方言转义 | ✅ | 116 回归 + 真实 PG 表 CRUD |
 | M83 | 日期时间统一显示为 `YYYY-MM-DD HH:MM:SS`（本地时区）：新增 format_datetime，对象页「修改日期」列与结果网格统一接入 | ✅ | 121 回归 + 格式断言 |
 | M84 | 数据页加载失败改用 MessageBox 统一报错（清理 Java 前缀）；AGENTS.md 沉淀限定名分隔引号与报错统一约定 | ✅ | 121 回归 |
+| M85 | 本地存储重构为三合一（对标 Navicat，不兼容旧结构、不留包袱）：连接→注册表、查询内容→.sql 文件、元数据/历史/收藏/设置/片段/任务/窗口状态→SQLite | ✅ | 121 回归 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

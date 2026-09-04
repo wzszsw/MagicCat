@@ -39,17 +39,15 @@ def test_explorer_name_filter(connection_service):
 
 
 def test_window_geometry_persisted(qtbot, connection_service):
-    import json
-
     from magiccat.services.metadata_service import MetadataService
+    from magiccat.services.settings import AppSettings
     from magiccat.ui.main_window import MainWindow
 
+    settings = AppSettings(connection_service._store.root)
     win = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(win)
     win.show()
     win.resize(999, 700)
     win.close()  # 触发 closeEvent → 写入 geometry
-    settings_file = connection_service._store.root / "settings.json"
-    assert settings_file.exists()
-    data = json.loads(settings_file.read_text(encoding="utf-8"))
-    assert data.get("geometry"), "应保存窗口几何（base64）"
+    geometry = settings.get("geometry")
+    assert geometry, "应保存窗口几何（base64）"

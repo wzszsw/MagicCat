@@ -28,17 +28,16 @@ def test_settings_roundtrip(tmp_path):
 
 def test_theme_toggle(qtbot, connection_service):
     from magiccat.services.metadata_service import MetadataService
+    from magiccat.services.settings import AppSettings
     from magiccat.ui.main_window import MainWindow
 
+    settings = AppSettings(connection_service._store.root)
     win = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(win)
     assert win.styleSheet() == ""  # 默认浅色
     win._toggle_theme(True)
     assert "#2B2D30" in win.styleSheet()
-    import json
-
-    settings_file = connection_service._store.root / "settings.json"
-    assert json.loads(settings_file.read_text(encoding="utf-8"))["theme"] == "dark"
+    assert settings.get("theme") == "dark"
     win._toggle_theme(False)
     assert win.styleSheet() == ""
 

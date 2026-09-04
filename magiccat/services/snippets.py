@@ -1,42 +1,45 @@
-"""SQL 收藏夹（snippets）：本地 JSON（MAGICCAT_HOME/snippets.json）。"""
+"""SQL 收藏夹（snippets）—— 迁移到 SQLite（favorites，kind='snippet'）。"""
 
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from magiccat.storage import home_dir
+from magiccat.storage.sqlite_store import SqliteStore
 
 
 class SnippetStore:
+    """SQL 收藏夹（SQLite favorites 实现）。接口兼容旧 SnippetStore：load()/save()。"""
+
     def __init__(self, root: Path) -> None:
-        self.file = root / "snippets.json"
+        self._db = SqliteStore(root / "metacache.db")
+        self._profile = "snippets"
 
     @classmethod
     def default(cls) -> SnippetStore:
-        from magiccat.services.profile_store import _default_root
-
-        return cls(_default_root())
+        return cls(home_dir())
 
     def load(self) -> list[dict]:
-        if not self.file.exists():
-            return []
-        try:
-            data = json.loads(self.file.read_text(encoding="utf-8"))
-            items = data.get("snippets", [])
-            return [{"name": str(s.get("name", "")), "sql": str(s.get("sql", ""))}
-                    for s in items if s.get("name") and s.get("sql")]
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("snippets.json 读取失败: %s", exc)
-            return []
+        favs = self._db.favorites(self._profile, "snippet")
+        out = []
+        for f in favs:
+            try:
+                sql = json.loads(f["payload"]).get("sql", "")
+            except (ValueError, TypeError):
+                sql = ""
+            if f["name"] and sql:
+                out.append({"name": f["name"], "sql": sql})
+        return out
 
     def save(self, snippets: list[dict]) -> None:
-        try:
-            self.file.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.file.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps({"snippets": snippets}, ensure_ascii=False, indent=1),
-                           encoding="utf-8")
-            tmp.replace(self.file)
-        except OSError as exc:
-            logger.warning("snippets 写入失败: %s", exc)
+        # 全量重写：先清空该 profile 下所有 snippet 收藏
+        existing = self._db.favorites(self._profile, "snippet")
+        for f in existing:
+            self._db.favorite_delete(self._profile, "snippet", f["name"])
+        for s in snippets:
+            name = str(s.get("name", ""))
+            sql = str(s.get("sql", ""))
+            if name and sql:
+                self._db.favorite_save(self._profile, "snippet", name,
+                                       json.dumps({"sql": sql}, ensure_ascii=False))
