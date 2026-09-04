@@ -572,6 +572,7 @@ class MainWindow(QMainWindow):
         """「其它」领域（永驻）：下拉菜单按数据库类型增减。
         - PostgreSQL：序列（等）；
         - MySQL：暂无可用的「其它」项（无序列/类型等），菜单为空。
+        菜单在点击展开时（aboutToShow）按当前连接实时重建，避免切换事件遗漏导致空菜单。
         """
         from PySide6.QtWidgets import QMenu, QToolButton
 
@@ -593,8 +594,8 @@ class MainWindow(QMainWindow):
                 act_seq = menu.addAction("序列")
                 act_seq.triggered.connect(lambda: self._show_other_sequence())
 
-        # 连接变化时重建菜单
-        self.profile_combo.currentIndexChanged.connect(rebuild)
+        # 每次点开菜单时按当前连接实时重建（兼容：连接经对象树打开、combo 未变等场景）
+        menu.aboutToShow.connect(rebuild)
         rebuild()
 
     def _show_other_sequence(self) -> None:

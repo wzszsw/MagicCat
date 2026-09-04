@@ -22,6 +22,8 @@ def test_other_button_present_and_empty_for_mysql(qtbot, connection_service):
     assert btn is not None, "「其它」按钮应永驻存在"
     menu = btn.menu()
     assert menu is not None
+    # 模拟打开菜单（懒加载重建）
+    menu.aboutToShow.emit()
     # MySQL：没有可用「其它」项 → 菜单为空
     acts = [a for a in menu.actions() if a.text()]
     assert acts == [], f"MySQL 的「其它」菜单应为空，实际: {[a.text() for a in acts]}"
@@ -44,7 +46,8 @@ def test_other_menu_has_sequence_for_pg(qtbot, connection_service, pg_env):
     qtbot.waitUntil(lambda: _other_button(win) is not None, timeout=25_000)
     btn = _other_button(win)
     menu = btn.menu()
-    qtbot.waitUntil(lambda: any(a.text() == "序列" for a in menu.actions()), timeout=25_000)
+    # 菜单为懒加载（aboutToShow 时按当前连接实时重建），模拟打开菜单触发它
+    menu.aboutToShow.emit()
     seq_acts = [a.text() for a in menu.actions() if a.text()]
     assert "序列" in seq_acts, f"PG 菜单应含 序列: {seq_acts}"
     connection_service.close(profile.id)
