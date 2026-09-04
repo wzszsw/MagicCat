@@ -17,9 +17,13 @@ DISPLAY_LIMIT = 1200
 
 
 def _display_text(value) -> str:
+    from magiccat.utils.datetime_format import format_datetime
+
     if value is None:
         return "NULL"
     text = str(value)
+    # 数据库返回的日期时间统一显示为 YYYY-MM-DD HH:MM:SS
+    text = format_datetime(text)
     if len(text) > DISPLAY_LIMIT:
         return text[:DISPLAY_LIMIT - 1] + "…"
     return text

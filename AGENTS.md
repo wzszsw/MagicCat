@@ -52,7 +52,16 @@
   - **引用素材的来源/许可证要留档**（见 `docs/引用素材.md`）。
 - 连接图标按 `provider_key` 区分数据库产品（MySQL/PostgreSQL/MariaDB/Oracle/SQL Server…）。
 
-## 6. 工程质量
+## 6. 日期时间显示约定
+
+- **统一格式**：日期时间一律显示为 `YYYY-MM-DD HH:MM:SS`（空格分隔，本地时区）。
+  - 例：`2026-09-04 10:55:08`（与 Navicat 日志 `[2026-09-03 23:29:37.687]` 一致，仅省略毫秒）。
+- 数据侧存储可为 UTC ISO（如 `datetime.now(UTC).isoformat(...)`），**展示时**经
+  `magiccat/utils/datetime_format.py` 的 `format_datetime()` 转成上述格式（去 `T`、去时区偏移、转本地时区）。
+- 所有展示日期时间的入口统一走 `format_datetime()`：对象页「修改日期」列、结果网格单元格等，
+  已由 `ObjectBrowseView.load()` 和 `grid.py` 的 `_display_text()` 接入。
+
+## 7. 工程质量
 
 - 类型注解全覆盖；`uv run ruff check .` 必须通过。
 - `uv run pytest` 全绿（含真实 MySQL/PostgreSQL 集成；JVM 相关测试避免 faulthandler 误报）。
@@ -61,14 +70,29 @@
 - 提交信息用中文、单引号包裹、避免 PowerShell 花括号/括号被吞的写法；每次改动一个里程碑语义，附修订记录（M编号）。
 - 里程碑进度记录在 `docs/MagicCat设计方案.md` 附录 B（持续更新，含回归数）。
 
-## 7. 开发节奏偏好
+## 8. 开发节奏偏好
 
 - **做完一个功能就收尾**，不要顺手展开到未要求的范围。
 - 用户在线可随时给方向并**纠偏**；不在线时**保持保守**，不做超范围改动、不碰未闭环功能。
 - 改动前若方向不明确，**先小步确认**（AskUser），避免做偏；但确认后放开做。
 - 尊重用户"休息/保守"指示，此时不主动推进。
 
-## 8. 里程碑命名
+## 9. 里程碑命名
 
 - 用 `M<N>` 递增编号，每个里程碑一句话描述 + 回归数，持续追加到设计方案附录 B。
 - 本文件应与 `docs/MagicCat设计方案.md` 附录 B 的里程碑表保持一致。
+
+## 附录 A：Navicat 本地存储探测笔记（参考）
+
+> 本机装有 Navicat Premium 17，以下为实际探测结论，仅作对齐参考，**不必照搬**内部实现。
+
+- **用 SQLite 做本地缓存/历史/索引**：`Documents\Navicat\Premium\profiles\ai_assistant_history.db`
+  （完整 SQLite 库，含多表 + FTS 全文搜索 + `utc_time` 字段）；每个连接目录有 `id_cache.db`(-wal/-shm)。
+- **连接配置 / 对象树结构 / 查询收藏**存于**注册表**：`HKCU\Software\PremiumSoft\Navicat\Servers\<conn>\...`
+  （含 Profiles / Schemas / TableView / Columns / Query 等键）。
+- **查询 SQL 内容**存为 `.sql` 文件：`Documents\Navicat\MySQL\Servers\<conn>\<schema>\<name>.sql`。
+- **日志**：`Documents\Navicat\Premium\logs\history.log`，每条形如
+  `[2026-09-03 23:29:37.687][localhost_3306][...][MYSQL][]`（即 `YYYY-MM-DD HH:MM:SS.mmm`）。
+- 结论：Navicat 对"简单数据/缓存/历史"确实用 **SQLite**；配置多为注册表/JSON；SQL 文件用文件系统。
+  我们当前用 `profiles.json`(DPAPI) / `queries/*.json` / `history.json` 的方式可保留，
+  若需对齐可将"查询历史/最近使用"等改存 SQLite（视后续需求，不强制）。

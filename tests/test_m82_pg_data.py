@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from magiccat.models.profile import DEFAULT_GROUP, ConnectionProfile
+from magiccat.models.profile import ConnectionProfile
 
 
 def _profile(pg_env, name="M82pg"):

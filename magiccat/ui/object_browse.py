@@ -110,12 +110,15 @@ class ObjectBrowseView(QWidget):
 
     # ---- 数据填充 ----
     def load(self, profile_id: str, rows: list[dict]) -> None:
+        from magiccat.utils.datetime_format import format_datetime
+
         self._profile_id = profile_id
         self._rows = rows
         self.table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             for c, key in enumerate(self._keys):
-                self.table.setItem(r, c, QTableWidgetItem(str(row.get(key, "") or "")))
+                val = row.get(key, "") or ""
+                self.table.setItem(r, c, QTableWidgetItem(format_datetime(str(val))))
         self.table.clearSelection()
         self._on_selection()
 
