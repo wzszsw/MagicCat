@@ -19,12 +19,14 @@ from magiccat.services.query_service import QueryService
 from magiccat.services.transfer import _check, _qname, _sql_string
 
 ProgressCb = Callable[[int, int, str], None]
+LogCb = Callable[[str], None]
 
 
 def dump_tables_sql(profile: ConnectionProfile, schema: str, tables: list[str],
                     path: str | Path, data: DataService, metadata: MetadataService,
                     progress: ProgressCb | None = None,
-                    cancel: threading.Event | None = None) -> dict:
+                    cancel: threading.Event | None = None,
+                    log: LogCb | None = None) -> dict:
     """备份若干表（结构 + 数据）为一个 .sql。返回 {tables, rows, cancelled}。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,6 +36,8 @@ def dump_tables_sql(profile: ConnectionProfile, schema: str, tables: list[str],
         f.write(f"-- MagicCat 备份 · {schema} · {len(tables)} 张表\n\n")
         for table in tables:
             _check(cancel)
+            if log:
+                log(f"[备份] 表 {table}：读取结构")
             columns = metadata.columns(profile, schema, table)
             if not columns:
                 continue  # 视图/无权限对象跳过
@@ -85,7 +89,8 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
                     ddl,  # DdlService
                     progress: ProgressCb | None = None,
                     cancel: threading.Event | None = None,
-                    with_data: bool = True) -> dict:
+                    with_data: bool = True,
+                    log: LogCb | None = None) -> dict:
     """全库备份：基础表(结构+数据，with_data=False 时仅结构) + 视图 + 例程 + 触发器。
 
     返回 {tables, rows, views, routines, triggers, cancelled}。
@@ -101,6 +106,9 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
     views = [t for t in names if t["type"] == "VIEW"]
     routines = metadata.routines(profile, schema)
     triggers = metadata.triggers(profile, schema)
+    if log:
+        log(f"[备份] 目标：{schema} · {len(tables)} 表 / {len(views)} 视图 / "
+            f"{len(routines)} 例程 / {len(triggers)} 触发器")
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"-- MagicCat 全库备份 · {schema}\n\n")
@@ -121,6 +129,8 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
         # 1) 表：结构 + 数据
         for table in tables:
             _check(cancel)
+            if log:
+                log(f"[备份] 表 {table}：结构")
             if cols_by is not None:
                 columns = cols_by.get(table, [])
                 indexes = group_indexes(idx_rows_by.get(table, []))
@@ -162,6 +172,8 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
         # 2) 视图
         for view in views:
             _check(cancel)
+            if log:
+                log(f"[备份] 视图 {view['name']}")
             f.write(f"\n-- 视图 {view['name']}\n")
             f.write(f"DROP VIEW IF EXISTS `{schema}`.`{view['name']}`;\n")
             body = ddl.show_create_view(profile, schema, view["name"]).strip()
@@ -173,6 +185,8 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
         for routine in routines:
             _check(cancel)
             kind = routine["type"].upper()  # PROCEDURE | FUNCTION
+            if log:
+                log(f"[备份] {kind} {routine['name']}")
             f.write(f"\n-- {kind} {routine['name']}\n")
             body = ddl.show_create_routine(profile, schema, routine["name"], kind)
             f.write(_routine_block(body, kind, schema, routine["name"]))
@@ -180,6 +194,8 @@ def dump_schema_sql(profile: ConnectionProfile, schema: str, path: str | Path,
         # 4) 触发器
         for trig in triggers:
             _check(cancel)
+            if log:
+                log(f"[备份] 触发器 {trig['name']}")
             f.write(f"\n-- 触发器 {trig['name']}\n")
             body = ddl.show_create_trigger(profile, schema, trig["name"])
             f.write(_routine_block(body, "TRIGGER", schema, trig["name"]))

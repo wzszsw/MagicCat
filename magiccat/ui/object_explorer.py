@@ -845,16 +845,15 @@ class ObjectExplorer(QTreeWidget):
             self.refresh_schema_queries(profile_id, schema)
 
     def _dump_database(self, item: QTreeWidgetItem, with_data: bool) -> None:
-        """转储整个数据库为 SQL 文件（对标 Navicat：结构和数据 / 仅结构）。"""
-        import threading
+        """转储整个数据库为 SQL 文件（对标 Navicat：结构和数据 / 仅结构）+ 进度对话框。"""
         from pathlib import Path
 
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         from magiccat.services import backup
         from magiccat.services.data_service import DataService
         from magiccat.services.ddl_service import DdlService
+        from magiccat.ui.sql_progress_dialog import SqlProgressDialog
 
         info = _info(item)
         schema = info[DATA_KEY]["schema"]
@@ -865,19 +864,18 @@ class ObjectExplorer(QTreeWidget):
                                                "SQL 脚本 (*.sql)")
         if not path:
             return
-        ev = threading.Event()
-        dialog = QProgressDialog("正在转储…", "取消", 0, 0, self)
-        dialog.setWindowTitle(f"转储 {schema}")
-        dialog.setWindowModality(Qt.WindowModal)
-        dialog.setMinimumDuration(300)
-        dialog.canceled.connect(ev.set)
-        dialog.setValue(0)
 
-        def fetch() -> dict:
+        dialog = SqlProgressDialog(self)
+        dialog.setWindowTitle(f"转储 SQL 文件 · {schema}")
+        dialog.set_meta(server=f"{profile.host}:{profile.port}", database=schema,
+                        schema=schema, path=path)
+
+        def work(bus, cancel_event) -> dict:
             return backup.dump_schema_sql(
                 profile, schema, Path(path), DataService(self._connections),
                 MetadataService(self._connections), DdlService(self._connections),
-                cancel=ev, with_data=with_data)
+                cancel=cancel_event, with_data=with_data,
+                progress=bus.progress.emit, log=bus.log.emit)
 
         def done(res: dict) -> None:
             dialog.close()
@@ -890,24 +888,17 @@ class ObjectExplorer(QTreeWidget):
                 f"完成：{res['tables']} 表 / {res['views']} 视图 / "
                 f"{res['routines']} 函数 / {res['triggers']} 触发器{rows_note} →\n{path}")
 
-        def error(err: str) -> None:
-            dialog.close()
-            if "TransferCancelled" in err:
-                QMessageBox.information(self, "转储", "已取消。")
-            else:
-                QMessageBox.critical(self, "转储", f"失败：{err}")
-
-        run_async(fetch, done, error)
+        dialog.start(work, done)
 
     def _run_sql_file(self, item: QTreeWidgetItem) -> None:
-        """运行 SQL 文件（以当前库为默认目标；未加库前缀的语句落到该库）。"""
+        """运行 SQL 文件（以当前库为默认目标；未加库前缀的语句落到该库）+ 进度对话框。"""
         from pathlib import Path
 
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         from magiccat.services import backup
         from magiccat.services.query_service import QueryService
+        from magiccat.ui.sql_progress_dialog import SqlProgressDialog
 
         info = _info(item)
         schema = info[DATA_KEY]["schema"]
@@ -918,15 +909,18 @@ class ObjectExplorer(QTreeWidget):
                                                "SQL 脚本 (*.sql);;所有文件 (*)")
         if not path:
             return
-        dialog = QProgressDialog("正在执行 SQL 文件…", None, 0, 0, self)
-        dialog.setWindowTitle(f"运行 SQL 文件 · {schema}")
-        dialog.setWindowModality(Qt.WindowModal)
-        dialog.setMinimumDuration(300)
-        dialog.setValue(0)
 
-        def fetch() -> dict:
-            return backup.restore_sql_file(profile, Path(path),
-                                           QueryService(self._connections), schema=schema)
+        dialog = SqlProgressDialog(self)
+        dialog.setWindowTitle(f"运行 SQL 文件 · {schema}")
+        dialog.set_meta(server=f"{profile.host}:{profile.port}", database=schema,
+                        schema=schema, path=path)
+
+        def work(bus, cancel_event) -> dict:
+            res = backup.restore_sql_file(profile, Path(path),
+                                          QueryService(self._connections), schema=schema)
+            res["rows"] = res.get("statements", 0)
+            res["errors"] = len(res.get("errors", []))
+            return res
 
         def done(res: dict) -> None:
             dialog.close()
@@ -939,11 +933,7 @@ class ObjectExplorer(QTreeWidget):
                     f"{res['statements']} 条语句中 {len(res['errors'])} 条失败：\n"
                     + "\n".join(res["errors"]))
 
-        def error(err: str) -> None:
-            dialog.close()
-            QMessageBox.critical(self, "运行 SQL 文件", f"失败：{err}")
-
-        run_async(fetch, done, error)
+        dialog.start(work, done)
 
     def _run_profile_action(self, profile: ConnectionProfile, fn, prefix: str) -> None:
         item = self.profile_item(profile.id)
