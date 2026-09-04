@@ -57,6 +57,11 @@ class MetadataService:
         """PostgreSQL：某 database.schema 下的例程（函数/过程）。"""
         return self._meta(profile, "routinesInDatabase", database, schema)
 
+    def sequences_in_database(self, profile: ConnectionProfile, database: str,
+                              schema: str) -> list[dict]:
+        """PostgreSQL：某 database.schema 下的序列列表。"""
+        return self._meta(profile, "sequencesInDatabase", database, schema)
+
     def routines(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "routines", schema)
 

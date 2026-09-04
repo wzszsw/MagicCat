@@ -1,0 +1,61 @@
+"""M78 测试：顶部「其它」领域按钮（永驻）+ 序列（PG 专属菜单；MySQL 无菜单项）。"""
+
+from __future__ import annotations
+
+from magiccat.models.profile import DEFAULT_GROUP, ConnectionProfile
+
+
+def _other_button(win):
+    from PySide6.QtWidgets import QToolButton
+    tb = next((b for b in win.findChildren(QToolButton) if b.text() == "其它"), None)
+    return tb
+
+
+def test_other_button_present_and_empty_for_mysql(qtbot, connection_service):
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui.main_window import MainWindow
+
+    win = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(win)
+    win.show()
+    btn = _other_button(win)
+    assert btn is not None, "「其它」按钮应永驻存在"
+    menu = btn.menu()
+    assert menu is not None
+    # MySQL：没有可用「其它」项 → 菜单为空
+    acts = [a for a in menu.actions() if a.text()]
+    assert acts == [], f"MySQL 的「其它」菜单应为空，实际: {[a.text() for a in acts]}"
+
+
+def test_other_menu_has_sequence_for_pg(qtbot, connection_service, pg_env):
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui.main_window import MainWindow
+
+    profile = ConnectionProfile(name="PG78", group=DEFAULT_GROUP,
+                                host=pg_env["host"], port=pg_env["port"],
+                                username=pg_env["user"], password=pg_env["password"],
+                                provider_key="postgresql")
+    connection_service.add(profile)
+    win = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(win)
+    win.show()
+    # 选中 PG 连接 → 重建菜单应含「序列」
+    win.profile_combo.setCurrentIndex(win.profile_combo.findData(profile.id))
+    qtbot.waitUntil(lambda: _other_button(win) is not None, timeout=25_000)
+    btn = _other_button(win)
+    menu = btn.menu()
+    qtbot.waitUntil(lambda: any(a.text() == "序列" for a in menu.actions()), timeout=25_000)
+    seq_acts = [a.text() for a in menu.actions() if a.text()]
+    assert "序列" in seq_acts, f"PG 菜单应含 序列: {seq_acts}"
+    connection_service.close(profile.id)
+
+
+def test_show_sequence_domain(qtbot, connection_service):
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui.main_window import MainWindow
+
+    win = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(win)
+    win.show()
+    win._show_domain("sequences")
+    assert win.domain_stack.currentWidget() is win.sequence_page

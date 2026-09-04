@@ -18,8 +18,13 @@ def test_quick_toolbar_actions(qtbot, connection_service):
     texts = [a.text() for a in toolbar.actions() if a.text()]
     for expected in ("连接", "新建查询", "表", "视图", "函数", "用户", "查询"):
         assert expected in texts, f"缺少动作: {expected}"
-    for removed in ("备份", "模型", "自动运行", "其它", "BI"):
+    for removed in ("备份", "模型", "自动运行", "BI"):
         assert removed not in texts, f"未实现/已移除功能不应放置: {removed}"
+    # 「其它」为永驻领域按钮（置于工具栏，文本挂在 QToolButton 上而非 action）
+    from PySide6.QtWidgets import QToolButton
+    other_btns = [b for b in toolbar.findChildren(QToolButton) if b.text() == "其它"]
+    assert other_btns, "「其它」领域按钮应存在"
+    assert not other_btns[0].icon().isNull(), "「其它」无图标"
     for a in toolbar.actions():
         if a.text() in ("表", "视图", "函数", "连接", "用户", "查询"):
             assert not a.icon().isNull(), f"{a.text()} 无图标"

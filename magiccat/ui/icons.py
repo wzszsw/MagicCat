@@ -231,6 +231,19 @@ def _other() -> QImage:
     return image
 
 
+def _sequence() -> QImage:
+    image = _canvas()
+    p = _painter(image)
+    p.setPen(QPen(QColor("#5B4A8A"), 1.0))
+    p.setBrush(QBrush(QColor("#9B59B6")))
+    p.drawRoundedRect(QRectF(2.5, 2.5, 11, 11), 2, 2)
+    p.setPen(QPen(QColor("#FFFFFF"), 1.0))
+    p.drawLine(5.5, 8, 10.5, 8)
+    p.drawLine(8, 5.5, 8, 10.5)
+    p.end()
+    return image
+
+
 def _backup() -> QImage:
     image = _canvas()
     p = _painter(image)
@@ -309,6 +322,8 @@ def _icon_image(kind: str, subtype: str = "") -> QImage | None:
         return _user()
     if kind == "other":
         return _other()
+    if kind == "sequence":
+        return _sequence()
     if kind == "backup":
         return _backup()
     if kind == "auto_run":

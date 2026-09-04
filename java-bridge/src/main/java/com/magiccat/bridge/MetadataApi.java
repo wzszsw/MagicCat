@@ -130,6 +130,19 @@ public final class MetadataApi {
                 new String[] {schema}, 0);
     }
 
+    /** PostgreSQL：某 database.schema 下的序列列表（列表页用）。
+     *  name, owner, increment, last_value, min_value, max_value, start_value, cache, cycle */
+    public static String sequencesInDatabase(String configId, String database, String schema) {
+        return ConnectionRegistry.executeOnDatabase(
+                configId, database,
+                "SELECT sequencename AS name, sequenceowner AS owner, "
+                        + "increment_by AS increment, last_value AS last_value, "
+                        + "min_value AS min_value, max_value AS max_value, "
+                        + "start_value AS start_value, cache_size AS cache, cycle AS cycle "
+                        + "FROM pg_sequences WHERE schemaname = ? ORDER BY sequencename",
+                new String[] {schema}, 0);
+    }
+
     /** 表/视图列表：name, type(BASE TABLE|VIEW)。 */
     public static String tables(String configId, String schema) {
         return isMySqlFamily(configId)

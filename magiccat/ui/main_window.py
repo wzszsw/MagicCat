@@ -136,15 +136,17 @@ class MainWindow(QMainWindow):
         self._build_view_browse()
         self._build_routine_browse()
         self._build_trigger_browse()
+        self._build_sequence_browse()
         self.domain_stack.addWidget(self.browse_page)
         self.domain_stack.addWidget(self.table_page)
         self.domain_stack.addWidget(self.view_page)
         self.domain_stack.addWidget(self.routine_page)
         self.domain_stack.addWidget(self.trigger_page)
+        self.domain_stack.addWidget(self.sequence_page)
         self._domain_pages: dict[str, QWidget] = {
             "queries": self.browse_page, "tables": self.table_page,
             "views": self.view_page, "routines": self.routine_page,
-            "triggers": self.trigger_page}
+            "triggers": self.trigger_page, "sequences": self.sequence_page}
         self.editor_tabs.addTab(self.domain_stack, "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
@@ -223,6 +225,17 @@ class MainWindow(QMainWindow):
         self.trigger_page.refresh_requested.connect(self._reload_trigger_browse)
         self.trigger_page.selection_object.connect(self._show_object_info)
 
+    def _build_sequence_browse(self) -> None:
+        """序列领域「对象」子页：设计/新建/删除序列 + 当前库序列列表（PostgreSQL）。"""
+        from magiccat.ui.sequence_browse import SequenceBrowseView
+
+        self.sequence_page = SequenceBrowseView()
+        self.sequence_page.design_sequence.connect(self._design_sequence)
+        self.sequence_page.new_sequence.connect(self._new_sequence)
+        self.sequence_page.delete_sequence.connect(self._delete_sequence)
+        self.sequence_page.refresh_requested.connect(self._reload_sequence_browse)
+        self.sequence_page.selection_object.connect(self._show_object_info)
+
     def _on_create_routine_entry(self, profile_id: str | None = None,
                                  schema: str | None = None) -> None:
         """新建函数（对象页动作）：需要连接/库上下文，复用打开向导。"""
@@ -276,6 +289,8 @@ class MainWindow(QMainWindow):
             self._reload_routine_browse(schema=schema)
         elif page is self.trigger_page:
             self._reload_trigger_browse()
+        elif page is self.sequence_page:
+            self._reload_sequence_browse()
         else:
             page.clear() if hasattr(page, "clear") else None
 
@@ -372,6 +387,115 @@ class MainWindow(QMainWindow):
         run_async(fetch, done, lambda err: self.trigger_page.ctx_label.setText(
             f"读取触发器失败：{err}"))
 
+    # ---- 序列（PostgreSQL「其它」领域） ----
+    def _reload_sequence_browse(self, profile=None, database: str = "",
+                                schema: str = "") -> None:
+        """按当前连接/库刷新「序列」对象页列表（PG 专属，一次批查，无 N+1）。"""
+        profile = profile or self._current_profile()
+        if profile is None:
+            self.sequence_page.clear()
+            self.sequence_page.ctx_label.setText("")
+            return
+        database = database or profile.database or self.schema_combo.currentText() or ""
+        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        self.sequence_page.ctx_label.setText(
+            f"{profile.display_name} · {database} · {schema or '默认'}")
+
+        def fetch():
+            if not profile.is_postgres:
+                return []
+            return self._metadata.sequences_in_database(profile, database, schema)
+
+        def done(rows: list[dict]) -> None:
+            if profile.is_postgres:
+                self.sequence_page.load_sequences(profile.id, database, schema, rows)
+            else:
+                self.sequence_page.clear()
+
+        run_async(fetch, done, lambda err: self.sequence_page.ctx_label.setText(
+            f"读取序列失败：{err}"))
+
+    def _resolve_pg_database_schema(self) -> tuple[str, str] | None:
+        """取当前连接/库的 (database, schema)。PG 下二者来自下拉；非 PG 返回 None。"""
+        profile = self._current_profile()
+        if profile is None or not profile.is_postgres:
+            return None
+        database = profile.database or self.schema_combo.currentText() or ""
+        # MySQL 的 schema_combo 存的是库；PG 下尽可能取“模式”文本（若下拉存 schema）
+        schema = self.schema_combo.currentText() or database or ""
+        return database, schema
+
+    def _design_sequence(self, profile_id: str, database: str, schema: str,
+                         name: str) -> None:
+        """设计序列（对象页双击/设计）：打开序列编辑对话框。"""
+        from magiccat.ui.sequence_dialog import SequenceDialog
+
+        profile = self._connections.get(profile_id)
+        if profile is None or not profile.is_postgres:
+            return
+        data = {}
+        try:
+            rows = self._metadata.sequences_in_database(profile, database, schema)
+            data = next((r for r in rows if r.get("name") == name), {})
+        except Exception:  # noqa: BLE001
+            data = {}
+        dlg = SequenceDialog(schema, name=name, mode="edit", data=data, parent=self)
+        dlg.exec()
+
+    def _new_sequence(self) -> None:
+        """新建序列：PG 下弹新建序列对话框。"""
+        profile = self._current_profile()
+        if profile is None or not profile.is_postgres:
+            QMessageBox.information(self, "新建序列", "仅 PostgreSQL 支持序列。")
+            return
+        schema = self.schema_combo.currentText() or profile.database or ""
+        from magiccat.ui.sequence_dialog import SequenceDialog
+
+        dlg = SequenceDialog(schema, name="new_sequence", mode="create", parent=self)
+        if dlg.exec():
+            self._run_sequence_sql(profile, dlg.sql(), "新建序列")
+
+    def _delete_sequence(self, profile_id: str, database: str, schema: str,
+                         name: str) -> None:
+        """删除序列：确认后 DROP SEQUENCE，并刷新序列对象页。"""
+        from magiccat.services.query_service import QueryService
+
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
+        sql = f'DROP SEQUENCE IF EXISTS "{schema}"."{name}"'
+        if QMessageBox.question(
+                self, "删除序列",
+                f"确定删除序列 `{schema}`.{name}？\n\n{sql}",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, "删除序列", errors[0]["message"])
+                return
+            self._reload_sequence_browse(profile, database, schema)
+            self._status(f"序列已删除：{schema}.{name}", 4000)
+
+        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+                  done, lambda err: QMessageBox.critical(self, "删除序列", err))
+
+    def _run_sequence_sql(self, profile, sql: str, verb: str) -> None:
+        """执行序列 SQL（CREATE/ALTER），成功后刷新序列对象页。"""
+        from magiccat.services.query_service import QueryService
+
+        def done(results: list[dict]) -> None:
+            errors = [r for r in results if r.get("kind") == "error"]
+            if errors:
+                QMessageBox.warning(self, verb, errors[0]["message"])
+                return
+            self._status(f"{verb}成功", 4000)
+            self._reload_sequence_browse(profile)
+
+        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+                  done, lambda err: QMessageBox.critical(self, verb, err))
+
     def _query_btn(self, text: str, handler, bar: QHBoxLayout):
         from PySide6.QtWidgets import QPushButton
 
@@ -442,6 +566,40 @@ class MainWindow(QMainWindow):
         quick("用户", "user", self._quick_user)
         toolbar.addSeparator()
         quick("查询", "query", self._show_query_domain)
+        self._add_other_button(toolbar)
+
+    def _add_other_button(self, toolbar) -> None:
+        """「其它」领域（永驻）：下拉菜单按数据库类型增减。
+        - PostgreSQL：序列（等）；
+        - MySQL：暂无可用的「其它」项（无序列/类型等），菜单为空。
+        """
+        from PySide6.QtWidgets import QMenu, QToolButton
+
+        from magiccat.ui.icons import icon
+
+        btn = QToolButton()
+        btn.setText("其它")
+        btn.setIcon(icon("other"))
+        btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        btn.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(btn)
+        btn.setMenu(menu)
+        toolbar.addWidget(btn)
+
+        def rebuild() -> None:
+            menu.clear()
+            profile = self._current_profile()
+            if profile is not None and profile.is_postgres:
+                act_seq = menu.addAction("序列")
+                act_seq.triggered.connect(lambda: self._show_other_sequence())
+
+        # 连接变化时重建菜单
+        self.profile_combo.currentIndexChanged.connect(rebuild)
+        rebuild()
+
+    def _show_other_sequence(self) -> None:
+        """「其它」→ 序列：切到序列对象页并展示当前库序列。"""
+        self._show_domain("sequences")
 
     def _quick_user(self) -> None:
         """用户：打开用户管理面板（对标 Navicat）。"""
