@@ -392,6 +392,7 @@ MagicCat/
 | M69 | 「对象」页选中行联动右侧「信息」面板（表/视图/函数/触发器/查询各自对象信息） | ✅ | 95 回归 + 选中描述断言 |
 | M70 | Bugfix：「对象」页按对象树选中库加载（不再用下拉当前库，避免展示错库对象） | ✅ | 95 回归 + 双库不串断言 |
 | M71 | PostgreSQL 扩展：连接配置加「数据库类型」，方言 key 贯穿 open/test，PG 驱动 + URL，标准 JDBC 元数据可览库/表 | ✅ | 97 回归 + 真实 PG 15.14 打开/自检/元数据 |
+| M72 | PostgreSQL 三级树 db→schema→表/视图/实体化视图/函数/触发器/查询（跨库临时连枚举 schema），MySQL 两级不变 | ✅ | 97 回归 + 真实 PG 树逐级展开 |
 
 - 自动化测试：`uv run pytest`（97 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

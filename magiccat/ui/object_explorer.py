@@ -121,6 +121,9 @@ class ObjectExplorer(QTreeWidget):
                         "comment": data.get("comment", "")}
             elif kind == "group":
                 desc = {"kind": "group", "name": current.text(0)}
+            elif kind == "schema":
+                desc = {"kind": "schema", "profile_id": pid,
+                        "schema": data.get("schema"), "database": data.get("database", "")}
             elif kind == "category":
                 desc = {"kind": "category", "name": current.text(0)}
                 cat_type = data.get("cat_type")
@@ -176,6 +179,8 @@ class ObjectExplorer(QTreeWidget):
             self._load_profile(item)
         elif kind == "database":
             self._load_database(item)
+        elif kind == "schema":
+            self._load_schema(item)
         elif kind == "category":
             # 逐层懒加载：展开分类才取该层数据
             self._load_category(item)
@@ -223,27 +228,79 @@ class ObjectExplorer(QTreeWidget):
                 return
 
     def _load_database(self, item: QTreeWidgetItem) -> None:
-        """展开库：只建分类骨架（表/视图/函数/触发器/查询），数据懒加载到各分类展开时。"""
+        """展开库：PostgreSQL → 列出其 schema（三级 db→schema→分类）；
+        MySQL/MariaDB → 直接建分类骨架（db 即 schema，两级）。"""
         info = _info(item)
-        schema = info[DATA_KEY]["schema"]
+        database = info[DATA_KEY]["schema"]  # 该节点即库名
         profile = self._profile_of(item)
         if profile is None:
+            return
+
+        if profile.is_postgres:
+            self._load_database_schemas(item, profile, database)
             return
 
         children: list[QTreeWidgetItem] = []
         for label, cat_type in (("表", "tables"), ("视图", "views"), ("函数", "routines"),
                                 ("触发器", "triggers")):
-            cat = _make_item(label, "category", schema=schema, cat_type=cat_type)
+            cat = _make_item(label, "category", schema=database, cat_type=cat_type)
             # 占位子项使分类可展开；展开时才拉取该层数据（逐层懒加载，避免 N+1）
             _placeholder(cat)
             children.append(cat)
         # 查询：本地具名查询，立即填充（无数据库交互）
-        cat = _make_item("查询", "category", schema=schema, cat_type="queries")
+        cat = _make_item("查询", "category", schema=database, cat_type="queries")
         children.append(cat)
         for q in self._queries.list(profile.id):
-            if (q.get("schema") or "") == schema:
+            if (q.get("schema") or "") == database:
                 cat.addChild(_make_item(q["name"], "saved_query", profile_id=profile.id,
                                         name=q["name"], schema=q.get("schema", "")))
+        _replace_children(item, children)
+
+    def _load_database_schemas(self, item: QTreeWidgetItem, profile: ConnectionProfile,
+                               database: str) -> None:
+        """PostgreSQL：展开库 → 拉到该库下的 schema（须临时连到该库）。"""
+        _placeholder(item)
+
+        def fetch() -> list[dict]:
+            return self._metadata.schemas(profile, database)
+
+        def done(schemas: list[dict]) -> None:
+            if item.treeWidget() is None:
+                return
+            children = [_make_item(s["name"], "schema", schema=s["name"],
+                                   database=database) for s in schemas]
+            for c in children:
+                # 每个 schema 节点可继续展开出分类骨架
+                _placeholder(c)
+            _replace_children(item, children)
+
+        run_async(fetch, done, lambda err: self._show_error(item, f"读取 schema 失败：{err}"))
+
+    def _load_schema(self, item: QTreeWidgetItem) -> None:
+        """PostgreSQL：展开 schema → 分类骨架（表/视图/函数/触发器/查询）。"""
+        info = _info(item)
+        schema = info[DATA_KEY]["schema"]
+        database = info[DATA_KEY].get("database", "")
+
+        children: list[QTreeWidgetItem] = []
+        for label, cat_type in (("表", "tables"), ("视图", "views"),
+                                ("实体化视图", "materialized_views"),
+                                ("函数", "routines"), ("触发器", "triggers")):
+            cat = _make_item(label, "category", schema=schema, database=database,
+                             cat_type=cat_type)
+            _placeholder(cat)
+            children.append(cat)
+        # 查询：本地具名查询，立即填充（无数据库交互）
+        cat = _make_item("查询", "category", schema=schema, database=database,
+                         cat_type="queries")
+        children.append(cat)
+        profile = self._profile_of(item)
+        if profile is not None:
+            for q in self._queries.list(profile.id):
+                if (q.get("schema") or "") == schema:
+                    cat.addChild(_make_item(q["name"], "saved_query",
+                                            profile_id=profile.id,
+                                            name=q["name"], schema=q.get("schema", "")))
         _replace_children(item, children)
 
     def _schema_of(self, item: QTreeWidgetItem) -> str | None:
@@ -252,25 +309,43 @@ class ObjectExplorer(QTreeWidget):
             info = _info(cur)
             if info.get(KIND_KEY) == "database":
                 return info.get(DATA_KEY, {}).get("schema")
+            if info.get(KIND_KEY) == "schema":
+                return info.get(DATA_KEY, {}).get("schema")
             cur = cur.parent()
         return None
+
+    def _database_of(self, item: QTreeWidgetItem) -> str:
+        """向上找到最近库名（PostgreSQL 节点存于 database 键）。"""
+        cur: QTreeWidgetItem | None = item
+        while cur is not None:
+            info = _info(cur)
+            if info.get(KIND_KEY) in ("schema", "database"):
+                return info.get(DATA_KEY, {}).get("database") or info.get(DATA_KEY, {}).get("schema", "")
+            cur = cur.parent()
+        return ""
 
     def _load_category(self, item: QTreeWidgetItem) -> None:
         """展开分类：按 cat_type 拉取并填充该层对象（单次查询，非逐对象）。"""
         info = _info(item)
         cat_type = info.get(DATA_KEY, {}).get("cat_type")
         schema = self._schema_of(item)
+        database = self._database_of(item)
         profile = self._profile_of(item)
         if profile is None or not schema:
             return
+        pg = profile.is_postgres
 
         def fetch() -> list:
+            if pg:
+                return self._fetch_pg_category(profile, database, schema, cat_type)
             if cat_type == "tables":
                 return [t for t in self._metadata.tables(profile, schema)
                         if t["type"] == "BASE TABLE"]
             if cat_type == "views":
                 return [v for v in self._metadata.tables(profile, schema)
                         if v["type"] == "VIEW"]
+            if cat_type == "materialized_views":
+                return []
             if cat_type == "routines":
                 return self._metadata.routines(profile, schema)
             if cat_type == "triggers":
@@ -284,10 +359,28 @@ class ObjectExplorer(QTreeWidget):
 
         run_async(fetch, done, lambda err: self._show_error(item, f"读取失败：{err}"))
 
+    def _fetch_pg_category(self, profile: ConnectionProfile, database: str,
+                           schema: str, cat_type: str) -> list:
+        """PostgreSQL 分类拉取（跨库：临时连到 database 查 schema 下的对象）。"""
+        if database and profile.is_postgres:
+            if cat_type == "tables":
+                return [t for t in self._metadata.tables_in_database(profile, database, schema)
+                        if t["type"] == "BASE TABLE"]
+            if cat_type == "views":
+                return [v for v in self._metadata.tables_in_database(profile, database, schema)
+                        if v["type"] == "VIEW"]
+            if cat_type == "materialized_views":
+                return [v for v in self._metadata.tables_in_database(profile, database, schema)
+                        if v["type"] == "MATERIALIZED VIEW"]
+            if cat_type == "routines":
+                return self._metadata.routines_in_database(profile, database, schema)
+        return []
+
     @staticmethod
     def _category_leaf(obj: dict, cat_type: str, schema: str) -> QTreeWidgetItem:
-        if cat_type in ("tables", "views"):
-            leaf = _make_item(obj["name"], "view" if cat_type == "views" else "table",
+        if cat_type in ("tables", "views", "materialized_views"):
+            kind = "view" if cat_type in ("views", "materialized_views") else "table"
+            leaf = _make_item(obj["name"], kind,
                               schema=schema, table=obj["name"], name=obj["name"])
             if cat_type == "tables":
                 _placeholder(leaf)  # 表可继续展开列（列也是懒加载）

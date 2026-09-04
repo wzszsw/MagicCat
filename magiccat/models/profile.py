@@ -39,6 +39,10 @@ class ConnectionProfile:
         suffix = f" ({self.host}:{self.port})"
         return self.name + ("" if suffix in self.name else suffix)
 
+    @property
+    def is_postgres(self) -> bool:
+        return self.provider_key == "postgresql"
+
     def to_dict(self) -> dict:
         """序列化（不含明文密码；密码由 ProfileStore 加密后单独落盘）。"""
         return {

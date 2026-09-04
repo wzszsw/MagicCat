@@ -23,6 +23,12 @@ public final class ConnectionRegistry {
     private static final ConcurrentHashMap<String, HikariDataSource> POOLS = new ConcurrentHashMap<>();
     /** 可取消执行的活跃语句表（令牌 → Statement）。 */
     private static final ConcurrentHashMap<String, Statement> ACTIVE = new ConcurrentHashMap<>();
+    /** 每个配置的连接参数（用于对目标 database 临时建连，供跨库元数据）。 */
+    private static final ConcurrentHashMap<String, ConnectParams> PARAMS = new ConcurrentHashMap<>();
+
+    /** 连接参数（host/port/database/user/pass/flavor）。 */
+    public record ConnectParams(String configId, String flavor, String host, int port,
+                                String database, String user, String password) {}
 
     private ConnectionRegistry() {}
 
@@ -36,6 +42,8 @@ public final class ConnectionRegistry {
     public static String open(String configId, String flavor, String host, int port,
                               String database, String user, String password) {
         close(configId);
+        PARAMS.put(configId, new ConnectParams(configId, flavor, host, port, database,
+                user, password));
         HikariConfig cfg = new HikariConfig();
         cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
         cfg.setUsername(user);
@@ -237,5 +245,66 @@ public final class ConnectionRegistry {
             throw new IllegalStateException("连接尚未打开或已被关闭: " + configId);
         }
         return ds;
+    }
+
+    /** 取该配置的连接参数（跨库临时连接用）；未记录则返回 null。 */
+    public static ConnectParams params(String configId) {
+        return PARAMS.get(configId);
+    }
+
+    /** 在【目标 database】上临时建单连接执行查询并返回 JSON 表。
+     * 用于跨库枚举：如 PG 需连到 database X 才能列其 schema/对象。
+     * 连接用完即关，不入池。 */
+    public static String executeOnDatabase(String configId, String database,
+                                          String sql, String[] params, int maxRows) {
+        ConnectParams p = PARAMS.get(configId);
+        if (p == null) {
+            throw new IllegalStateException("连接参数缺失: " + configId);
+        }
+        try (HikariDataSource ds = newDataSource(p.flavor(), p.host(), p.port(),
+                                                 database, p.user(), p.password());
+             Connection conn = ds.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (maxRows > 0) {
+                ps.setMaxRows(maxRows);
+            }
+            if (params != null) {
+                for (int i = 0; i < params.length; i++) {
+                    ps.setString(i + 1, params[i]);
+                }
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                ResultSetMetaData md = rs.getMetaData();
+                int n = md.getColumnCount();
+                String[] columns = new String[n];
+                for (int i = 1; i <= n; i++) {
+                    columns[i - 1] = md.getColumnLabel(i);
+                }
+                List<String[]> rows = new ArrayList<>();
+                while (rs.next()) {
+                    String[] row = new String[n];
+                    for (int i = 1; i <= n; i++) {
+                        row[i - 1] = Facade.cellToString(rs.getObject(i));
+                    }
+                    rows.add(row);
+                }
+                return Json.table(columns, rows);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("跨库查询失败: " + e.getMessage(), e);
+        }
+    }
+
+    private static HikariDataSource newDataSource(String flavor, String host, int port,
+                                                  String database, String user,
+                                                  String password) {
+        HikariConfig cfg = new HikariConfig();
+        cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
+        cfg.setUsername(user);
+        cfg.setPassword(password == null ? "" : password);
+        cfg.setMaximumPoolSize(2);
+        cfg.setConnectionTimeout(10_000);
+        cfg.setPoolName("mc-tmp-" + host + ":" + port + "/" + database);
+        return new HikariDataSource(cfg);
     }
 }

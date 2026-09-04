@@ -29,6 +29,15 @@ public final class MetadataApi {
         }
     }
 
+    private static boolean isPostgresFamily(String configId) {
+        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            String product = conn.getMetaData().getDatabaseProductName();
+            return product != null && product.toLowerCase().contains("postgresql");
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取数据库产品失败: " + e.getMessage(), e);
+        }
+    }
+
     private static String tablesSql(String configId, String schema) {
         return ConnectionRegistry.executeJson(
                 configId,
@@ -87,6 +96,38 @@ public final class MetadataApi {
                     null, 0);
         }
         return JdbcStandardMetadata.databases(configId);
+    }
+
+    /** PostgreSQL：某 database 下的 schema 列表（须临时连到该库）。name */
+    public static String schemas(String configId, String database) {
+        return ConnectionRegistry.executeOnDatabase(
+                configId, database,
+                "SELECT schema_name AS name FROM information_schema.schemata "
+                        + "WHERE schema_name NOT IN ('information_schema','pg_catalog','pg_toast') "
+                        + "ORDER BY schema_name",
+                null, 0);
+    }
+
+    /** PostgreSQL：某 database.schema 下的表/视图（须临时连到该库）。name, type */
+    public static String tablesInDatabase(String configId, String database, String schema) {
+        return ConnectionRegistry.executeOnDatabase(
+                configId, database,
+                "SELECT table_name AS name, table_type AS type "
+                        + "FROM information_schema.tables "
+                        + "WHERE table_schema = ? "
+                        + "ORDER BY table_type, table_name",
+                new String[] {schema}, 0);
+    }
+
+    /** PostgreSQL：某 database.schema 下的例程（函数/过程）。name, type */
+    public static String routinesInDatabase(String configId, String database, String schema) {
+        return ConnectionRegistry.executeOnDatabase(
+                configId, database,
+                "SELECT routine_name AS name, routine_type AS type "
+                        + "FROM information_schema.routines "
+                        + "WHERE routine_schema = ? "
+                        + "ORDER BY routine_type, routine_name",
+                new String[] {schema}, 0);
     }
 
     /** 表/视图列表：name, type(BASE TABLE|VIEW)。 */

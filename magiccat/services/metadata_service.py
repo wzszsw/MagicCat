@@ -43,6 +43,20 @@ class MetadataService:
         """全库表信息一次批查（表对象页；含 engine/rows/comment，避免 N+1）。"""
         return self._meta(profile, "schemaTables", schema)
 
+    def schemas(self, profile: ConnectionProfile, database: str) -> list[dict]:
+        """PostgreSQL：某 database 下的 schema 列表（须临时连到该库）。"""
+        return self._meta(profile, "schemas", database)
+
+    def tables_in_database(self, profile: ConnectionProfile, database: str,
+                           schema: str) -> list[dict]:
+        """PostgreSQL：某 database.schema 下的表/视图。"""
+        return self._meta(profile, "tablesInDatabase", database, schema)
+
+    def routines_in_database(self, profile: ConnectionProfile, database: str,
+                             schema: str) -> list[dict]:
+        """PostgreSQL：某 database.schema 下的例程（函数/过程）。"""
+        return self._meta(profile, "routinesInDatabase", database, schema)
+
     def routines(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "routines", schema)
 
