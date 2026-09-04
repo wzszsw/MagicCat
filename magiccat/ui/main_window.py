@@ -1261,13 +1261,14 @@ class MainWindow(QMainWindow):
         """对当前 SELECT/SHOW/DESCRIBE 生成 EXPLAIN 执行计划（MySQL 方言路径）。"""
         import re
 
+        ws = self._current_query_ws()
+        if ws is None:
+            return
         profile = self._current_profile()
         if profile is None:
             QMessageBox.information(self, "EXPLAIN", "请先在工具栏选择要执行的连接。")
             return
-        editor = self._active_editor()
-        if editor is None:
-            return
+        editor = ws.editor
         sql = (editor.current_sql() or "").strip()
         if not sql:
             self._status("无可 EXPLAIN 的语句（选中或光标所在语句）")
@@ -1277,19 +1278,20 @@ class MainWindow(QMainWindow):
             return
         target = sql if re.match(r"(?is)^\s*explain\b", sql) else "EXPLAIN " + sql
         self._status(f"正在生成执行计划（{profile.name}）…")
-        self.result_panel.append_message(f"──── EXPLAIN · {profile.name} · {target}")
+        ws.result_panel.append_message(f"──── EXPLAIN · {profile.name} · {target}")
         run_async(
             lambda: self._query.execute(profile, target),
-            lambda results: self._on_explained(results),
-            lambda err: self._on_exec_error(err))
+            lambda results: self._on_explained(results, ws),
+            lambda err: self._on_exec_error(err, ws))
 
-    def _on_explained(self, results: list[dict]) -> None:
+    def _on_explained(self, results: list[dict], ws=None) -> None:
         errors = [r for r in results if r.get("kind") == "error"]
         if errors:
             self.result_panel.append_message(f"[EXPLAIN 失败] {errors[0]['message']}")
             self._status("执行计划失败", 8000)
             return
-        self.result_panel.show_results(results)
+        if ws is not None:
+            ws.result_panel.show_results(results)
         rows = sum(len(r.get("rows", [])) for r in results)
         self._status(f"执行计划完成（{rows} 行步骤）", 5000)
 
@@ -1311,7 +1313,9 @@ class MainWindow(QMainWindow):
         name = (name or "").strip()
         if not ok or not name:
             return
-        schema = self.schema_combo.currentText() or profile.database or ""
+        ws = self._current_query_ws()
+        ws_schema = ws.schema_combo.currentText() if ws is not None else ""
+        schema = ws_schema or self.schema_combo.currentText() or profile.database or ""
         lib = QueryLibrary.default()
         lib.save(profile.id, name, editor.toPlainText(), schema=schema)
         if schema:
