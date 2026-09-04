@@ -28,11 +28,34 @@ def _mysql_reachable() -> bool:
         return False
 
 
+PG_HOST = os.environ.get("MAGICCAT_TEST_PG_HOST", "127.0.0.1")
+PG_PORT = int(os.environ.get("MAGICCAT_TEST_PG_PORT", "5432"))
+PG_USER = os.environ.get("MAGICCAT_TEST_PG_USER", "postgres")
+PG_PASSWORD = os.environ.get("MAGICCAT_TEST_PG_PASSWORD", "123456")
+
+
+def _pg_reachable() -> bool:
+    import socket
+
+    try:
+        with socket.create_connection((PG_HOST, PG_PORT), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
 @pytest.fixture()
 def mysql_env() -> dict:
     if not _mysql_reachable():
         pytest.skip(f"本机 MySQL {HOST}:{PORT} 不可达，跳过集成用例")
     return {"host": HOST, "port": PORT, "user": USER, "password": PASSWORD}
+
+
+@pytest.fixture()
+def pg_env() -> dict:
+    if not _pg_reachable():
+        pytest.skip(f"本机 PostgreSQL {PG_HOST}:{PG_PORT} 不可达，跳过集成用例")
+    return {"host": PG_HOST, "port": PG_PORT, "user": PG_USER, "password": PG_PASSWORD}
 
 
 @pytest.fixture()

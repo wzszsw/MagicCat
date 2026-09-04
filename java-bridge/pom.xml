@@ -24,6 +24,12 @@
       <artifactId>mysql-connector-j</artifactId>
       <version>8.4.0</version>
     </dependency>
+    <!-- PostgreSQL JDBC 驱动（跨库扩展） -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.4</version>
+    </dependency>
     <!-- 连接池 -->
     <dependency>
       <groupId>com.zaxxer</groupId>

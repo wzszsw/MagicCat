@@ -6,8 +6,8 @@ from magiccat.services import dialects
 
 
 def test_providers_registry():
-    assert dialects.supported_keys() == ["mysql", "mariadb"]
-    assert "postgresql" in dialects.planned_keys()
+    assert dialects.supported_keys() == ["mysql", "mariadb", "postgresql"]
+    assert "postgresql" not in dialects.planned_keys()
     assert dialects.provider("postgresql").standard_metadata is True
     assert dialects.provider("mysql").standard_metadata is False
     # 未知 key 回退默认
@@ -18,7 +18,7 @@ def test_jdbc_url_shapes():
     assert dialects.build_jdbc_url("mysql", "127.0.0.1", 3306,
                                    "test") == "jdbc:mysql://127.0.0.1:3306/test"
     assert dialects.build_jdbc_url("postgresql", "10.0.0.1", 5432,
-                                   "app") == "jdbc:postgresql://10.0.0.1:5432/app"
+                                   "app") == "jdbc:postgresql://10.0.0.1:5432/app?connectTimeout=5&socketTimeout=30"
     assert dialects.build_jdbc_url("sqlserver", "srv", 1433,
                                    "db") == "jdbc:sqlserver://srv:1433;databaseName=db"
 

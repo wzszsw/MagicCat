@@ -30,6 +30,23 @@ public final class Facade {
                 + "&connectTimeout=5000&socketTimeout=30000&serverTimezone=UTC";
     }
 
+    /** 按方言构造 JDBC URL（MySQL/MariaDB 含参数；PostgreSQL 走 PG 官方协议）。 */
+    public static String buildUrlByFlavor(String flavor, String host, int port,
+                                          String database) {
+        String db = (database == null || database.isBlank()) ? "" : database;
+        String f = flavor == null ? "" : flavor.toLowerCase();
+        if ("postgresql".equals(f)) {
+            // 连接库可空（默认连 postgres），驱动自动带 connect/socket 超时
+            return "jdbc:postgresql://" + host + ":" + port + "/" + db
+                    + "?connectTimeout=5&socketTimeout=30";
+        }
+        // 默认按 MySQL/MariaDB 处理
+        return "jdbc:mysql://" + host + ":" + port + "/" + db
+                + "?useUnicode=true&characterEncoding=utf8"
+                + "&sslMode=DISABLED&allowPublicKeyRetrieval=true"
+                + "&connectTimeout=5000&socketTimeout=30000&serverTimezone=UTC";
+    }
+
     private static HikariDataSource newDataSource(String host, int port, String database,
                                                   String user, String password) {
         HikariConfig cfg = new HikariConfig();

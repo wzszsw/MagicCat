@@ -26,6 +26,7 @@ class ConnectionProfile:
     password: str = ""
     database: str = ""
     group: str = DEFAULT_GROUP
+    provider_key: str = "mysql"   # 方言/驱动 key（见 services/dialects.py）
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
@@ -48,6 +49,7 @@ class ConnectionProfile:
             "port": self.port,
             "username": self.username,
             "database": self.database,
+            "provider_key": self.provider_key,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -62,6 +64,7 @@ class ConnectionProfile:
             port=int(data.get("port", 3306)),
             username=data.get("username", "root"),
             database=data.get("database", ""),
+            provider_key=data.get("provider_key", "mysql"),
             password=password,
             created_at=data.get("created_at", _now()),
             updated_at=data.get("updated_at", _now()),

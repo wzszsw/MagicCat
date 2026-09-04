@@ -29,9 +29,15 @@ public final class ConnectionRegistry {
     /** 打开（或替换）一个连接池。重复 open 会先关闭旧池。 */
     public static String open(String configId, String host, int port, String database,
                               String user, String password) {
+        return open(configId, "mysql", host, port, database, user, password);
+    }
+
+    /** 打开（或替换）一个连接池；flavor 为方言 key（mysql/mariadb/postgresql…）。 */
+    public static String open(String configId, String flavor, String host, int port,
+                              String database, String user, String password) {
         close(configId);
         HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(Facade.buildUrl(host, port, database));
+        cfg.setJdbcUrl(Facade.buildUrlByFlavor(flavor, host, port, database));
         cfg.setUsername(user);
         cfg.setPassword(password == null ? "" : password);
         cfg.setMaximumPoolSize(8);
@@ -121,13 +127,19 @@ public final class ConnectionRegistry {
         }
     }
 
-    /** 在单条连接（可先 setCatalog 指定默认库）上顺序执行语句，供脚本恢复使用。
-     * 返回 JSON 数组：[{"kind":"update","affected":N} | {"kind":"error","message":…}]。 */
+    /** 在单条连接（可先指定默认库）上顺序执行语句，供脚本恢复使用。
+     * 返回 JSON 数组：[{"kind":"update","affected":N} | {"kind":"error","message":…}]。
+     * 默认库切换：PostgreSQL 用 setSchema，MySQL/MariaDB 用 setCatalog。 */
     public static String executeScript(String configId, String schema, String[] statements) {
         List<String> results = new ArrayList<>();
         try (Connection conn = requirePool(configId).getConnection()) {
             if (schema != null && !schema.isBlank()) {
-                conn.setCatalog(schema);
+                boolean pg = isPostgres(conn);
+                if (pg) {
+                    conn.setSchema(schema);
+                } else {
+                    conn.setCatalog(schema);
+                }
             }
             for (String sql : statements) {
                 if (sql == null || sql.isBlank()) {
@@ -146,6 +158,15 @@ public final class ConnectionRegistry {
             throw new IllegalStateException("执行脚本失败: " + e.getMessage(), e);
         }
         return "[" + String.join(",", results) + "]";
+    }
+
+    private static boolean isPostgres(Connection conn) {
+        try {
+            String product = conn.getMetaData().getDatabaseProductName();
+            return product != null && product.toLowerCase().contains("postgresql");
+        } catch (SQLException e) {
+            return false;
+        }
     }
 
     private static String run(String configId, String sql, int maxRows, String token) {

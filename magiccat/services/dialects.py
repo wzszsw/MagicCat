@@ -1,8 +1,8 @@
 """数据库方言注册表与连接 URL 构造（M25：为跨库扩展预留的接缝）。
 
-当前实际支持：MySQL / MariaDB（经 mysql-connector-j，元数据走 information_schema）。
-其它库：已在标准层就绪（JdbcStandardMetadata），此处登记驱动类/URL 模板，
-接入时只需：pom 加驱动 + 此处 state 置 supported + java 选择实现（产品名已自动分流）。
+当前实际支持：MySQL / MariaDB（mysql-connector-j，元数据走 information_schema）、
+PostgreSQL（postgresql 驱动，元数据走标准 DatabaseMetaData）。
+Oracle / SQL Server：已在标准层就绪，接入时只需 pom 加驱动 + 此处 state 置 supported。
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ PROVIDERS: dict[str, Provider] = {
         key="postgresql", display="PostgreSQL",
         driver_class="org.postgresql.Driver",
         url_template="jdbc:postgresql://{host}:{port}/{database}",
-        state="planned", standard_metadata=True),
+        state="supported", standard_metadata=True),
     "oracle": Provider(
         key="oracle", display="Oracle", driver_class="oracle.jdbc.OracleDriver",
         url_template="jdbc:oracle:thin:@//{host}:{port}/{database}",
@@ -64,7 +64,10 @@ def planned_keys() -> list[str]:
 
 def build_jdbc_url(key: str, host: str, port: int, database: str = "") -> str:
     p = provider(key)
-    return p.url_template.format(host=host, port=port, database=database)
+    base = p.url_template.format(host=host, port=port, database=database)
+    if key == "postgresql":
+        return base + "?connectTimeout=5&socketTimeout=30"
+    return base
 
 
 def quote_ident(key: str, name: str) -> str:

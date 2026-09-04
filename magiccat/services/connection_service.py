@@ -68,8 +68,8 @@ class ConnectionService:
         """打开连接池并返回数据库版本；已在打开状态则直接 ping。"""
         runtime = get_runtime()
         Registry = runtime.jclass("com.magiccat.bridge.ConnectionRegistry")
-        Registry.open(profile.id, profile.host, profile.port, profile.database,
-                      profile.username, profile.password)
+        Registry.open(profile.id, profile.provider_key, profile.host, profile.port,
+                      profile.database, profile.username, profile.password)
         version = Registry.ping(profile.id)
         self._open.add(profile.id)
         logger.info("已打开连接 [%s] -> %s", profile.name, version)
@@ -90,8 +90,8 @@ class ConnectionService:
         """测试连接（临时打开并立即关闭，返回版本或抛异常）。"""
         runtime = get_runtime()
         Registry = runtime.jclass("com.magiccat.bridge.ConnectionRegistry")
-        Registry.open(profile.id, profile.host, profile.port, profile.database,
-                      profile.username, profile.password)
+        Registry.open(profile.id, profile.provider_key, profile.host, profile.port,
+                      profile.database, profile.username, profile.password)
         try:
             return Registry.ping(profile.id)
         finally:
