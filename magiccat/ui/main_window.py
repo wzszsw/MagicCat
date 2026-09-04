@@ -646,6 +646,20 @@ class MainWindow(QMainWindow):
         editor.setFocus()
         return editor
 
+    def _open_object_tab(self, tab_key: str, title: str, content: str) -> SqlEditorWidget:
+        """打开一个对象标签并保证单例：同 tab_key 已开 → 定位到该标签；
+        否则新建编辑器标签并写入内容。返回（可能已存在的）编辑器。"""
+        for i in range(self.editor_tabs.count()):
+            w = self.editor_tabs.widget(i)
+            if getattr(w, "tab_key", None) == tab_key:
+                self.editor_tabs.setCurrentIndex(i)
+                return w
+        editor = self._new_editor()
+        editor.tab_key = tab_key
+        editor.setPlainText(content)
+        self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor), title)
+        return editor
+
     def _active_editor(self) -> SqlEditorWidget | None:
         widget = self.editor_tabs.currentWidget()
         return widget if isinstance(widget, SqlEditorWidget) else None
@@ -878,10 +892,8 @@ class MainWindow(QMainWindow):
             return ddl.show_create_view(profile, schema, name)
 
         def done(sql: str) -> None:
-            editor = self._new_editor()
-            editor.setPlainText(sql)
-            self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor),
-                                        f"{name}（视图）")
+            self._open_object_tab(
+                f"view:{profile_id}:{schema}:{name}", f"{name}（视图）", sql)
             idx = self.profile_combo.findData(profile_id)
             if idx >= 0:
                 self.profile_combo.setCurrentIndex(idx)
@@ -1071,9 +1083,8 @@ class MainWindow(QMainWindow):
         profile = self._connections.get(profile_id)
         if record is None or profile is None:
             return
-        editor = self._new_editor()
-        editor.setPlainText(record["content"])
-        self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor), name)
+        tab_key = f"query:{profile_id}:{name}"
+        self._open_object_tab(tab_key, name, record["content"])
         idx = self.profile_combo.findData(profile_id)
         if idx >= 0:
             self.profile_combo.setCurrentIndex(idx)
@@ -1149,10 +1160,8 @@ class MainWindow(QMainWindow):
         profile = self._connections.get(profile_id)
         if profile is None:
             return
-        editor = self._new_editor()
-        editor.setPlainText(sql_text)
-        index = self.editor_tabs.indexOf(editor)
-        self.editor_tabs.setTabText(index, name + "（函数）")
+        self._open_object_tab(f"routine:{profile_id}:{name}",
+                              name + "（函数）", sql_text)
         idx = self.profile_combo.findData(profile_id)
         if idx >= 0:
             self.profile_combo.setCurrentIndex(idx)
@@ -1229,10 +1238,8 @@ class MainWindow(QMainWindow):
             return ddl.show_create_trigger(profile, schema, name)
 
         def done(sql_text: str) -> None:
-            editor = self._new_editor()
-            editor.setPlainText(sql_text)
-            self.editor_tabs.setTabText(self.editor_tabs.indexOf(editor),
-                                        f"{name}（触发器）")
+            self._open_object_tab(
+                f"trigger:{profile_id}:{schema}:{name}", f"{name}（触发器）", sql_text)
             idx = self.profile_combo.findData(profile_id)
             if idx >= 0:
                 self.profile_combo.setCurrentIndex(idx)
