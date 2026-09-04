@@ -105,9 +105,7 @@ class MainWindow(QMainWindow):
 
     # ---- 布局 ----
     def _build_central(self) -> None:
-        splitter = QSplitter(Qt.Vertical)
-
-        # 查询领域工作区：连接/库（两个状态共用）+ 编辑态动作按钮（仅在编辑器标签激活时）
+        # 查询领域工作区：连接/库（查询领域当前连接选择）+ 编辑态动作按钮
         self.edit_bar = QWidget()
         bar = QHBoxLayout(self.edit_bar)
         bar.setContentsMargins(4, 2, 4, 2)
@@ -122,7 +120,7 @@ class MainWindow(QMainWindow):
         self.schema_combo.currentIndexChanged.connect(self._reload_query_browse)
         bar.addWidget(self.schema_combo)
         bar.addSpacing(8)
-        # 编辑态专属动作：保存 + 基本执行（美化/全部/解释在菜单+快捷键）
+        # 编辑态专属动作
         self.btn_save_query = self._query_btn("保存查询", self._save_query_dialog, bar)
         self.btn_run = self._query_btn("运行", self._run_current, bar)
         self.query_stop_btn = self._query_btn("停止", self._cancel_execution, bar)
@@ -169,6 +167,7 @@ class MainWindow(QMainWindow):
         self.edit_page = work
 
         self.result_panel = ResultPanel()
+        splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(self.edit_page)
         splitter.addWidget(self.result_panel)
         splitter.setStretchFactor(0, 3)
@@ -266,6 +265,12 @@ class MainWindow(QMainWindow):
         is_editor = _is_editor(widget)
         for btn in self._edit_actions:
             btn.setVisible(is_editor)
+        if is_editor:
+            self._restoring_tab_conn = True
+            try:
+                self._apply_editor_conn(widget)
+            finally:
+                self._restoring_tab_conn = False
         if widget is self.domain_stack:
             self._reload_current_domain()
 
@@ -523,6 +528,7 @@ class MainWindow(QMainWindow):
         self.explorer.selection_info_requested.connect(self._on_selection_info)
         self.explorer.domain_selected.connect(self._on_domain_selected)
         self.explorer.new_query_requested.connect(self._on_new_query_from_explorer)
+        self.explorer.profile_activated.connect(self._set_current_profile)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -732,7 +738,7 @@ class MainWindow(QMainWindow):
         act_about = menu_help.addAction("关于 MagicCat…")
         act_about.triggered.connect(self._about)
 
-    # ---- 连接选择 ----
+    # ---- 连接选择（查询领域「当前连接选择」下拉；亦由对象树激活跟手） ----
     def _reload_connection_combo(self) -> None:
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
@@ -740,6 +746,15 @@ class MainWindow(QMainWindow):
         for p in self._connections.profiles:
             self.profile_combo.addItem(p.display_name, p.id)
         self.profile_combo.blockSignals(False)
+
+    def _set_current_profile(self, profile_id: str) -> None:
+        """对象树激活某连接/对象 → 使之成为当前连接（跟手），并同步查询领域的连接下拉。"""
+        idx = self.profile_combo.findData(profile_id)
+        if idx >= 0 and self.profile_combo.currentData() != profile_id:
+            self.profile_combo.setCurrentIndex(idx)  # 触发 _on_profile_selected
+        elif idx >= 0:
+            # 已是当前：刷新展示/信息面板与库下拉
+            self._on_profile_selected()
 
     def _current_profile(self) -> ConnectionProfile | None:
         pid = self.profile_combo.currentData()
@@ -754,6 +769,9 @@ class MainWindow(QMainWindow):
         self.info_panel.show_profile(self.profile_combo.currentData() if profile else None)
         self._reload_schema_combo(profile)
         self._reload_query_browse()
+        # 头部条连接/库变更 → 写回当前编辑器标签（影响不扩散）；标签恢复时不写回
+        if not getattr(self, "_restoring_tab_conn", False):
+            self._write_conn_to_editor(self._active_editor())
 
     def _reload_schema_combo(self, profile) -> None:
         self.schema_combo.blockSignals(True)
@@ -815,6 +833,8 @@ class MainWindow(QMainWindow):
     def _new_editor(self):
         self._tab_seq += 1
         editor = self._make_editor()
+        editor._conn_profile_id = self.profile_combo.currentData()
+        editor._conn_schema = self.schema_combo.currentText()
         index = self.editor_tabs.addTab(editor, f"查询 {self._tab_seq}")
         self.editor_tabs.setCurrentIndex(index)
         editor.setFocus()
@@ -837,6 +857,33 @@ class MainWindow(QMainWindow):
     def _active_editor(self):
         widget = self.editor_tabs.currentWidget()
         return widget if _is_editor(widget) else None
+
+    # ---- 每查询标签记忆自身连接/库（影响不扩散） ----
+    def _editor_conn(self, editor) -> tuple[str | None, str]:
+        """取某编辑器记忆的连接/库（无则回退 nil/空）。"""
+        return (getattr(editor, "_conn_profile_id", None),
+                getattr(editor, "_conn_schema", ""))
+
+    def _apply_editor_conn(self, editor) -> None:
+        """切换标签时：把该编辑器记忆的连接/库加载到头条，使头部条反映当前标签。"""
+        pid, schema = self._editor_conn(editor)
+        idx = self.profile_combo.findData(pid) if pid else 0
+        if pid is None:
+            self.profile_combo.setCurrentIndex(0)
+        elif idx >= 0 and self.profile_combo.currentData() != pid:
+            self.profile_combo.setCurrentIndex(idx)
+        if schema:
+            si = self.schema_combo.findText(schema)
+            if si >= 0:
+                self.schema_combo.setCurrentIndex(si)
+
+    def _write_conn_to_editor(self, editor) -> None:
+        """改变头部条连接/库时：写回当前编辑器，实现“只影响本标签”。"""
+        if editor is None:
+            return
+        pid = self.profile_combo.currentData()
+        editor._conn_profile_id = pid
+        editor._conn_schema = self.schema_combo.currentText()
 
     def _close_editor_tab(self, index: int) -> None:
         if index <= 0:  # 第 0 页「对象」为固定占位，不可关闭
@@ -1068,9 +1115,7 @@ class MainWindow(QMainWindow):
         def done(sql: str) -> None:
             self._open_object_tab(
                 f"view:{profile_id}:{schema}:{name}", f"{name}（视图）", sql)
-            idx = self.profile_combo.findData(profile_id)
-            if idx >= 0:
-                self.profile_combo.setCurrentIndex(idx)
+            self._set_current_profile(profile_id)
             self._status(f"已打开视图「{name}」", 4000)
 
         run_async(fetch, done,
@@ -1259,9 +1304,7 @@ class MainWindow(QMainWindow):
             return
         tab_key = f"query:{profile_id}:{name}"
         self._open_object_tab(tab_key, name, record["content"])
-        idx = self.profile_combo.findData(profile_id)
-        if idx >= 0:
-            self.profile_combo.setCurrentIndex(idx)
+        self._set_current_profile(profile_id)
         self._status(f"已打开查询「{name}」（{profile.display_name}"
                      f"{' · ' + record['schema'] if record.get('schema') else ''}）", 5000)
 
@@ -1322,9 +1365,7 @@ class MainWindow(QMainWindow):
         index = self.editor_tabs.indexOf(editor)
         label = name + ("（函数）" if kind == "FUNCTION" else "（过程）")
         self.editor_tabs.setTabText(index, label)
-        idx = self.profile_combo.findData(profile.id)
-        if idx >= 0:
-            self.profile_combo.setCurrentIndex(idx)
+        self._set_current_profile(profile.id)
         verb = "函数" if kind == "FUNCTION" else "过程"
         self._status(
             f"已生成「{verb} {schema}.{name}」模板：填写内容后「执行全部」即可创建"
@@ -1336,9 +1377,7 @@ class MainWindow(QMainWindow):
             return
         self._open_object_tab(f"routine:{profile_id}:{name}",
                               name + "（函数）", sql_text)
-        idx = self.profile_combo.findData(profile_id)
-        if idx >= 0:
-            self.profile_combo.setCurrentIndex(idx)
+        self._set_current_profile(profile_id)
         self._status(
             f"已打开例程「{name}」定义：可查看/修改；改动后需先删除再执行创建"
             "（或用编辑器结合删除动作）, 双击即可再次查看", 8000)
@@ -1414,9 +1453,7 @@ class MainWindow(QMainWindow):
         def done(sql_text: str) -> None:
             self._open_object_tab(
                 f"trigger:{profile_id}:{schema}:{name}", f"{name}（触发器）", sql_text)
-            idx = self.profile_combo.findData(profile_id)
-            if idx >= 0:
-                self.profile_combo.setCurrentIndex(idx)
+            self._set_current_profile(profile_id)
             self._status(f"已打开触发器「{name}」", 4000)
 
         run_async(fetch, done,
@@ -1456,18 +1493,13 @@ class MainWindow(QMainWindow):
 
     def _on_domain_selected(self, profile_id: str, schema: str, cat_type: str) -> None:
         """对象树选中某分类 → 「对象」页切到该领域子页并按选中库展示列表。"""
-        # 同步连接下拉，保证「对象」页展示所选中库的对象（避免用错库）
-        idx = self.profile_combo.findData(profile_id)
-        if idx >= 0 and self.profile_combo.currentData() != profile_id:
-            self.profile_combo.setCurrentIndex(idx)
+        self._set_current_profile(profile_id)
         self._show_domain(cat_type, schema=schema)
 
     def _on_new_query_from_explorer(self, profile_id: str, database: str,
                                     schema: str) -> None:
         """对象树「新建查询」（database 级 / schema 级）：新建查询编辑器并定位连接/库。"""
-        idx = self.profile_combo.findData(profile_id)
-        if idx >= 0:
-            self.profile_combo.setCurrentIndex(idx)
+        self._set_current_profile(profile_id)
         self._new_editor()
         # 尝试定位到所选库/模式（存在才选中，避免把 schema 误当数据库塞进下拉）
         for s in (schema, database):

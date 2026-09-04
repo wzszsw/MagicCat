@@ -71,6 +71,7 @@ class ObjectExplorer(QTreeWidget):
     selection_info_requested = Signal(object)  # 当前选中项描述 dict
     domain_selected = Signal(str, str, str)  # profile_id, schema, cat_type（`对象`页联动）
     new_query_requested = Signal(str, str, str)  # profile_id, database, schema（database 级或 schema 级新建查询）
+    profile_activated = Signal(str)  # profile_id（树激活某连接或其下对象 → 当前连接跟手）
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -96,11 +97,13 @@ class ObjectExplorer(QTreeWidget):
         kind = info.get(KIND_KEY)
         data = info.get(DATA_KEY, {})
         if kind == "profile":
-            desc = {"kind": "profile", "profile_id": data.get("profile_id")}
+            act_pid = data.get("profile_id")
+            desc = {"kind": "profile", "profile_id": act_pid}
         else:
             profile = self._profile_of(current)
             if profile is None:
                 return
+            act_pid = profile.id
             pid = profile.id
             if kind == "database":
                 desc = {"kind": "database", "profile_id": pid, "schema": data.get("schema")}
@@ -135,6 +138,8 @@ class ObjectExplorer(QTreeWidget):
                         "schema": data.get("schema"), "name": data.get("name")}
             else:
                 return
+        if act_pid:
+            self.profile_activated.emit(act_pid)
         self.selection_info_requested.emit(desc)
 
     # ---- 装载 ----

@@ -408,6 +408,7 @@ MagicCat/
 | M85 | 本地存储重构为三合一（对标 Navicat，不兼容旧结构、不留包袱）：连接→注册表、查询内容→.sql 文件、元数据/历史/收藏/设置/片段/任务/窗口状态→SQLite | ✅ | 121 回归 |
 | M86 | 修复 PG 打开表数据报错：thread 目录级 database(catalog) 到 page/columns/primaryKey/executeScript，PG 下临时连目标库；报错对话框改 error(critical) | ✅ | 121 回归 + 真实 PG 跨库 db3.cicsdev 表 |
 | M87 | SQL 编辑器内核引入 monaco-editor（离线本地资源，QWebEngineView 封装 MonacoEditorWidget，接口兼容 SqlEditorWidget；MAGICCAT_EDITOR=plain 回退自研） | ✅ | 121 回归 + monaco 文本/语句/补全 POC |
+| M88 | 当前连接改为「树跟手」+ 查询领域内连接下拉：对象树激活归属连接 → 当前连接变更（无全局当前连接下拉）；查询领域连接选择每标签独立（影响不扩散） | ✅ | 121 回归 + 跟手/标签/每标签连接验证 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
