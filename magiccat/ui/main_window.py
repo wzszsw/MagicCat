@@ -391,6 +391,7 @@ class MainWindow(QMainWindow):
         self.explorer.open_routine_sql.connect(self._open_routine_sql)
         self.explorer.selection_info_requested.connect(self._on_selection_info)
         self.explorer.domain_selected.connect(self._on_domain_selected)
+        self.explorer.new_query_requested.connect(self._on_new_query_from_explorer)
         dock = QDockWidget("对象浏览器", self)
 
         container = QWidget()
@@ -1287,6 +1288,24 @@ class MainWindow(QMainWindow):
         if idx >= 0 and self.profile_combo.currentData() != profile_id:
             self.profile_combo.setCurrentIndex(idx)
         self._show_domain(cat_type, schema=schema)
+
+    def _on_new_query_from_explorer(self, profile_id: str, database: str,
+                                    schema: str) -> None:
+        """对象树「新建查询」（database 级 / schema 级）：新建查询编辑器并定位连接/库。"""
+        idx = self.profile_combo.findData(profile_id)
+        if idx >= 0:
+            self.profile_combo.setCurrentIndex(idx)
+        self._new_editor()
+        # 尝试定位到所选库/模式（存在才选中，避免把 schema 误当数据库塞进下拉）
+        for s in (schema, database):
+            if s:
+                i = self.schema_combo.findText(s)
+                if i >= 0:
+                    self.schema_combo.setCurrentIndex(i)
+                    break
+        self._status("已新建查询"
+                     + (f"（{database} · {schema}）" if schema else
+                        (f"（{database}）" if database else "")), 4000)
 
     def _status(self, message: str, timeout: int = 0) -> None:
         self.statusBar().showMessage(message, timeout)

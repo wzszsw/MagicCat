@@ -70,6 +70,7 @@ class ObjectExplorer(QTreeWidget):
     open_routine_sql = Signal(str, str, str)  # profile_id, name, sql_text
     selection_info_requested = Signal(object)  # 当前选中项描述 dict
     domain_selected = Signal(str, str, str)  # profile_id, schema, cat_type（`对象`页联动）
+    new_query_requested = Signal(str, str, str)  # profile_id, database, schema（database 级或 schema 级新建查询）
 
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
                  parent=None) -> None:
@@ -530,6 +531,7 @@ class ObjectExplorer(QTreeWidget):
         action_obj_copy = action_obj_drop = None
         action_open_query = action_del_query = None
         action_run_sql = action_new_routine = action_edit_db = None
+        action_new_query = None
 
         if kind == "profile":
             action_test = menu.addAction("测试连接")
@@ -543,6 +545,8 @@ class ObjectExplorer(QTreeWidget):
             action_delete = menu.addAction("删除连接…")
         elif kind in ("database", "table", "view", "routine", "trigger", "category"):
             action_refresh = menu.addAction("刷新")
+        if kind in ("database", "schema"):
+            action_new_query = menu.addAction("新建查询")
         if kind == "table":
             action_design = menu.addAction("设计表…")
             action_copy_ddl = menu.addAction("复制 CREATE 语句…")
@@ -603,6 +607,8 @@ class ObjectExplorer(QTreeWidget):
             self._new_database(item)
         elif chosen is action_new_routine:
             self._new_routine(item)
+        elif chosen is action_new_query:
+            self._new_query(item)
         elif chosen is action_edit_db:
             self._edit_database(item)
         elif chosen is action_truncate or chosen is action_drop:
@@ -692,6 +698,20 @@ class ObjectExplorer(QTreeWidget):
             cur = cur.parent()
         if schema:
             self.create_routine_entry.emit(profile.id, schema)
+
+    def _new_query(self, item: QTreeWidgetItem) -> None:
+        """「新建查询」（database 级 / schema 级）：由主窗口新建查询编辑器并定位连接/库。"""
+        profile = self._profile_of(item)
+        if profile is None:
+            return
+        info = _info(item)
+        kind = info.get(KIND_KEY)
+        data = info.get(DATA_KEY, {})
+        if kind == "database":
+            self.new_query_requested.emit(profile.id, data.get("schema", ""), "")
+        elif kind == "schema":
+            self.new_query_requested.emit(profile.id, data.get("database", ""),
+                                          data.get("schema", ""))
 
     def _new_database(self, item: QTreeWidgetItem) -> None:
         from PySide6.QtWidgets import QInputDialog, QMessageBox

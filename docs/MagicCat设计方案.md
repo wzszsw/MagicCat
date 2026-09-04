@@ -397,8 +397,9 @@ MagicCat/
 | M74 | 连接/对象加载失败改为 MessageBox 弹出 + 树节点折叠（不再用错误占位节点展示），异常前缀清理 | ✅ | 101 回归 + MessageBox/折叠断言 |
 | M75 | 对象树展开加载时显示旋转 loading 动画图标（自绘 spinner，加载结束恢复原图标；连接/库/分类/列均接入） | ✅ | 103 回归 + start/stop 图标断言 |
 | M76 | 同一对象只开一个标签（Navicat 设定）：查询/视图/函数/触发器重开时定位到已开标签（tab_key 单例），表已有单例 | ✅ | 105 回归 + 单例/不同对象分标签断言 |
+| M77 | 「查询」可在 database 级与 schema 级新建：两级右键菜单均有「新建查询」，正确发出 profile_id+database+schema | ✅ | 107 回归 + 两级别 new_query 断言 |
 
-- 自动化测试：`uv run pytest`（105 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（107 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）
