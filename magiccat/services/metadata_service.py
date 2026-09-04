@@ -39,9 +39,21 @@ class MetadataService:
     def tables(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "tables", schema)
 
-    def schema_tables(self, profile: ConnectionProfile, schema: str) -> list[dict]:
-        """全库表信息一次批查（表对象页；含 engine/rows/comment，避免 N+1）。"""
+    def schema_tables(self, profile: ConnectionProfile, schema: str,
+                      database: str = "") -> list[dict]:
+        """全库表信息一次批查（表对象页；含 engine/rows/comment，避免 N+1）。
+
+        PostgreSQL/GaussDB 使用目标 Catalog 上的标准信息模式查询；不能落到
+        MySQL 专用 ``TABLE_ROWS AS `rows``` 语法，否则 openGauss 会在反引号处报错。
+        """
+        if profile.is_postgres:
+            return self.schema_tables_in_database(
+                profile, database or profile.database, schema)
         return self._meta(profile, "schemaTables", schema)
+
+    def schema_tables_in_database(self, profile: ConnectionProfile, database: str,
+                                  schema: str) -> list[dict]:
+        return self._meta(profile, "schemaTablesInDatabase", database, schema)
 
     def schemas(self, profile: ConnectionProfile, database: str) -> list[dict]:
         """PostgreSQL：某 database 下的 schema 列表（须临时连到该库）。"""
@@ -79,8 +91,16 @@ class MetadataService:
         return self._meta(profile, "foreignKeys", schema, table)
 
     # ---- 全库批查（避免“逐表循环查”的 N+1，结果按 table_name 归组由调用方聚合） ----
-    def schema_columns(self, profile: ConnectionProfile, schema: str) -> list[dict]:
+    def schema_columns(self, profile: ConnectionProfile, schema: str,
+                       database: str = "") -> list[dict]:
+        if profile.is_postgres:
+            return self.schema_columns_in_database(
+                profile, database or profile.database, schema)
         return self._meta(profile, "schemaColumns", schema)
+
+    def schema_columns_in_database(self, profile: ConnectionProfile, database: str,
+                                   schema: str) -> list[dict]:
+        return self._meta(profile, "schemaColumnsInDatabase", database, schema)
 
     def schema_indexes(self, profile: ConnectionProfile, schema: str) -> list[dict]:
         return self._meta(profile, "schemaIndexes", schema)

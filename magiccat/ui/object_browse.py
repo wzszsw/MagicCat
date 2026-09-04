@@ -36,6 +36,8 @@ class ObjectBrowseView(QWidget):
         self._columns: list[str] = []
         self._rows: list[dict] = []
         self._profile_id: str | None = None
+        self._context_available = False
+        self._tool_buttons: list[QPushButton] = []
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
@@ -63,6 +65,7 @@ class ObjectBrowseView(QWidget):
         self.btn_refresh.clicked.connect(self.refresh_requested.emit)
         bar.addWidget(self.btn_refresh)
         lay.addLayout(bar)
+        self.set_context_available(False)
 
         self.table = QTableWidget(0, 0)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -106,12 +109,26 @@ class ObjectBrowseView(QWidget):
         btn = QPushButton(text)
         btn.clicked.connect(handler)
         self._bar.insertWidget(self._bar.count() - 1, btn)
+        btn.setEnabled(self._context_available)
+        self._tool_buttons.append(btn)
         return btn
+
+    def set_context_available(self, available: bool) -> None:
+        """设置对象页是否已有可操作的连接/库上下文。"""
+        self._context_available = bool(available)
+        for button in (self.btn_new, self.btn_refresh, *self._tool_buttons):
+            button.setEnabled(self._context_available)
+        if not self._context_available:
+            self.btn_open.setEnabled(False)
+            self.btn_del.setEnabled(False)
+        else:
+            self._on_selection()
 
     # ---- 数据填充 ----
     def load(self, profile_id: str, rows: list[dict]) -> None:
         from magiccat.utils.datetime_format import format_datetime
 
+        self.set_context_available(True)
         self._profile_id = profile_id
         self._rows = rows
         self.table.setRowCount(len(rows))
@@ -126,6 +143,7 @@ class ObjectBrowseView(QWidget):
         self._profile_id = None
         self._rows = []
         self.table.setRowCount(0)
+        self.set_context_available(False)
         self._on_selection()
 
     # ---- 内部 ----
@@ -141,7 +159,7 @@ class ObjectBrowseView(QWidget):
         return item.text() if item else ""
 
     def _on_selection(self) -> None:
-        has = self._selected_row() >= 0
+        has = self._context_available and self._selected_row() >= 0
         self.btn_open.setEnabled(has)
         self.btn_del.setEnabled(has)
         if has:

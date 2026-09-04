@@ -415,6 +415,27 @@ MagicCat/
 | M92 | 当前连接改为「树跟手」+ 查询领域内连接下拉：对象树激活归属连接 → 当前连接变更（无全局当前连接下拉）；查询领域连接选择每标签独立（影响不扩散） | ✅ | 121 回归 + 跟手/标签/每标签连接验证 |
 | M93 | 重构「每查询标签一套完整工作区」：QueryWorkspace（连接/库/动作条+编辑器+每标签结果区+状态行，影响不扩散）；查询执行/EXPLAIN/保存查询取当前工作区；对象浏览条（树跟手连接+库）仅对象页显示 | ✅ | 121 回归 + 每标签工作区/对象条可见性验证 |
 | M94 | SQL 编辑器上下文对象补全：当前库表/视图/列随上下文弹（FROM/JOIN→表视图、`表.`→列、SELECT/WHERE→列），上下文感知 completion + set_completion_data | ✅ | 121 回归 |
+| M95 | 修复 Monaco 上下文补全未生效：等待异步编辑器就绪、provider 单例注册、FROM/JOIN 前缀过滤、PG/GaussDB database→public schema 批查、别名列补全 | ✅ | QWebEngine 实测 FROM/FROM 前缀/schema./表别名. + 2 项回归 |
+| M96 | 查询标签页独立 JDBC Catalog/Schema 上下文：MySQL/MariaDB Schema 固定 null，PG/GaussDB 按 Catalog 建连并 setSchema；执行不注入 USE | ✅ | 查询工作区隔离 + QueryService/Java 上下文回归 |
+| M97 | 消息/结果区按 Navicat 风格紧凑展开并跟随主题，避免隐藏面板恢复时占满编辑区 | ✅ | 浅色主题颜色 + 首次显示分隔比例回归 |
+| M98 | 查询工作区上下文下拉改为纯图标表达；MySQL/MariaDB 隐藏无意义的 Schema 选择器 | ✅ | 图标项 + 无文字标签 + MySQL 隐藏回归 |
+| M99 | 修正树跟手边界：左侧树普通选中不再感染已打开查询标签，仅右键“库/模式 → 新建查询”定位新标签 | ✅ | 查询标签上下文隔离 + 右键定位回归 |
+| M100 | 收掉对象页全局连接/库选择器；普通新建查询仅在创建瞬间继承左树上下文，创建后标签上下文冻结 | ✅ | 无全局下拉 + 初始化跟手/创建后隔离回归 |
+| M101 | 修正新查询初始化竞态：连接下拉填充不再清空右键目标，库/模式级目标在异步加载完成后准确定位 | ✅ | 库级空 Schema + 模式级精确定位回归 |
+| M102 | 查询编辑器选中 SQL 时运行按钮改为“运行已选择的”，取消选区恢复默认文案 | ✅ | 纯文本选区 + Monaco 选区状态回归 |
+| M103 | Monaco 选区通知改用 `onDidChangeCursorSelection` 原生事件 + QWebChannel，移除 120ms 轮询 | ✅ | 原生事件/桥接静态回归 + M102 选区回归 |
+| M104 | 对齐 Navicat：移除“执行全部”，运行无选区执行全文并逐条返回多结果集，有选区只执行选中 SQL | ✅ | 运行文本选择与多语句结果回归 |
+| M105 | 表对象页加载错误不再占用删除表旁的上下文栏，改为 `QMessageBox.critical` | ✅ | 表列表加载失败错误框回归 |
+| M106 | 修复 GaussDB 表/视图对象页误走 MySQL 反引号查询，改用 Catalog+Schema 标准路径 | ✅ | GaussDB 元数据路由回归 |
+| M107 | Monaco 选区事件携带选中文本快照，修复“运行已选择的”按钮正确但仍执行全文 | ✅ | 选区快照桥接回归 |
+| M108 | 新增 `scripts/opengauss.ps1`：Podman openGauss 容器创建/启动/停止/日志/gsql/删除助手 | ✅ | 脚本生命周期静态回归 + 本机容器 JDBC 冒烟 |
+| M109 | 放开左树/中央/右侧信息三块水平区域的中央最小宽度，非最大化窗口可拖拽调整 dock | ✅ | dock 尺寸策略回归 |
+| M110 | 连接/库/模式/表/视图/列基础元数据统一优先走 JDBC `DatabaseMetaData`，MySQL 富字段保留专用路径；GaussDB `getCatalogs` 不完整时定向用 `pg_database` 全量枚举 | ✅ | MySQL + openGauss 临时表/视图/列真实 JDBC 冒烟 + 路由契约回归 |
+| M111 | 启动时只显示固定“对象”页，不预建“查询 1”，查询标签按用户操作创建 | ✅ | 初始标签数量与首次新建回归 |
+| M112 | 固定“对象”页首屏默认切到“表”工作区，进入表功能域后按 database/schema 加载表列表 | ✅ | 首屏表域与显式加载回归 |
+| M113 | 对象工作区无连接上下文时禁用新建/打开/设计/删除/刷新，列表加载成功后恢复操作 | ✅ | 对象按钮上下文状态回归 |
+| M114 | 顶部表/视图/函数/查询功能域动作改为互斥选择态，由窗口级当前领域 flag 统一驱动 | ✅ | 功能域动作与当前领域回归 |
+| M115 | 表数据页主键读取改用 JDBC `DatabaseMetaData.getPrimaryKeys`，移除 GaussDB 不支持的 `array_position` | ✅ | JDBC 主键路由静态回归 + openGauss 表数据实测 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

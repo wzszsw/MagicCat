@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QPlainTextEdit, QTabWidget, QWidget
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QShowEvent
+from PySide6.QtWidgets import QPlainTextEdit, QSplitter, QTabWidget, QWidget
 
 from magiccat.ui.grid import ResultTableModel, ResultView
 
@@ -22,12 +24,52 @@ def _tab_title(result: dict) -> str:
 class ResultPanel(QTabWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._splitter_sized = False
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setMaximumBlockCount(2000)
-        self._log.setStyleSheet("QPlainTextEdit { background: #1E1E1E; color: #D4D4D4; }")
+        # 颜色交给应用主题：固定深色会让浅色主题下的消息区与 Navicat 观感不一致。
+        self._log.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.addTab(self._log, "消息")
         self._result_tab_indexes: list[int] = []
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """面板从隐藏状态出现时，把它放回查询区底部而不是占满整个工作区。
+
+        查询工作区用 ``QSplitter`` 承载编辑器和结果面板。隐藏的 splitter 子项
+        初始尺寸通常为 0；直接 ``setVisible(True)`` 时，Qt 在部分平台会把剩余
+        高度全部分给刚显示的子项。延迟到布局完成后显式设置一次尺寸即可避免
+        该平台差异，同时不会干扰用户之后手动拖动分隔条。
+        """
+        super().showEvent(event)
+        # 等父窗口完成这一轮布局后再取 splitter 高度；在 showEvent 当下读取
+        # 到的几何值在高 DPI/不同窗口管理器下可能还是旧值，进而把面板撑满。
+        if not self._splitter_sized:
+            QTimer.singleShot(60, self._restore_splitter_size)
+
+    def _restore_splitter_size(self) -> None:
+        splitter = self.parentWidget()
+        while splitter is not None and not isinstance(splitter, QSplitter):
+            splitter = splitter.parentWidget()
+        if splitter is None:
+            return
+        if self._splitter_sized:
+            return
+        total = splitter.height()
+        if total <= 0:
+            # 结果面板可能在父窗口首次布局前显示，再尝试一次即可。
+            QTimer.singleShot(30, self._restore_splitter_size)
+            return
+
+        # Navicat 的消息区约占查询区底部三分之一；比例随窗口大小变化，
+        # 避免在大屏上被固定像素上限压得过小。
+        panel_height = max(140, round(total * 0.36))
+        editor_height = total - panel_height
+        if editor_height < 120:
+            editor_height = max(1, total - 140)
+            panel_height = total - editor_height
+        splitter.setSizes([editor_height, panel_height])
+        self._splitter_sized = True
 
     def append_message(self, text: str) -> None:
         self.setVisible(True)  # Navicat：消息窗默认隐藏，有消息自动出现

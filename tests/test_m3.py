@@ -88,7 +88,7 @@ def test_query_service_execute_flow(mysql_env, connection_service):
 
 
 def test_main_window_run_flow(qtbot, mysql_env, connection_service):
-    """GUI 闭环：选连接 → 编辑器输入 → 执行全部 → 结果网格出现数据 → 历史落盘。"""
+    """GUI 闭环：选连接 → 编辑器输入 → 运行 → 结果网格出现数据 → 历史落盘。"""
     from magiccat.services.metadata_service import MetadataService
     from magiccat.ui.grid import ResultView
     from magiccat.ui.main_window import MainWindow
@@ -105,9 +105,10 @@ def test_main_window_run_flow(qtbot, mysql_env, connection_service):
     idx = win.profile_combo.findData(profile.id)
     assert idx >= 0
     win.profile_combo.setCurrentIndex(idx)
+    win._new_editor()
     editor = win._active_editor()
     editor.setPlainText("SELECT 1 AS one, '你好' AS greeting")
-    win._run_all()
+    win._run_current()
 
     def result_grid_ready() -> bool:
         for i in range(win.result_panel.count()):

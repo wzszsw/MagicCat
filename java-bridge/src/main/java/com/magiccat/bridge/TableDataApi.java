@@ -1,6 +1,7 @@
 package com.magiccat.bridge;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -8,6 +9,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * 表数据页 API（M4）：分页读取、主键定位的 UPDATE/DELETE、INSERT。
@@ -93,35 +96,39 @@ public final class TableDataApi {
     /** 主键列；database 仅 PG 跨库有意义。 */
     public static String[] primaryKey(String configId, String database,
                                       String schema, String table) {
-        List<String> pk = new ArrayList<>();
-        String sql;
+        String useCatalog;
+        String useSchema;
         if (ConnectionRegistry.isPostgres(configId)) {
-            // PostgreSQL：主键来自 pg_index + pg_attribute
-            sql = "SELECT a.attname FROM pg_index i "
-                    + "JOIN pg_class t ON t.oid = i.indrelid "
-                    + "JOIN pg_namespace n ON n.oid = t.relnamespace "
-                    + "JOIN pg_class c ON c.oid = i.indexrelid "
-                    + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey) "
-                    + "WHERE i.indisprimary AND n.nspname = ? AND t.relname = ? "
-                    + "ORDER BY array_position(i.indkey, a.attnum)";
+            // PG/GaussDB：database 是 JDBC catalog，schema 是独立模式。
+            useCatalog = blankToNull(database);
+            useSchema = blankToNull(schema);
         } else {
-            sql = "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
-                    + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' "
-                    + "ORDER BY ORDINAL_POSITION";
+            // MySQL/MariaDB：database 是 JDBC catalog，schema 恒为 null。
+            useCatalog = blankToNull(database);
+            if (useCatalog == null) {
+                useCatalog = blankToNull(schema);
+            }
+            useSchema = null;
         }
-        try (Connection conn = requireConnection(configId, database);
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, schema);
-            ps.setString(2, table);
-            try (ResultSet rs = ps.executeQuery()) {
+        Map<Short, String> ordered = new TreeMap<>();
+        try (Connection conn = requireConnection(configId, database)) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getPrimaryKeys(useCatalog, useSchema, table)) {
                 while (rs.next()) {
-                    pk.add(rs.getString(1));
+                    String name = rs.getString("COLUMN_NAME");
+                    if (name != null) {
+                        ordered.put(rs.getShort("KEY_SEQ"), name);
+                    }
                 }
             }
         } catch (SQLException e) {
             throw new IllegalStateException("读取主键失败: " + e.getMessage(), e);
         }
-        return pk.toArray(new String[0]);
+        return ordered.values().toArray(new String[0]);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /** 按主键更新一行；返回受影响行数。vals 中 null 表示 NULL。 */

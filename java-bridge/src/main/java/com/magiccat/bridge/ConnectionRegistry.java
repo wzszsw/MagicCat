@@ -30,6 +30,9 @@ public final class ConnectionRegistry {
     private static final ConcurrentHashMap<String, Statement> ACTIVE = new ConcurrentHashMap<>();
     /** 每个配置的连接参数（用于对目标 database 临时建连，供跨库元数据）。 */
     private static final ConcurrentHashMap<String, ConnectParams> PARAMS = new ConcurrentHashMap<>();
+    /** PG/GaussDB 查询上下文的按库连接池（key=configId + NUL + database）。 */
+    private static final ConcurrentHashMap<String, HikariDataSource> CONTEXT_POOLS =
+            new ConcurrentHashMap<>();
     /** 外置版权驱动的 classloader：只保留引用，不复制 JAR 内容。 */
     private static final ConcurrentHashMap<String, URLClassLoader> EXTERNAL_DRIVER_LOADERS =
             new ConcurrentHashMap<>();
@@ -82,9 +85,21 @@ public final class ConnectionRegistry {
      * params 可为 null；maxRows &lt;= 0 表示不限制。
      */
     public static String executeJson(String configId, String sql, String[] params, int maxRows) {
+        return executeJson(configId, "", "", sql, params, maxRows);
+    }
+
+    /**
+     * 带会话上下文的通用查询。
+     *
+     * <p>database/schema 只作用于本次借出的连接，不会修改连接配置或其它查询工作区：
+     * MySQL/MariaDB 通过 {@code setCatalog(database)} 切换库；PostgreSQL/GaussDB
+     * 在目标 database 建立临时连接，并通过 {@code setSchema(schema)} 设置模式。
+     */
+    public static String executeJson(String configId, String database, String schema,
+                                     String sql, String[] params, int maxRows) {
         List<String[]> rows = new ArrayList<>();
         String[] columns;
-        try (Connection conn = requirePool(configId).getConnection();
+        try (Connection conn = contextConnection(configId, database, schema);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (maxRows > 0) {
                 ps.setMaxRows(maxRows);
@@ -121,13 +136,25 @@ public final class ConnectionRegistry {
      * 更新类（INSERT/UPDATE/DDL…）→ {"kind":"update","affected":N}。
      */
     public static String execute(String configId, String sql, int maxRows) {
-        return run(configId, sql, maxRows, null);
+        return run(configId, "", "", sql, maxRows, null);
+    }
+
+    /** 带数据库/模式上下文执行单条语句（上下文仅限本次连接）。 */
+    public static String execute(String configId, String database, String schema,
+                                 String sql, int maxRows) {
+        return run(configId, database, schema, sql, maxRows, null);
     }
 
     /** 可取消执行：注册令牌 → 其他线程可调 cancelToken 中断当前语句。 */
     public static String executeCancelable(String configId, String sql, int maxRows,
                                            String token) {
-        return run(configId, sql, maxRows, token);
+        return run(configId, "", "", sql, maxRows, token);
+    }
+
+    /** 带数据库/模式上下文的可取消执行（上下文仅限本次连接）。 */
+    public static String executeCancelable(String configId, String database, String schema,
+                                           String sql, int maxRows, String token) {
+        return run(configId, database, schema, sql, maxRows, token);
     }
 
     /** 中断某令牌正在执行的语句（无令牌或已结束则空操作）。 */
@@ -156,15 +183,16 @@ public final class ConnectionRegistry {
     public static String executeScript(String configId, String database,
                                        String schema, String[] statements) {
         List<String> results = new ArrayList<>();
-        try (Connection conn = connectionTo(configId, database)) {
-            if (schema != null && !schema.isBlank()) {
-                boolean pg = isPostgres(configId);
-                if (pg) {
-                    conn.setSchema(schema);
-                } else {
-                    conn.setCatalog(schema);
-                }
-            }
+        // 历史脚本 API 在 MySQL 下把 schema 参数当作 database 使用；归一化后
+        // 仍保持这一兼容行为，同时让真正的 JDBC schema 在 MySQL 中恒为 null。
+        String catalog = database == null ? "" : database.trim();
+        String actualSchema = schema == null ? "" : schema.trim();
+        if (!isPostgres(configId) && catalog.isEmpty()) {
+            catalog = actualSchema;
+            actualSchema = "";
+        }
+        try (Connection conn = contextConnection(configId, catalog,
+                                                   actualSchema.isEmpty() ? null : actualSchema)) {
             for (String sql : statements) {
                 if (sql == null || sql.isBlank()) {
                     continue;
@@ -193,10 +221,11 @@ public final class ConnectionRegistry {
         }
     }
 
-    private static String run(String configId, String sql, int maxRows, String token) {
+    private static String run(String configId, String database, String schema,
+                              String sql, int maxRows, String token) {
         List<String[]> rows = new ArrayList<>();
         String[] columns;
-        try (Connection conn = requirePool(configId).getConnection();
+        try (Connection conn = contextConnection(configId, database, schema);
              Statement st = conn.createStatement()) {
             if (maxRows > 0) {
                 st.setMaxRows(maxRows);
@@ -241,6 +270,15 @@ public final class ConnectionRegistry {
         if (ds != null) {
             ds.close();
         }
+        String prefix = configId + "\u0000";
+        for (String key : CONTEXT_POOLS.keySet()) {
+            if (key.startsWith(prefix)) {
+                HikariDataSource context = CONTEXT_POOLS.remove(key);
+                if (context != null) {
+                    context.close();
+                }
+            }
+        }
     }
 
     /** 关闭全部连接池（应用退出时调用）。 */
@@ -264,9 +302,13 @@ public final class ConnectionRegistry {
             throw new IllegalStateException("连接参数缺失: " + configId);
         }
         if (database != null && !database.isBlank() && isPostgres(configId)) {
-            return newDataSource(p.flavor(), p.host(), p.port(),
-                    database, p.user(), p.password(), p.driverJar(), 2,
-                    "mc-tmp-" + p.host() + ":" + p.port() + "/" + database).getConnection();
+            String db = database.trim();
+            String key = configId + "\u0000" + db;
+            HikariDataSource ds = CONTEXT_POOLS.computeIfAbsent(key, ignored ->
+                    newDataSource(p.flavor(), p.host(), p.port(), db, p.user(), p.password(),
+                            p.driverJar(), 2,
+                            "mc-ctx-" + configId + "/" + db));
+            return ds.getConnection();
         }
         return requirePool(configId).getConnection();
     }
@@ -287,6 +329,51 @@ public final class ConnectionRegistry {
     /** 取该配置的连接参数（跨库临时连接用）；未记录则返回 null。 */
     public static ConnectParams params(String configId) {
         return PARAMS.get(configId);
+    }
+
+    /**
+     * 借出一个带工作区上下文的连接。
+     *
+     * <p>查询工作区不能通过执行 {@code USE} 语句改变共享池状态。每次借出连接时重新
+     * 应用上下文，Hikari 归还连接时会恢复连接池的默认 catalog/schema，从而保证不同
+     * 查询标签页之间相互隔离。
+     */
+    private static Connection contextConnection(String configId, String database,
+                                                 String schema) throws SQLException {
+        String db = database == null ? "" : database.trim();
+        String sc = schema == null ? "" : schema.trim();
+        ConnectParams params = PARAMS.get(configId);
+        String configuredDb = params == null || params.database() == null
+                ? "" : params.database().trim();
+        String effectiveDb = db.isEmpty() ? configuredDb : db;
+        // 空 catalog 仍使用连接配置中的初始库；PG 指定 catalog 时连接到目标库。
+        Connection conn = connectionTo(configId, effectiveDb);
+        try {
+            if (isPostgres(configId)) {
+                // PG/GaussDB 的 database 是连接级上下文；connectionTo 会在指定库上建连。
+                // schema 属于会话级上下文，JDBC 驱动负责以 SET search_path 实现。
+                // setCatalog 对 PostgreSQL 驱动通常是 no-op，但显式调用可统一 JDBC 语义，
+                // 也便于 GaussDB/其它兼容驱动记录当前 catalog。
+                conn.setCatalog(effectiveDb.isEmpty() ? null : effectiveDb);
+                conn.setSchema(sc.isEmpty() ? null : sc);
+            } else {
+                // MySQL/MariaDB 的 database 等价于 catalog，不能把它误当 schema。
+                if (!effectiveDb.isEmpty()) {
+                    conn.setCatalog(effectiveDb);
+                }
+                // MySQL/MariaDB 没有独立 schema。调用方传入的 schema 在 Python
+                // 服务层已归一为 null；这里不调用 setSchema，避免部分驱动把 null
+                // 当成非法参数或将其错误映射为 catalog。
+            }
+            return conn;
+        } catch (SQLException | RuntimeException e) {
+            try {
+                conn.close();
+            } catch (SQLException ignored) {
+                // 保留应用原始异常
+            }
+            throw e;
+        }
     }
 
     /** 在【目标 database】上临时建单连接执行查询并返回 JSON 表。

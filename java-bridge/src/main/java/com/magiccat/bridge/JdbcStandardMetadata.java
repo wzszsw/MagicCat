@@ -12,15 +12,13 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 基于标准 JDBC DatabaseMetaData 的元数据提供者（跨库友好，用于非 MySQL 产品）。
+ * 基于标准 JDBC DatabaseMetaData 的元数据提供者（跨数据库产品）。
  *
  * <p>catalog/schema 映射约定（用户已确认的 JDBC 规范）：
  * <ul>
- *   <li>MySQL / MariaDB：database 即 catalog、schema 恒为 null；但 mysql-connector-j 的
- *       getTables(catalog=库) 实测返回 0、schema 参数又跨库返回全部 —— catalog 语义不可靠，
- *       因此 MySQL 由 {@link MetadataApi} 走 information_schema 富信息层，不进入本类。
- *   <li>PostgreSQL / GaussDB / Oracle / SQL Server 等：catalog=null、schemaPattern=具体模式
- *       （PG 风格），本类按此**唯一正确路径**调用，不再用“两种参数次序都试”掩盖方言怪癖。
+ *   <li>MySQL / MariaDB：database 即 catalog、schema 恒为 null。
+ *   <li>PostgreSQL / GaussDB：database 是 catalog，schema 是具体模式；跨库时先连接到
+ *       目标 catalog，再调用 DatabaseMetaData。
  * </ul>
  * 行结构刻意与 information_schema 输出一致（列名/取值语义），不波及 Python 侧。
  */
@@ -28,9 +26,17 @@ public final class JdbcStandardMetadata {
 
     private JdbcStandardMetadata() {}
 
+    private static String catalog(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     // ---- 库/模式列表：name ----
-    public static String databases(String configId) {        List<String[]> rows = new ArrayList<>();
+    public static String databases(String configId) {
+        List<String[]> rows = new ArrayList<>();
         try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+            // 某些 JDBC 驱动会把 getCatalogs() 限制在当前 Catalog；清空会话
+            // Catalog 后再枚举，才能得到服务器上的完整 database 列表。
+            conn.setCatalog(null);
             DatabaseMetaData md = conn.getMetaData();
             Set<String> names = new LinkedHashSet<>();
             try (ResultSet rs = md.getCatalogs()) {
@@ -65,6 +71,31 @@ public final class JdbcStandardMetadata {
         }
     }
 
+    // ---- 模式列表：name ----
+    public static String schemas(String configId, String catalog) {
+        String useCatalog = catalog(catalog);
+        List<String[]> rows = new ArrayList<>();
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getSchemas(useCatalog, "%")) {
+                while (rs.next()) {
+                    String schema = rs.getString("TABLE_SCHEM");
+                    if (schema == null || schema.isBlank()
+                            || schema.equalsIgnoreCase("information_schema")
+                            || schema.equalsIgnoreCase("pg_catalog")
+                            || schema.equalsIgnoreCase("pg_toast")) {
+                        continue;
+                    }
+                    rows.add(new String[] {schema});
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取模式列表失败: " + e.getMessage(), e);
+        }
+        rows.sort(Comparator.comparing(r -> r[0], String.CASE_INSENSITIVE_ORDER));
+        return Json.table(new String[] {"name"}, rows);
+    }
+
     // ---- 列定义（标准 DatabaseMetaData.getColumns）：name, data_type, nullable, key,
     //      default_value, extra, charset, collation, comment, ordinal ----
     public static String columns(String configId, String schema, String table) {
@@ -73,12 +104,13 @@ public final class JdbcStandardMetadata {
 
     /** 列定义；catalog（PG=数据库）可传入以跨库取元数据。 */
     public static String columns(String configId, String catalog, String schema, String table) {
-        String useCatalog = (catalog == null || catalog.isBlank()) ? null : catalog;
+        String useCatalog = catalog(catalog);
+        String useSchema = catalog(schema);
         // 收集主键列（用于标记 key=PRI）
         Set<String> pkCols = new LinkedHashSet<>();
         try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getPrimaryKeys(useCatalog, schema, table)) {
+            try (ResultSet rs = md.getPrimaryKeys(useCatalog, useSchema, table)) {
                 while (rs.next()) {
                     pkCols.add(rs.getString("COLUMN_NAME"));
                 }
@@ -89,13 +121,13 @@ public final class JdbcStandardMetadata {
         List<String[]> rows = new ArrayList<>();
         try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getColumns(useCatalog, schema, table, "%")) {
+            try (ResultSet rs = md.getColumns(useCatalog, useSchema, table, "%")) {
                 while (rs.next()) {
                     String name = rs.getString("COLUMN_NAME");
                     if (name == null) {
                         continue;
                     }
-                    String type = rs.getString("TYPE_NAME");
+                    String type = columnType(rs);
                     String nullable = rs.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls
                             ? "NO" : "YES";
                     String def = rs.getString("COLUMN_DEF");
@@ -121,22 +153,27 @@ public final class JdbcStandardMetadata {
                 "default_value", "extra", "charset", "collation", "comment", "ordinal"}, rows);
     }
 
-    // ---- 表/视图：name, type(BASE TABLE|VIEW)  （PG 风格：catalog=null, schema=name） ----
+    // ---- 表/视图：name, type(BASE TABLE|VIEW) ----
     public static String tables(String configId, String schema) {
+        if (ConnectionRegistry.isPostgres(configId)) {
+            return tables(configId, "", schema);
+        }
+        // MySQL/MariaDB 的 database 在 JDBC 中是 catalog，schema 必须传 null。
+        return tables(configId, schema, "");
+    }
+
+    /** 按 JDBC catalog/schema 获取表和视图。 */
+    public static String tables(String configId, String catalog, String schema) {
+        String useCatalog = catalog(catalog);
+        String useSchema = catalog(schema);
         TreeMap<String, String> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getTables(null, schema, "%",
-                                             new String[] {"TABLE", "VIEW"})) {
-                while (rs.next()) {
-                    String name = rs.getString("TABLE_NAME");
-                    String type = rs.getString("TABLE_TYPE");
-                    if (name != null) {
-                        String normalized = "VIEW".equalsIgnoreCase(type)
-                                ? "VIEW" : "BASE TABLE";
-                        byName.putIfAbsent(name, normalized);
-                    }
-                }
+            addTables(md, useCatalog, useSchema, byName);
+            // 某些 MySQL 驱动配置把 database 暴露为 schema；仍优先走 JDBC，
+            // 仅在标准 catalog 过滤没有返回时尝试另一组标准参数。
+            if (byName.isEmpty() && useCatalog != null && useSchema == null) {
+                addTables(md, null, useCatalog, byName);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("读取表列表失败: " + e.getMessage(), e);
@@ -149,6 +186,134 @@ public final class JdbcStandardMetadata {
                 .comparing((String[] r) -> r[1])
                 .thenComparing(r -> r[0], String.CASE_INSENSITIVE_ORDER));
         return Json.table(new String[] {"name", "type"}, rows);
+    }
+
+    private static void addTables(DatabaseMetaData md, String catalog, String schema,
+                                   TreeMap<String, String> byName) throws SQLException {
+        try (ResultSet rs = md.getTables(catalog, schema, "%",
+                                         new String[] {"TABLE", "VIEW", "MATERIALIZED VIEW"})) {
+            while (rs.next()) {
+                String name = rs.getString("TABLE_NAME");
+                String type = rs.getString("TABLE_TYPE");
+                if (name == null) {
+                    continue;
+                }
+                String normalized = type != null && type.toUpperCase().contains("VIEW")
+                        ? "VIEW" : "BASE TABLE";
+                byName.putIfAbsent(name, normalized);
+            }
+        }
+    }
+
+    /** 带 JDBC Catalog/Schema 的表对象页批查，富字段不可用时返回空字符串。 */
+    public static String schemaTables(String configId, String catalog, String schema) {
+        String useCatalog = catalog(catalog);
+        String useSchema = catalog(schema);
+        TreeMap<String, String[]> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getTables(useCatalog, useSchema, "%",
+                                             new String[] {"TABLE", "VIEW", "MATERIALIZED VIEW"})) {
+                while (rs.next()) {
+                    String name = rs.getString("TABLE_NAME");
+                    if (name == null) {
+                        continue;
+                    }
+                    String type = rs.getString("TABLE_TYPE");
+                    String normalized = type != null && type.toUpperCase().contains("VIEW")
+                            ? "VIEW" : "BASE TABLE";
+                    byName.putIfAbsent(name, new String[] {
+                            name, normalized, "", "", "", safeString(rs, "REMARKS")});
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取表列表失败: " + e.getMessage(), e);
+        }
+        List<String[]> rows = new ArrayList<>(byName.values());
+        rows.sort(Comparator.comparing((String[] r) -> r[1])
+                .thenComparing(r -> r[0], String.CASE_INSENSITIVE_ORDER));
+        return Json.table(new String[] {"name", "type", "engine", "rows",
+                "data_length", "comment"}, rows);
+    }
+
+    /** 带 JDBC Catalog/Schema 的全库列批查。 */
+    public static String schemaColumns(String configId, String catalog, String schema) {
+        String useCatalog = catalog(catalog);
+        String useSchema = catalog(schema);
+        List<String[]> rows = new ArrayList<>();
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getColumns(useCatalog, useSchema, "%", "%")) {
+                while (rs.next()) {
+                    String table = rs.getString("TABLE_NAME");
+                    String name = rs.getString("COLUMN_NAME");
+                    if (table == null || name == null) {
+                        continue;
+                    }
+                    String nullable = rs.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls
+                            ? "NO" : "YES";
+                    String extra = "";
+                    try {
+                        if (rs.getInt("IS_AUTOINCREMENT") == 1
+                                || "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT"))) {
+                            extra = "auto_increment";
+                        }
+                    } catch (SQLException ignore) {
+                        // 驱动可不提供 IS_AUTOINCREMENT 列
+                    }
+                    rows.add(new String[] {table, name, safeString(rs, "TYPE_NAME"),
+                            nullable, "", safeString(rs, "COLUMN_DEF"), extra,
+                            "", "", String.valueOf(rs.getInt("ORDINAL_POSITION"))});
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取列列表失败: " + e.getMessage(), e);
+        }
+        rows.sort(Comparator.comparing((String[] r) -> r[0], String.CASE_INSENSITIVE_ORDER)
+                .thenComparingInt(r -> Integer.parseInt(r[9])));
+        return Json.table(new String[] {"table_name", "name", "data_type", "nullable",
+                "key", "default_value", "extra", "charset", "collation", "ordinal"}, rows);
+    }
+
+    private static String safeString(ResultSet rs, String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException e) {
+            return "";
+        }
+    }
+
+    private static String columnType(ResultSet rs) throws SQLException {
+        String type = rs.getString("TYPE_NAME");
+        if (type == null || type.isBlank()) {
+            return "";
+        }
+        // JDBC 将长度/精度拆成 COLUMN_SIZE、DECIMAL_DIGITS；恢复常见完整类型，
+        // 保证 MySQL 的 varchar(40)/decimal(10,2) 不因切换到标准 API 丢失。
+        if (type.contains("(") || !needsSize(type)) {
+            return type;
+        }
+        int size = rs.getInt("COLUMN_SIZE");
+        int scale = rs.getInt("DECIMAL_DIGITS");
+        if (size <= 0) {
+            return type;
+        }
+        if (isDecimal(type) && scale >= 0) {
+            return type + "(" + size + "," + scale + ")";
+        }
+        return type + "(" + size + ")";
+    }
+
+    private static boolean needsSize(String type) {
+        String upper = type.toUpperCase();
+        return upper.contains("CHAR") || upper.contains("BINARY")
+                || upper.contains("DECIMAL") || upper.contains("NUMERIC")
+                || upper.equals("FLOAT") || upper.equals("DOUBLE");
+    }
+
+    private static boolean isDecimal(String type) {
+        String upper = type.toUpperCase();
+        return upper.contains("DECIMAL") || upper.contains("NUMERIC");
     }
 
     // ---- 例程：name, type(PROCEDURE|FUNCTION) ----

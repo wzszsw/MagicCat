@@ -216,12 +216,24 @@ class SqlEditorWidget(QPlainTextEdit):
         self._completer.complete(cr)
 
     # ---- 对外文本接口 ----
+    def selected_text(self) -> str | None:
+        """返回当前选中的可执行文本；没有非空选区时返回 None。"""
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return None
+        return cursor.selectedText().replace("\u2029", "\n").strip() or None
+
     def current_sql(self) -> str | None:
         """选中文本优先；否则光标所在语句。"""
+        selected = self.selected_text()
+        if selected is not None:
+            return selected
         cursor = self.textCursor()
-        if cursor.hasSelection():
-            return cursor.selectedText().replace("\u2029", "\n").strip() or None
         return statement_at_cursor(self.toPlainText(), cursor.position())
+
+    def has_selection(self) -> bool:
+        """当前是否框选了非空文本。"""
+        return self.textCursor().hasSelection()
 
     def all_text(self) -> str:
         return self.toPlainText()

@@ -7,11 +7,9 @@ import java.sql.SQLException;
  * 元数据引擎入口（设计方案 §4.2）：按数据库产品自动选择元数据实现。
  *
  * <ul>
- *   <li>MySQL / MariaDB：使用 information_schema —— 实测 mysql-connector-j 的
- *       DatabaseMetaData.getTables(catalog=库) 返回 0、schema 参数又跨库返回全部，
- *       catalog 语义不可靠；且 JDBC 也拿不到完整列类型/EXTRA/触发器。
-     *   <li>其它数据库（PostgreSQL / GaussDB / Oracle / SQL Server…）：走 {@link JdbcStandardMetadata}
- *       （标准 DatabaseMetaData，不拼方言 SQL），实现换库零改动。
+ *   <li>连接、库、模式、表、视图和列的基础元数据统一优先走
+ *       {@link JdbcStandardMetadata}（标准 DatabaseMetaData，不拼方言 SQL）。
+ *   <li>JDBC 没有覆盖的富字段（MySQL 引擎/估计行数/索引/触发器等）仍由专用查询提供。
  * </ul>
  */
 public final class MetadataApi {
@@ -27,21 +25,6 @@ public final class MetadataApi {
         } catch (SQLException e) {
             throw new IllegalStateException("读取数据库产品失败: " + e.getMessage(), e);
         }
-    }
-
-    private static boolean isPostgresFamily(String configId) {
-        // 以连接配置方言为准：openGauss 的 product name 在不同驱动版本中
-        // 可能返回 openGauss、GaussDB 或 PostgreSQL，不能只匹配产品字符串。
-        return ConnectionRegistry.isPostgres(configId);
-    }
-
-    private static String tablesSql(String configId, String schema) {
-        return ConnectionRegistry.executeJson(
-                configId,
-                "SELECT TABLE_NAME AS name, TABLE_TYPE AS type "
-                        + "FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? "
-                        + "ORDER BY TABLE_TYPE, TABLE_NAME",
-                new String[] {schema}, 0);
     }
 
     private static String routinesSql(String configId, String schema) {
@@ -85,15 +68,9 @@ public final class MetadataApi {
 
     /** 数据库列表：name。 */
     public static String databases(String configId) {
-        if (isMySqlFamily(configId)) {
-            return ConnectionRegistry.executeJson(
-                    configId,
-                    "SELECT SCHEMA_NAME AS name FROM information_schema.SCHEMATA "
-                            + "ORDER BY SCHEMA_NAME",
-                    null, 0);
-        }
-        if (isPostgresFamily(configId)) {
-            // 初始 database 只是登录目标；pg_database 才能列出服务器上的全部数据库。
+        // 部分 GaussDB 驱动的 getCatalogs() 只返回当前库；为保证数据库树列出
+        // 服务器上的其它可连接数据库，PG/GaussDB 保留标准兼容的 pg_database 查询。
+        if (ConnectionRegistry.isPostgres(configId)) {
             return ConnectionRegistry.executeJson(
                     configId,
                     "SELECT datname AS name FROM pg_database "
@@ -103,25 +80,14 @@ public final class MetadataApi {
         return JdbcStandardMetadata.databases(configId);
     }
 
-    /** PostgreSQL：某 database 下的 schema 列表（须临时连到该库）。name */
+    /** 某 database 下的 schema 列表（须临时连到该库）。name */
     public static String schemas(String configId, String database) {
-        return ConnectionRegistry.executeOnDatabase(
-                configId, database,
-                "SELECT schema_name AS name FROM information_schema.schemata "
-                        + "WHERE schema_name NOT IN ('information_schema','pg_catalog','pg_toast') "
-                        + "ORDER BY schema_name",
-                null, 0);
+        return JdbcStandardMetadata.schemas(configId, database);
     }
 
-    /** PostgreSQL：某 database.schema 下的表/视图（须临时连到该库）。name, type */
+    /** 某 database.schema 下的表/视图（须临时连到该库）。name, type */
     public static String tablesInDatabase(String configId, String database, String schema) {
-        return ConnectionRegistry.executeOnDatabase(
-                configId, database,
-                "SELECT table_name AS name, table_type AS type "
-                        + "FROM information_schema.tables "
-                        + "WHERE table_schema = ? "
-                        + "ORDER BY table_type, table_name",
-                new String[] {schema}, 0);
+        return JdbcStandardMetadata.tables(configId, database, schema);
     }
 
     /** PostgreSQL：某 database.schema 下的例程（函数/过程）。name, type */
@@ -150,9 +116,7 @@ public final class MetadataApi {
 
     /** 表/视图列表：name, type(BASE TABLE|VIEW)。 */
     public static String tables(String configId, String schema) {
-        return isMySqlFamily(configId)
-                ? tablesSql(configId, schema)
-                : JdbcStandardMetadata.tables(configId, schema);
+        return JdbcStandardMetadata.tables(configId, schema);
     }
 
     /** 存储过程/函数列表：name, type(PROCEDURE|FUNCTION)。 */
@@ -173,9 +137,8 @@ public final class MetadataApi {
                 new String[] {schema}, 0);
     }
 
-    /** 列定义（富信息）：name, data_type, nullable, key, default_value, extra, charset,
-     *  collation, comment, ordinal。MySQL 走 information_schema（富信息），
-     *  其它库走标准 DatabaseMetaData.getColumns（JDBC 标准 API，跨库稳）。 */
+    /** 列定义：name, data_type, nullable, key, default_value, extra, charset,
+     *  collation, comment, ordinal；基础字段统一来自 JDBC DatabaseMetaData。 */
     public static String columns(String configId, String schema, String table) {
         return columns(configId, "", schema, table);
     }
@@ -183,20 +146,11 @@ public final class MetadataApi {
     /** 列定义；database（PG 的 catalog）传入时对该库取元数据（跨库）。 */
     public static String columns(String configId, String database,
                                  String schema, String table) {
-        if (isPostgresFamily(configId)) {
+        if (ConnectionRegistry.isPostgres(configId)) {
             return JdbcStandardMetadata.columns(configId, database, schema, table);
         }
-        return ConnectionRegistry.executeJson(
-                configId,
-                "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS data_type, "
-                        + "IS_NULLABLE AS nullable, COLUMN_KEY AS `key`, "
-                        + "COLUMN_DEFAULT AS default_value, EXTRA AS extra, "
-                        + "CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation, "
-                        + "COLUMN_COMMENT AS comment, ORDINAL_POSITION AS ordinal "
-                        + "FROM information_schema.COLUMNS "
-                        + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? "
-                        + "ORDER BY ORDINAL_POSITION",
-                new String[] {schema, table}, 0);
+        // Python 侧 MySQL 的 schema 参数承载 database 名；JDBC 中映射为 catalog。
+        return JdbcStandardMetadata.columns(configId, schema, null, table);
     }
 
     /** 全库列一次批查（避免“逐表循环查列”的 N+1）：额外带 table_name，按表内序排。 */
@@ -212,6 +166,12 @@ public final class MetadataApi {
                         + "WHERE TABLE_SCHEMA = ? "
                         + "ORDER BY TABLE_NAME, ORDINAL_POSITION",
                 new String[] {schema}, 0);
+    }
+
+    /** 指定 database.schema 下全库列一次批查，供 SQL 上下文补全。 */
+    public static String schemaColumnsInDatabase(String configId, String database,
+                                                 String schema) {
+        return JdbcStandardMetadata.schemaColumns(configId, database, schema);
     }
 
     /** 全库索引一次批查：额外带 table_name。 */
@@ -257,6 +217,12 @@ public final class MetadataApi {
                         + "FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? "
                         + "ORDER BY TABLE_TYPE, TABLE_NAME",
                 new String[] {schema}, 0);
+    }
+
+    /** 指定 database.schema 下表/视图一次批查，供 SQL 上下文补全。 */
+    public static String schemaTablesInDatabase(String configId, String database,
+                                                String schema) {
+        return JdbcStandardMetadata.tables(configId, database, schema);
     }
 
     /** 索引列表：index_name, non_unique, seq, column_name, index_type。 */

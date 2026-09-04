@@ -8,16 +8,16 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QHBoxLayout,
     QInputDialog,
-    QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QSizePolicy,
     QStackedWidget,
     QTabWidget,
     QToolBar,
@@ -80,7 +80,6 @@ class MainWindow(QMainWindow):
         self._build_actions()
 
         self._reload_connection_combo()
-        self._new_editor()
         self.statusBar().showMessage("就绪")
         apply_theme(self, self._settings.get("theme", "light"))
 
@@ -103,21 +102,14 @@ class MainWindow(QMainWindow):
 
     # ---- 布局 ----
     def _build_central(self) -> None:
-        # 对象浏览条：领域级「当前连接（树跟手）+ 库」，仅在「对象」页激活时显示
-        self.edit_bar = QWidget()
-        bar = QHBoxLayout(self.edit_bar)
-        bar.setContentsMargins(4, 2, 4, 2)
-        bar.addWidget(QLabel(" 连接: "))
-        self.profile_combo = QComboBox()
-        self.profile_combo.setMinimumWidth(170)
+        # 对象浏览上下文由左侧树跟手；保留隐藏 combo 作为兼容的内部状态，
+        # 不把全局连接/库选择器渲染到中央区域。
+        self.profile_combo = QComboBox(self)
+        self.profile_combo.hide()
         self.profile_combo.currentIndexChanged.connect(self._on_profile_selected)
-        bar.addWidget(self.profile_combo)
-        bar.addWidget(QLabel(" 库: "))
-        self.schema_combo = QComboBox()
-        self.schema_combo.setMinimumWidth(150)
+        self.schema_combo = QComboBox(self)
+        self.schema_combo.hide()
         self.schema_combo.currentIndexChanged.connect(self._reload_query_browse)
-        bar.addWidget(self.schema_combo)
-        bar.addStretch(1)
         self._edit_actions = ()  # 查询动作条已移至各查询工作区
 
         # 中央工作区标签页：第 1 页固定「对象」（各功能领域的列表/浏览态占位）
@@ -144,6 +136,10 @@ class MainWindow(QMainWindow):
             "queries": self.browse_page, "tables": self.table_page,
             "views": self.view_page, "routines": self.routine_page,
             "triggers": self.trigger_page, "sequences": self.sequence_page}
+        self._current_domain = "tables"
+        # Navicat 首屏的“对象”工作区默认属于表功能域；查询标签只在用户
+        # 点击新建/打开查询后出现，不能让查询域抢占首屏。
+        self.domain_stack.setCurrentWidget(self.table_page)
         self.editor_tabs.addTab(self.domain_stack, "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
@@ -154,8 +150,16 @@ class MainWindow(QMainWindow):
         work_lay = QVBoxLayout(work)
         work_lay.setContentsMargins(0, 0, 0, 0)
         work_lay.setSpacing(0)
-        work_lay.addWidget(self.edit_bar)
         work_lay.addWidget(self.editor_tabs, 1)
+        # 查询工具栏包含多个操作控件，默认 sizeHint 会把中央区最小宽度
+        # 推到一千像素以上，进而锁死左右 dock 的分隔条。允许中央区水平
+        # 压缩，三块区域才能像 Navicat 一样在非最大化窗口中自由调宽。
+        self.editor_tabs.setMinimumWidth(0)
+        self.editor_tabs.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                       QSizePolicy.Policy.Expanding)
+        work.setMinimumWidth(0)
+        work.setSizePolicy(QSizePolicy.Policy.Ignored,
+                           QSizePolicy.Policy.Expanding)
         self.setCentralWidget(work)
 
     def _build_query_browse(self) -> None:
@@ -239,15 +243,15 @@ class MainWindow(QMainWindow):
 
     # ---- 中央工作区状态 ----
     def _on_query_tab_changed(self, index: int) -> None:
-        """当前标签切换：对象页激活 → 显示对象浏览条并刷新；查询标签激活 → 隐藏对象浏览条。"""
+        """当前标签切换：对象页激活时刷新列表；查询标签保留自己的上下文。"""
         widget = self.editor_tabs.widget(index)
         is_object_page = widget is self.domain_stack
-        self.edit_bar.setVisible(is_object_page)
         if is_object_page:
             self._reload_current_domain()
 
     def _show_query_domain(self) -> None:
         """顶部「查询」领域图标：切到「对象」页并选中查询浏览子页。"""
+        self._set_domain_action("queries")
         self.domain_stack.setCurrentWidget(self.browse_page)
         self.editor_tabs.setCurrentIndex(0)
         self._reload_query_browse()
@@ -257,6 +261,7 @@ class MainWindow(QMainWindow):
         page = self._domain_pages.get(cat_type)
         if page is None:
             return
+        self._set_domain_action(cat_type)
         self.domain_stack.setCurrentWidget(page)
         self.editor_tabs.setCurrentIndex(0)
         self._reload_current_domain(schema=schema)
@@ -290,39 +295,67 @@ class MainWindow(QMainWindow):
         self.browse_page.ctx_label.setText(
             f"{profile.display_name} · {schema or '默认'}")
 
-    def _reload_table_browse(self, profile=None, schema: str = "") -> None:
+    def _reload_table_browse(self, profile=None, schema: str = "",
+                             database: str = "") -> None:
         """按当前连接/库刷新「表」对象页列表（全库一次批查，无 N+1）。"""
         profile = profile or self._current_profile()
         if profile is None:
             self.table_page.clear()
             self.table_page.ctx_label.setText("")
             return
-        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        if profile.is_postgres:
+            schema = schema or "public"
+        else:
+            schema = schema or self.schema_combo.currentText() or profile.database or ""
+        database = database or ""
+        if profile.is_postgres and not database:
+            # PG/GaussDB 的对象页需要同时知道 Catalog 和 Schema；优先取当前
+            # 树节点所属数据库，避免把非初始库误查成 profile.database。
+            item = self.explorer.currentItem() if hasattr(self, "explorer") else None
+            if item is not None:
+                database = self.explorer._database_of(item)
+            database = database or profile.database or ""
         self.table_page.ctx_label.setText(
             f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
-            return self._metadata.schema_tables(profile, schema)
+            return self._metadata.schema_tables(profile, schema, database)
 
         def done(rows: list[dict]) -> None:
             self.table_page.load_tables(profile.id, schema, rows)
 
-        run_async(fetch, done, lambda err: self.table_page.ctx_label.setText(
-            f"读取表失败：{err}"))
+        def error(err: str) -> None:
+            # 错误不占用表页操作栏，保留当前上下文并用统一错误框提示。
+            self.table_page.ctx_label.setText(
+                f"{profile.display_name} · {schema or '默认'}")
+            from magiccat.utils.errors import clean_java_error
 
-    def _reload_view_browse(self, profile=None, schema: str = "") -> None:
+            QMessageBox.critical(self, "读取表失败", clean_java_error(err))
+
+        run_async(fetch, done, error)
+
+    def _reload_view_browse(self, profile=None, schema: str = "",
+                            database: str = "") -> None:
         """按当前连接/库刷新「视图」对象页列表（复用全库表批查，只取 VIEW）。"""
         profile = profile or self._current_profile()
         if profile is None:
             self.view_page.clear()
             self.view_page.ctx_label.setText("")
             return
-        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        if profile.is_postgres:
+            schema = schema or "public"
+            if not database:
+                item = self.explorer.currentItem() if hasattr(self, "explorer") else None
+                if item is not None:
+                    database = self.explorer._database_of(item)
+                database = database or profile.database or ""
+        else:
+            schema = schema or self.schema_combo.currentText() or profile.database or ""
         self.view_page.ctx_label.setText(
             f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
-            return [v for v in self._metadata.schema_tables(profile, schema)
+            return [v for v in self._metadata.schema_tables(profile, schema, database)
                     if v.get("type") == "VIEW"]
 
         def done(rows: list[dict]) -> None:
@@ -502,6 +535,10 @@ class MainWindow(QMainWindow):
         self.explorer.new_query_requested.connect(self._on_new_query_from_explorer)
         self.explorer.profile_activated.connect(self._set_current_profile)
         dock = QDockWidget("对象浏览器", self)
+        dock.setObjectName("explorer_dock")
+        dock.setMinimumWidth(180)
+        dock.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Expanding)
 
         container = QWidget()
         box = QVBoxLayout(container)
@@ -514,6 +551,7 @@ class MainWindow(QMainWindow):
         box.addWidget(self.explorer, 1)
         dock.setWidget(container)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.explorer_dock = dock
         self.explorer.load_profiles()
 
     def _build_info_dock(self) -> None:
@@ -521,8 +559,13 @@ class MainWindow(QMainWindow):
 
         self.info_panel = ConnectionInfoPanel(self._connections, self._metadata)
         dock = QDockWidget("信息", self)
+        dock.setObjectName("info_dock")
+        dock.setMinimumWidth(160)
+        dock.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Expanding)
         dock.setWidget(self.info_panel)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.info_dock = dock
 
     def _build_quick_toolbar(self) -> None:
         """对标 Navicat 顶部快速访问栏（图标+文字在下）；仅放已实现功能，
@@ -534,6 +577,9 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         self.addToolBar(toolbar)
+        self._domain_action_group = QActionGroup(self)
+        self._domain_action_group.setExclusive(True)
+        self._domain_actions: dict[str, QAction] = {}
 
         def quick(text: str, kind: str, handler) -> None:
             act = QAction(icon(kind), text, self)
@@ -541,17 +587,42 @@ class MainWindow(QMainWindow):
             act.triggered.connect(handler)
             toolbar.addAction(act)
 
+        def quick_domain(text: str, kind: str, domain: str) -> None:
+            act = QAction(icon(kind), text, self)
+            act.setToolTip(text)
+            act.setCheckable(True)
+            act.triggered.connect(lambda _checked=False, d=domain: self._show_domain(d))
+            self._domain_action_group.addAction(act)
+            self._domain_actions[domain] = act
+            toolbar.addAction(act)
+
         quick("连接", "connection", self._add_connection)
         quick("新建查询", "new_query", self._new_editor)
         toolbar.addSeparator()
-        quick("表", "table", lambda: self._show_domain("tables"))
-        quick("视图", "view", lambda: self._show_domain("views"))
-        quick("函数", "function", lambda: self._show_domain("routines"))
+        quick_domain("表", "table", "tables")
+        quick_domain("视图", "view", "views")
+        quick_domain("函数", "function", "routines")
         toolbar.addSeparator()
         quick("用户", "user", self._quick_user)
         toolbar.addSeparator()
-        quick("查询", "query", self._show_query_domain)
+        quick_domain("查询", "query", "queries")
         self._add_other_button(toolbar)
+        self._set_domain_action("tables")
+
+    def _set_domain_action(self, domain: str) -> None:
+        """更新窗口级当前功能域，并同步顶部动作的选中态。"""
+        self._current_domain = domain
+        actions = getattr(self, "_domain_actions", None)
+        if actions:
+            action = actions.get(domain)
+            if action is not None:
+                action.setChecked(True)
+            else:
+                for candidate in actions.values():
+                    candidate.setChecked(False)
+        other_button = getattr(self, "_other_domain_button", None)
+        if other_button is not None:
+            other_button.setChecked(domain == "sequences")
 
     def _add_other_button(self, toolbar) -> None:
         """「其它」领域（永驻）：下拉菜单按数据库类型增减。
@@ -566,11 +637,13 @@ class MainWindow(QMainWindow):
         btn = QToolButton()
         btn.setText("其它")
         btn.setIcon(icon("other"))
+        btn.setCheckable(True)
         btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         btn.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(btn)
         btn.setMenu(menu)
         toolbar.addWidget(btn)
+        self._other_domain_button = btn
 
         def rebuild() -> None:
             menu.clear()
@@ -645,7 +718,7 @@ class MainWindow(QMainWindow):
                     "SELECT ...  -- 填写查询")
                 index = self.editor_tabs.indexOf(editor)
                 self.editor_tabs.setTabText(index, name + "（视图）")
-                self._status("新建视图模板已生成：填写 SELECT 后「执行全部」创建", 8000)
+                self._status("新建视图模板已生成：填写 SELECT 后「运行」创建", 8000)
         elif what == "routine":
             self._on_create_routine(profile.id, schema)
 
@@ -660,12 +733,9 @@ class MainWindow(QMainWindow):
         self.act_new = menu_query.addAction("新建查询\tCtrl+T")
         self.act_new.setShortcut("Ctrl+T")
         self.act_new.triggered.connect(self._new_editor)
-        self.act_run = menu_query.addAction("执行(当前/选中)\tF5")
+        self.act_run = menu_query.addAction("运行\tF5")
         self.act_run.setShortcut("F5")
         self.act_run.triggered.connect(self._run_current)
-        self.act_run_all = menu_query.addAction("执行全部\tCtrl+Shift+Enter")
-        self.act_run_all.setShortcut("Ctrl+Shift+Enter")
-        self.act_run_all.triggered.connect(self._run_all)
         self.act_cancel = menu_query.addAction("取消执行")
         self.act_cancel.setEnabled(False)
         self.act_cancel.triggered.connect(self._cancel_execution)
@@ -750,7 +820,9 @@ class MainWindow(QMainWindow):
         return ws.result_panel if ws is not None else None
 
     def _on_profile_selected(self) -> None:
-        profile = self._current_profile()
+        # 这是对象浏览条的全局连接选择。查询标签激活时，_current_profile()
+        # 属于该标签，不能拿它覆盖树跟手的对象浏览上下文。
+        profile = self._connections.get(self.profile_combo.currentData())
         self.setWindowTitle(f"MagicCat — {profile.display_name}" if profile else "MagicCat")
         self._status(f"当前连接：{profile.name if profile else '未选择'}")
         self.info_panel.show_profile(self.profile_combo.currentData() if profile else None)
@@ -783,22 +855,45 @@ class MainWindow(QMainWindow):
         if profile is not None:
             self._update_completion_words(profile)
 
-    def _update_completion_words(self, profile: ConnectionProfile) -> None:
-        """构建当前库/模式的上下文补全数据（表+视图+列，一次批查），供 SQL 对象提示。"""
-        schema = self.schema_combo.currentText() or profile.database or ""
+    def _update_completion_words(self, profile: ConnectionProfile, ws=None) -> None:
+        """构建当前 Catalog/Schema 的上下文补全数据（表+视图+列，一次批查）。"""
+        # 捕获目标工作区；异步回调不能再用“当前标签”，否则切换标签后会串补全数据。
+        target_ws = ws if ws is not None else self._current_query_ws()
+        target_profile_id = (target_ws.profile_combo.currentData()
+                             if target_ws is not None else None)
+        if target_ws is not None and target_profile_id not in (None, profile.id):
+            # 显式请求另一个工作区时，绝不把结果写进当前标签。
+            return
+        if target_ws is not None:
+            database = (target_ws.database_combo.currentText() or profile.database or "").strip()
+            schema = ((target_ws.selected_schema() or "public")
+                      if profile.is_postgres else None)
+        elif profile.is_postgres:
+            # 对象浏览条的全局下拉只有 Catalog；对象页补全默认 public。
+            database = (self.schema_combo.currentText() or profile.database or "").strip()
+            schema = "public"
+        else:
+            # MySQL 的信息层参数名仍叫 schema，但它实际表示 catalog/database。
+            database = (self.schema_combo.currentText() or profile.database or "").strip()
+            schema = database
         meta = self._metadata
 
         def fetch() -> dict:
             # 一次批查当前 schema 的表/视图 + 所有列（无 N+1）
             tables = []
-            t_rows = meta.schema_tables(profile, schema)
+            if profile.is_postgres:
+                t_rows = meta.schema_tables_in_database(profile, database, schema or "public")
+                c_rows = meta.schema_columns_in_database(profile, database, schema or "public")
+            else:
+                t_rows = meta.schema_tables(profile, schema or database)
+                c_rows = meta.schema_columns(profile, schema or database)
             for t in t_rows:
                 name = t.get("name")
                 if name:
                     kind = "view" if str(t.get("type", "")).upper() == "VIEW" else "table"
                     tables.append({"name": name, "kind": kind})
             columns: dict[str, list[str]] = {}
-            for c in meta.schema_columns(profile, schema):
+            for c in c_rows:
                 tn = c.get("table_name")
                 cn = c.get("name")
                 if tn and cn:
@@ -806,7 +901,16 @@ class MainWindow(QMainWindow):
             return {"tables": tables, "columns": columns}
 
         def done(data: dict) -> None:
-            editor = self._active_editor()
+            if target_ws is not None and target_profile_id == profile.id:
+                # 上一次上下文的查询可能晚于本次返回，丢弃其结果。
+                if target_ws.profile_combo.currentData() != profile.id:
+                    return
+                current_database = (target_ws.database_combo.currentText() or "").strip()
+                current_schema = target_ws.selected_schema() or ("public" if profile.is_postgres else None)
+                expected_schema = schema or ("public" if profile.is_postgres else None)
+                if current_database != database or current_schema != expected_schema:
+                    return
+            editor = target_ws if target_ws is not None else self._active_editor()
             if editor is not None and hasattr(editor, "set_completion_data"):
                 editor.set_completion_data(data)
             n = len(data.get("tables", []))
@@ -824,32 +928,120 @@ class MainWindow(QMainWindow):
             return SqlEditorWidget()
         return MonacoEditorWidget()
 
-    def _new_editor(self):
+    def _capture_new_query_context(self) -> tuple[str | None, str, str | None, bool]:
+        """拍摄新查询的初始化上下文；创建后不再随树选中变化。"""
+        # 普通“新建查询”优先继承左侧树最近激活的元素；这是一次性初始化，
+        # 后续树选中不会再改写新标签。
+        tree_context = self._tree_query_context()
+        if tree_context is not None:
+            return tree_context
+
+        active = self._current_query_ws()
+        if active is not None:
+            profile_id = active.profile_combo.currentData()
+            profile = self._connections.get(profile_id)
+            if profile is not None:
+                catalog = (active.selected_catalog()
+                           or getattr(active, "_pending_database", "")
+                           or profile.database or "").strip()
+                if profile.is_postgres:
+                    pending = getattr(active, "_pending_schema", None)
+                    if pending is not None:
+                        return profile_id, catalog, pending or None, True
+                    if active.schema_combo.isEnabled():
+                        return profile_id, catalog, active.selected_schema(), True
+                return profile_id, catalog, None, False
+
+        profile_id = self.profile_combo.currentData()
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return None, "", None, False
+        catalog = (self.schema_combo.currentText() or profile.database or "").strip()
+        # 对象浏览条只有全局 Catalog 下拉；PG 的 Schema 在新查询中按默认 public
+        # 处理，右键模式级新建则由显式上下文覆盖。
+        return profile_id, catalog, None, False
+
+    def _tree_query_context(self) -> tuple[str, str, str | None, bool] | None:
+        """读取左侧树当前元素的查询初始化上下文。
+
+        返回 ``(profile_id, catalog, schema, schema_explicit)``。数据库节点只
+        确定 Catalog，模式节点及其下对象同时确定 Schema；MySQL 的 Schema 为
+        ``None``。分组、分类或没有可归属连接的节点不提供上下文。
+        """
+        explorer = getattr(self, "explorer", None)
+        item = explorer.currentItem() if explorer is not None else None
+        if item is None:
+            return None
+        info = item.data(0, Qt.UserRole) or {}
+        kind = info.get("kind")
+        data = info.get("data", {})
+        if kind in ("group", "placeholder", "error"):
+            return None
+        profile = explorer._profile_of(item)
+        if profile is None:
+            return None
+        if kind == "profile":
+            return profile.id, (profile.database or "").strip(), None, False
+        if kind == "database":
+            return profile.id, str(data.get("schema", "")).strip(), None, profile.is_postgres
+        if kind == "schema":
+            return (profile.id, str(data.get("database", "")).strip(),
+                    str(data.get("schema", "")).strip(), True)
+        catalog = str(explorer._database_of(item) or "").strip()
+        schema = str(explorer._schema_of(item) or "").strip()
+        if not catalog and not schema:
+            return None
+        if profile.is_postgres:
+            return profile.id, catalog, schema or None, True
+        return profile.id, catalog or schema, None, False
+
+    def _new_editor_with_context(
+        self,
+        profile_id: str | None,
+        catalog: str = "",
+        schema: str | None = None,
+        schema_explicit: bool = False,
+    ):
         from magiccat.ui.query_workspace import QueryWorkspace
 
         self._tab_seq += 1
         editor = self._make_editor()
         ws = QueryWorkspace(editor)
+        # 必须在异步下拉加载前写入 pending，避免回调先返回时丢失初始化定位。
+        if profile_id:
+            ws._pending_database = (catalog or "").strip()
+            if schema_explicit:
+                ws._pending_schema = (schema or "").strip()
         ws.run_requested.connect(self._run_current)
-        ws.run_all_requested.connect(self._run_all)
         ws.stop_requested.connect(self._cancel_execution)
         ws.explain_requested.connect(self._explain_current)
         ws.save_requested.connect(self._save_query_dialog)
         ws.format_requested.connect(self._format_sql)
         ws.snippet_requested.connect(lambda: self._insert_snippet(ws))
         ws.ask_ai_requested.connect(lambda: self._ask_ai(ws))
+        # 先填充初始连接/Catalog/Schema；初始化期间不触发工作区切换回调，
+        # 否则 profile_combo 从占位项切到目标连接会清空右键传入的 pending 值。
+        self._populate_ws_combos(ws, profile=profile_id)
         ws.profile_combo.currentIndexChanged.connect(
             lambda _i: self._on_ws_profile_changed(ws))
-        ws.set_profile(self.profile_combo.currentData())
-        self._populate_ws_combos(ws, profile=self.profile_combo.currentData())
+        ws.database_combo.currentIndexChanged.connect(
+            lambda _i: self._on_ws_database_changed(ws))
+        ws.schema_combo.currentIndexChanged.connect(
+            lambda _i: self._on_ws_schema_changed(ws))
         ws.editor.workspace = ws
         index = self.editor_tabs.addTab(ws, f"查询 {self._tab_seq}")
         self.editor_tabs.setCurrentIndex(index)
         ws.editor.setFocus()
         return ws
 
+    def _new_editor(self, _checked: bool = False):
+        """新建查询：只在创建瞬间继承当前连接/Catalog/Schema。"""
+        profile_id, catalog, schema, schema_explicit = self._capture_new_query_context()
+        return self._new_editor_with_context(
+            profile_id, catalog, schema, schema_explicit)
+
     def _populate_ws_combos(self, ws, profile: str | None = None) -> None:
-        """填充查询工作区的连接下拉 + 库下拉（影响只在本标签）。"""
+        """填充查询工作区的连接、Catalog、Schema（影响只在本标签）。"""
         from magiccat.ui.profile_combo import populate_profile_combo
 
         populate_profile_combo(ws.profile_combo, self._connections.profiles,
@@ -860,29 +1052,161 @@ class MainWindow(QMainWindow):
                 ws.profile_combo.setCurrentIndex(idx)
             prof = self._connections.get(profile)
             if prof is not None:
-                # 库下拉：复用全局 schema 列表加载（只填本标签）
-                self._reload_ws_schema_combo(ws, prof)
+                self._reload_ws_context(ws, prof)
 
     def _reload_ws_schema_combo(self, ws, profile) -> None:
+        """兼容旧调用名：重载工作区 Catalog，并按产品加载 Schema。"""
+        self._reload_ws_context(ws, profile)
+
+    def _reload_ws_context(self, ws, profile) -> None:
+        """加载一个查询标签自己的 Catalog/Schema 下拉，不影响其它标签。"""
+        ws.set_schema_visible(profile.is_postgres)
+        ws.database_combo.blockSignals(True)
+        ws.database_combo.clear()
+        ws.database_combo.setEnabled(False)
+        ws.database_combo.blockSignals(False)
+        ws.schema_combo.blockSignals(True)
+        ws.schema_combo.clear()
+        # MySQL 的 JDBC schema 永远为 null；在 UI 中禁用模式选择，避免产生假上下文。
+        ws.schema_combo.setEnabled(False)
+        ws.schema_combo.blockSignals(False)
+
         def fetch() -> list[str]:
             return [d["name"] for d in self._metadata.databases(profile)
                     if d["name"] not in _SYSTEM_SCHEMAS]
 
         def done(dbs: list[str]) -> None:
+            # 连接切换期间旧请求可能晚返回，不能覆盖新连接的上下文。
+            if ws.profile_combo.currentData() != profile.id:
+                return
+            ws.database_combo.blockSignals(True)
+            ws.database_combo.clear()
+            from magiccat.ui.icons import icon
+
+            database_icon = icon("database")
+            for name in dbs:
+                ws.database_combo.addItem(database_icon, name)
+            desired = ws._pending_database or profile.database or ""
+            if profile.is_postgres and "postgres" in dbs and desired not in dbs:
+                desired = "postgres"
+            if desired not in dbs and dbs:
+                desired = dbs[0]
+            if desired:
+                ws.database_combo.setCurrentText(desired)
+            ws._pending_database = ""
+            ws.database_combo.blockSignals(False)
+            ws.database_combo.setEnabled(True)
+            if profile.is_postgres and desired:
+                self._reload_ws_schemas(ws, profile, desired)
+            else:
+                self._clear_ws_schema(ws)
+                self._update_completion_words(profile, ws)
+
+        run_async(fetch, done, lambda err: logger.warning("加载工作区 Catalog 下拉失败: %s", err))
+
+    def _reload_ws_schemas(self, ws, profile, database: str) -> None:
+        """PostgreSQL/GaussDB：按当前 Catalog 加载 Schema 列表。"""
+        ws.set_schema_visible(True)
+        ws.schema_combo.blockSignals(True)
+        ws.schema_combo.clear()
+        ws.schema_combo.setEnabled(False)
+        ws.schema_combo.blockSignals(False)
+
+        def fetch() -> list[str]:
+            return [s["name"] for s in self._metadata.schemas(profile, database)
+                    if s.get("name")]
+
+        def done(schemas: list[str]) -> None:
+            if ws.profile_combo.currentData() != profile.id:
+                return
+            if (ws.database_combo.currentText() or "").strip() != database:
+                return
+            names = list(dict.fromkeys(schemas))
             ws.schema_combo.blockSignals(True)
             ws.schema_combo.clear()
-            ws.schema_combo.addItems(dbs)
-            if profile and profile.database and profile.database in dbs:
-                ws.schema_combo.setCurrentText(profile.database)
-            ws.schema_combo.blockSignals(False)
+            from magiccat.ui.icons import icon
 
-        run_async(fetch, done, lambda err: logger.warning("加载工作区库下拉失败: %s", err))
+            schema_icon = icon("schema")
+            for name in names:
+                ws.schema_combo.addItem(schema_icon, name)
+            # PG/GaussDB 默认模式统一为 public；对象树定位到的模式优先。
+            preferred = ws._pending_schema
+            if preferred == "":
+                # 数据库级右键新建查询：Catalog 已确定，但 Schema 保持空选。
+                ws.schema_combo.setCurrentIndex(-1)
+            elif preferred and preferred in names:
+                ws.schema_combo.setCurrentText(preferred)
+            elif "public" in names:
+                ws.schema_combo.setCurrentText("public")
+            elif names:
+                ws.schema_combo.setCurrentIndex(0)
+            ws._pending_schema = None
+            ws.schema_combo.blockSignals(False)
+            ws.schema_combo.setEnabled(True)
+            self._update_completion_words(profile, ws)
+
+        run_async(fetch, done,
+                  lambda err: logger.warning("加载工作区 Schema 下拉失败: %s", err))
+
+    @staticmethod
+    def _clear_ws_schema(ws) -> None:
+        ws.set_schema_visible(False)
+        ws.schema_combo.blockSignals(True)
+        ws.schema_combo.clear()
+        ws.schema_combo.setEnabled(False)
+        ws.schema_combo.blockSignals(False)
 
     def _on_ws_profile_changed(self, ws) -> None:
-        """某查询工作区切换连接 → 重载该工作区自己的库下拉。"""
+        """某查询工作区切换连接 → 重载该工作区自己的 Catalog/Schema。"""
         prof = self._connections.get(ws.profile_combo.currentData())
         if prof is not None:
-            self._reload_ws_schema_combo(ws, prof)
+            ws.clear_pending_context()
+            self._reload_ws_context(ws, prof)
+        else:
+            ws.clear_pending_context()
+            ws.database_combo.blockSignals(True)
+            ws.database_combo.clear()
+            ws.database_combo.setEnabled(False)
+            ws.database_combo.blockSignals(False)
+            self._clear_ws_schema(ws)
+
+    def _on_ws_database_changed(self, ws) -> None:
+        profile = self._connections.get(ws.profile_combo.currentData())
+        if profile is None:
+            return
+        database = (ws.database_combo.currentText() or "").strip()
+        if profile.is_postgres and database:
+            self._reload_ws_schemas(ws, profile, database)
+        else:
+            self._clear_ws_schema(ws)
+            self._update_completion_words(profile, ws)
+
+    def _on_ws_schema_changed(self, ws) -> None:
+        profile = self._connections.get(ws.profile_combo.currentData())
+        if profile is not None:
+            self._update_completion_words(profile, ws)
+
+    @staticmethod
+    def _workspace_context(ws, profile: ConnectionProfile) -> tuple[str, str | None]:
+        """返回当前查询标签的 (JDBC catalog, JDBC schema)。"""
+        catalog = (ws.database_combo.currentText()
+                   or getattr(ws, "_pending_database", "")
+                   or profile.database or "").strip()
+        if not profile.is_postgres:
+            # MySQL/MariaDB 只有 catalog；schema 必须保持 SQL NULL 语义。
+            return catalog, None
+        pending = getattr(ws, "_pending_schema", None)
+        # 对象树按 schema 定位时，即使下拉仍在异步加载，也优先保留该待选值。
+        if pending:
+            return catalog, pending
+        # 异步加载尚未完成时按 PG 默认模式执行；已加载但用户/库级右键
+        # 清空时 currentIndex() 为 -1，保留空 Schema，不擅自补 public。
+        if not ws.schema_combo.isEnabled():
+            return catalog, "public"
+        selected = ws.selected_schema()
+        if selected is not None:
+            return catalog, selected
+        return catalog, None
 
     def _current_query_ws(self):
         from magiccat.ui.query_workspace import QueryWorkspace
@@ -916,12 +1240,9 @@ class MainWindow(QMainWindow):
 
     # ---- 执行流 ----
     def _run_current(self) -> None:
-        self._run_sql(all_statements=False)
+        self._run_sql()
 
-    def _run_all(self) -> None:
-        self._run_sql(all_statements=True)
-
-    def _run_sql(self, all_statements: bool) -> None:
+    def _run_sql(self) -> None:
         ws = self._current_query_ws()
         if ws is None:
             return
@@ -930,10 +1251,11 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "执行 SQL", "请先在工具栏选择要执行的连接。")
             return
         editor = ws.editor
-        sql = editor.all_text() if all_statements else (editor.current_sql() or "")
+        sql = ws.sql_for_run()
         if not sql.strip():
-            self._status("无可执行内容：请选中文本或把光标放在语句上")
+            self._status("无可执行内容：请输入 SQL")
             return
+        catalog, schema = self._workspace_context(ws, profile)
         self._status(f"正在执行（{profile.name}）…")
         ws.result_panel.append_message(f"──── 执行 · {profile.name} · {sql}")
         if ws.status_label is not None:
@@ -942,7 +1264,7 @@ class MainWindow(QMainWindow):
         self._running += 1
         self.act_cancel.setEnabled(True)
         run_async(
-            lambda: self._query.execute(profile, sql),
+            lambda: self._query.execute(profile, sql, database=catalog, schema=schema),
             lambda results: self._on_executed(results, ws, editor),
             lambda err: self._on_exec_error(err, ws))
 
@@ -1016,8 +1338,7 @@ class MainWindow(QMainWindow):
     def _show_shortcuts(self) -> None:
         QMessageBox.information(self, "快捷键", (
             "<b>执行/编辑</b><br>"
-            "F5 / Ctrl+Enter — 执行当前语句或选中<br>"
-            "Ctrl+Shift+Enter — 执行全部<br>"
+            "F5 — 运行全部 SQL；有选区时运行选中内容<br>"
             "Ctrl+Space — 补全<br>"
             "Ctrl+T — 新建查询标签<br>"
             "Ctrl+W — 关闭当前标签<br><br>"
@@ -1279,10 +1600,11 @@ class MainWindow(QMainWindow):
             self._status("仅支持对 SELECT/WITH/SHOW/DESCRIBE 生成执行计划", 6000)
             return
         target = sql if re.match(r"(?is)^\s*explain\b", sql) else "EXPLAIN " + sql
+        catalog, schema = self._workspace_context(ws, profile)
         self._status(f"正在生成执行计划（{profile.name}）…")
         ws.result_panel.append_message(f"──── EXPLAIN · {profile.name} · {target}")
         run_async(
-            lambda: self._query.execute(profile, target),
+            lambda: self._query.execute(profile, target, database=catalog, schema=schema),
             lambda results: self._on_explained(results, ws),
             lambda err: self._on_exec_error(err, ws))
 
@@ -1316,8 +1638,12 @@ class MainWindow(QMainWindow):
         if not ok or not name:
             return
         ws = self._current_query_ws()
-        ws_schema = ws.schema_combo.currentText() if ws is not None else ""
-        schema = ws_schema or self.schema_combo.currentText() or profile.database or ""
+        if ws is not None:
+            catalog, current_schema = self._workspace_context(ws, profile)
+            # 查询库存储字段仍称 schema：PG 保存实际模式，MySQL 保存 catalog（database）。
+            schema = current_schema or catalog
+        else:
+            schema = self.schema_combo.currentText() or profile.database or ""
         lib = QueryLibrary.default()
         lib.save(profile.id, name, editor.toPlainText(), schema=schema)
         if schema:
@@ -1333,8 +1659,16 @@ class MainWindow(QMainWindow):
         if record is None or profile is None:
             return
         tab_key = f"query:{profile_id}:{name}"
-        self._open_object_tab(tab_key, name, record["content"])
+        ws = self._open_object_tab(tab_key, name, record["content"])
         self._set_current_profile(profile_id)
+        # 具名查询的上下文随标签打开：MySQL 保存字段是 Catalog，PG 是 Schema。
+        saved_scope = (record.get("schema") or "").strip()
+        if profile.is_postgres:
+            ws.set_database(profile.database)
+            if saved_scope:
+                ws.set_schema(saved_scope)
+        else:
+            ws.set_database(saved_scope or profile.database)
         self._status(f"已打开查询「{name}」（{profile.display_name}"
                      f"{' · ' + record['schema'] if record.get('schema') else ''}）", 5000)
 
@@ -1398,7 +1732,7 @@ class MainWindow(QMainWindow):
         self._set_current_profile(profile.id)
         verb = "函数" if kind == "FUNCTION" else "过程"
         self._status(
-            f"已生成「{verb} {schema}.{name}」模板：填写内容后「执行全部」即可创建"
+            f"已生成「{verb} {schema}.{name}」模板：填写内容后「运行」即可创建"
             "（体含分号，编辑器支持 DELIMITER 语法）", 8000)
 
     def _open_routine_sql(self, profile_id: str, name: str, sql_text: str) -> None:
@@ -1529,15 +1863,16 @@ class MainWindow(QMainWindow):
     def _on_new_query_from_explorer(self, profile_id: str, database: str,
                                     schema: str) -> None:
         """对象树「新建查询」（database 级 / schema 级）：新建查询编辑器并定位连接/库。"""
+        profile = self._connections.get(profile_id)
+        if profile is None:
+            return
         self._set_current_profile(profile_id)
-        self._new_editor()
-        # 尝试定位到所选库/模式（存在才选中，避免把 schema 误当数据库塞进下拉）
-        for s in (schema, database):
-            if s:
-                i = self.schema_combo.findText(s)
-                if i >= 0:
-                    self.schema_combo.setCurrentIndex(i)
-                    break
+        # 右键目标优先级高于全局/当前标签上下文；库级传空 schema，
+        # 模式级传具体 schema，均作为一次性初始化值写入新标签。
+        self._new_editor_with_context(
+            profile_id, database or profile.database or "",
+            schema if profile.is_postgres else None,
+            schema_explicit=profile.is_postgres)
         self._status("已新建查询"
                      + (f"（{database} · {schema}）" if schema else
                         (f"（{database}）" if database else "")), 4000)

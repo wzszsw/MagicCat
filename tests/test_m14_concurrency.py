@@ -23,14 +23,15 @@ def test_parallel_execution_qt(qtbot, mysql_env, connection_service):
     win.profile_combo.setCurrentIndex(idx)
 
     # 标签1：较长查询；标签2：立刻发起第二条 —— 不应被全局锁拦截
+    win._new_editor()
     editor1 = win._active_editor()
     editor1.setPlainText("SELECT 1 AS a1, SLEEP(0.6)")
-    win._run_all()
+    win._run_current()
     assert win.act_run.isEnabled(), "执行中不应禁用按钮（支持并行）"
 
     editor2 = win._new_editor()
     editor2.setPlainText("SELECT 2 AS a2")
-    win._run_all()
+    win._run_current()
 
     def both_done() -> bool:
         # 每查询标签独立结果面板：分别看两个工作区的日志

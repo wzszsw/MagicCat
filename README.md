@@ -47,6 +47,21 @@ uv run ruff check .    # 静态检查
 uv run python -m magiccat
 ```
 
+## openGauss 本机联调
+
+项目提供 Podman 助手脚本，默认使用 `magiccat-opengauss`、`docker.io/library/opengauss:6.0.3` 和宿主机 `15432` 端口：
+
+```powershell
+.\scripts\opengauss.ps1                         # 创建或启动容器
+.\scripts\opengauss.ps1 -Action status         # 查看状态
+.\scripts\opengauss.ps1 -Action logs           # 查看最近日志
+.\scripts\opengauss.ps1 -Action gsql           # 进入 gsql
+.\scripts\opengauss.ps1 -Action stop           # 停止但保留容器
+.\scripts\opengauss.ps1 -Action remove -Force  # 明确确认后删除容器
+```
+
+默认 JDBC 地址为 `jdbc:gaussdb://127.0.0.1:15432/postgres`，用户为 `gaussdb`；密码可通过 `-GaussPassword` 覆盖。GaussDB JDBC 驱动仍需在 MagicCat「工具 → 环境」中手动指定，不随项目分发。
+
 ## 里程碑
 
 见设计方案 §10。当前进度（自动化测试 23+ 项，另含打包产物 `--selftest`）：

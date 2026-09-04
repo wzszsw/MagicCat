@@ -52,7 +52,33 @@ class QueryService:
         return len(tokens)
 
     # ---- 执行 ----
-    def execute(self, profile: ConnectionProfile, sql: str) -> list[dict]:
+    def execute(
+        self,
+        profile: ConnectionProfile,
+        sql: str,
+        catalog: str | None = None,
+        schema: str | None = None,
+        *,
+        database: str | None = None,
+    ) -> list[dict]:
+        """执行 SQL，并可为本次执行指定 JDBC catalog/schema 上下文。
+
+        ``database`` 是 ``catalog`` 的兼容别名，方便沿用元数据层已有命名。
+        上下文只传给当前执行借出的 JDBC 连接，不会生成或注入 ``USE``。
+        MySQL/MariaDB 没有 JDBC schema 语义，因此始终向 Java 层传 ``null``。
+        """
+        if database is not None:
+            if catalog is not None and catalog != database:
+                raise ValueError("catalog 与 database 不能同时指定不同值")
+            catalog = database
+        # ``None`` means no explicit workspace context; keep the legacy overload in
+        # that case. An explicitly empty catalog is still a context request, allowing
+        # the Java side to restore the profile's configured catalog deterministically.
+        catalog_value = "" if catalog is None else str(catalog).strip()
+        schema_value = (
+            str(schema).strip() if profile.is_postgres and schema is not None else None
+        )
+        context_requested = catalog is not None or schema is not None
         statements = [s for s in split_sql_statements(sql) if s.strip()]
         if not statements:
             return []
@@ -71,8 +97,14 @@ class QueryService:
             for stmt in statements:
                 started = time.perf_counter()
                 try:
-                    raw = Executor.executeCancelable(
-                        profile.id, stmt, self.max_rows, run_token)
+                    if context_requested:
+                        raw = Executor.executeCancelable(
+                            profile.id, catalog_value, schema_value,
+                            stmt, self.max_rows, run_token)
+                    else:
+                        # 保留旧入口，供非查询工作区服务和旧插件继续使用连接默认上下文。
+                        raw = Executor.executeCancelable(
+                            profile.id, stmt, self.max_rows, run_token)
                     data = json.loads(raw)
                     data["sql"] = stmt
                     data["time_ms"] = round((time.perf_counter() - started) * 1000, 1)
