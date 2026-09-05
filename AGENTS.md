@@ -204,7 +204,7 @@
 - 结论：Navicat 对"简单数据/缓存/历史"确实用 **SQLite**；配置多为注册表/JSON；SQL 文件用文件系统。
 - **MagicCat 已按此重构本地存储**（不兼容旧 profiles.json/query.json/history.json/connections.json，
   旧数据弃用、不迁移、不留兼容代码）：
-  - 连接配置 → **用户文档目录下按产品类型/连接名称逐目录保存的版本化 JSON** `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/connection.json`（密码明文，原子写入；连接名称全局唯一；绝不使用 Windows 注册表）。
+  - 连接配置 → **用户文档目录下按产品类型/连接名称逐目录保存的版本化 JSON** `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/connection.json`（密码明文，原子写入；同一 `provider_key` 内连接名称唯一，不同产品可同名；绝不使用 Windows 注册表）。
   - 连接分组 → 独立的 `groups.json`，只保存真实组名和连接 ID；未分组连接不写入组索引，直接显示在连接树根部。
   - 查询 SQL 内容 → **连接目录下的 .sql 文件**；PG 为 `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/<database>/<schema>/<name>.sql`，MySQL/MariaDB 省略独立 schema 层。
   - 元数据缓存/历史/收藏/设置/片段/任务/窗口状态 → **SQLite** `metacache.db`（kv / metadata_cache / history / favorites 表）。

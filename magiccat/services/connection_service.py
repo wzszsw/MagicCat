@@ -54,37 +54,55 @@ class ConnectionService:
         if provider_key not in PROVIDERS:
             raise ValueError(f"不支持的数据库产品名称：{provider_key}")
 
-    def _ensure_unique_name(self, name: str, exclude_id: str | None = None) -> str:
+    def _ensure_unique_name(
+        self,
+        name: str,
+        provider_key: str,
+        exclude_id: str | None = None,
+    ) -> str:
         normalized = name.strip()
         if not normalized:
             raise ValueError("连接名称不能为空")
+        self._ensure_provider_key(provider_key)
         key = self._name_key(normalized)
         for profile in self._profiles:
-            if profile.id != exclude_id and self._name_key(profile.name) == key:
-                raise ValueError(f"连接名称必须全局唯一：{normalized}")
+            if (profile.id != exclude_id
+                    and profile.provider_key == provider_key
+                    and self._name_key(profile.name) == key):
+                raise ValueError(
+                    f"同一数据库产品内连接名称必须唯一：{provider_key} / {normalized}"
+                )
         return normalized
 
-    def validate_name(self, name: str, exclude_id: str | None = None) -> str:
+    def validate_name(
+        self,
+        name: str,
+        provider_key: str,
+        exclude_id: str | None = None,
+    ) -> str:
         """校验连接名称，可供编辑对话框在关闭前反馈重复名。"""
-        return self._ensure_unique_name(name, exclude_id)
+        return self._ensure_unique_name(name, provider_key, exclude_id)
 
     def _validate_loaded_names(self) -> None:
-        seen: dict[str, str] = {}
+        seen: dict[tuple[str, str], str] = {}
         seen_ids: set[str] = set()
         for profile in self._profiles:
             self._ensure_provider_key(profile.provider_key)
             if profile.id in seen_ids:
                 raise ValueError(f"连接配置存在重复标识：{profile.id}")
             seen_ids.add(profile.id)
-            key = self._name_key(profile.name)
+            key = (profile.provider_key, self._name_key(profile.name))
             previous = seen.get(key)
             if previous is not None:
-                raise ValueError(f"连接配置存在重复名称：{profile.name}")
+                raise ValueError(
+                    f"连接配置存在同一数据库产品内重复名称："
+                    f"{profile.provider_key} / {profile.name}"
+                )
             seen[key] = profile.id
 
     def add(self, profile: ConnectionProfile) -> None:
         self._ensure_provider_key(profile.provider_key)
-        profile.name = self._ensure_unique_name(profile.name)
+        profile.name = self._ensure_unique_name(profile.name, profile.provider_key)
         if self.get(profile.id) is not None:
             raise ValueError(f"连接已存在：{profile.id}")
         profile.group = None
@@ -94,7 +112,9 @@ class ConnectionService:
     def update(self, profile: ConnectionProfile) -> None:
         self._ensure_provider_key(profile.provider_key)
         existing = self.get(profile.id)
-        profile.name = self._ensure_unique_name(profile.name, profile.id)
+        profile.name = self._ensure_unique_name(
+            profile.name, profile.provider_key, profile.id
+        )
         if existing is not None:
             profile.group = existing.group
         profile.touch()

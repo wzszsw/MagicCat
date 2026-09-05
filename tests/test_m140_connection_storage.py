@@ -71,10 +71,10 @@ def test_duplicate_name_is_reported_before_dialog_accepts(qtbot, monkeypatch, tm
     dialog._validate_accept()
 
     assert dialog.result() == 0
-    assert warnings and "全局唯一" in warnings[0]
+    assert warnings and "同一数据库产品内连接名称必须唯一" in warnings[0]
 
 
-def test_connection_names_are_global_and_renames_follow_filename(tmp_path):
+def test_connection_names_are_unique_per_product_and_renames_follow_filename(tmp_path):
     from magiccat.services.connection_service import ConnectionService
     from magiccat.services.profile_store import ProfileStore
 
@@ -86,9 +86,17 @@ def test_connection_names_are_global_and_renames_follow_filename(tmp_path):
     try:
         service.add(duplicate)
     except ValueError as exc:
-        assert "全局唯一" in str(exc)
+        assert "同一数据库产品内连接名称必须唯一" in str(exc)
     else:
-        raise AssertionError("不同分组也不应允许连接名称重复")
+        raise AssertionError("同一数据库产品内不应允许连接名称重复")
+
+    cross_product = ConnectionProfile(name="同名", provider_key="PostgreSQL")
+    service.add(cross_product)
+    assert service.get(cross_product.id) is cross_product
+    reloaded = ConnectionService(ProfileStore(tmp_path))
+    assert {(profile.provider_key, profile.name) for profile in reloaded.profiles} == {
+        ("MySQL", "同名"), ("PostgreSQL", "同名")
+    }
 
     service.add_group("另一组")
     service.move_to_group(first.id, "另一组")
@@ -108,7 +116,7 @@ def test_connection_names_are_global_and_renames_follow_filename(tmp_path):
     try:
         service.update(conflicting)
     except ValueError as exc:
-        assert "全局唯一" in str(exc)
+        assert "同一数据库产品内连接名称必须唯一" in str(exc)
     else:
         raise AssertionError("重命名到已有连接名时应失败")
 
@@ -155,7 +163,7 @@ def test_service_rejects_duplicate_names_already_on_disk(tmp_path):
 
     store = ProfileStore(tmp_path)
     store.save_profile(ConnectionProfile(name="重复"))
-    # 直接制造无效配置，验证加载时也不放行重复名称。
+    # 直接制造无效配置，验证加载时也不放行同一产品内重复名称。
     second = ConnectionProfile(name="重复")
     path = (tmp_path / "MySQL" / "Servers" / "重复-手工"
             / "connection.json")

@@ -63,7 +63,7 @@ class ConnectionEditDialog(QDialog):
     def __init__(self, parent: QWidget | None = None,
                  profile: ConnectionProfile | None = None,
                  groups: list[str] | None = None,
-                 name_validator: Callable[[str, str | None], str] | None = None) -> None:
+                 name_validator: Callable[[str, str, str | None], str] | None = None) -> None:
         super().__init__(parent)
         self._editing = profile is not None
         self._profile_id = profile.id if profile is not None else None
@@ -326,15 +326,15 @@ class ConnectionEditDialog(QDialog):
             self.name_edit.setFocus()
             self.name_edit.setPlaceholderText("名称不能为空")
             return
+        key = self.type_combo.currentData() or self._selected_key
         if self._name_validator is not None:
             try:
-                self._name_validator(name, self._profile_id)
+                self._name_validator(name, key, self._profile_id)
             except ValueError as exc:
                 QMessageBox.critical(self, "连接名称", str(exc))
                 self.name_edit.setFocus()
                 self.name_edit.selectAll()
                 return
-        key = self.type_combo.currentData() or self._selected_key
         if requires_initial_database(key) and not self.db_edit.text().strip():
             QMessageBox.warning(self, "初始数据库", "PostgreSQL/GaussDB 连接必须指定初始数据库。")
             self.db_edit.setFocus()

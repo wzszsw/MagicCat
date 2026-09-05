@@ -222,7 +222,7 @@ JPype 下不需要序列化，但仍需**稳定的跨语言类型映射**（避�
 
 | 项 | 方案 |
 |---|---|
-| 连接口令存储 | 用户文档目录下的 `MagicCat/<provider_key>/Servers/<连接名称>/connection.json`（按产品类型逐连接目录保存版本化 JSON，`password` 明文；连接名称全局唯一，不生成哈希或碰撞后缀）；组关系独立保存于 `MagicCat/groups.json`；文件采用原子替换，Unix 权限为 `0600`，不使用 Windows 注册表 |
+| 连接口令存储 | 用户文档目录下的 `MagicCat/<provider_key>/Servers/<连接名称>/connection.json`（按产品类型逐连接目录保存版本化 JSON，`password` 明文；同一 `provider_key` 内连接名称唯一，不同产品可同名，不生成哈希或碰撞后缀）；组关系独立保存于 `MagicCat/groups.json`；文件采用原子替换，Unix 权限为 `0600`，不使用 Windows 注册表 |
 | 内存中的口令 | 连接建立后即从内存配置中清除明文引用；日志一律脱敏（`****`） |
 | 传输 | 直连 JDBC，无自建网络层；无中间人面 |
 | SQL 安全 | 编辑类 SQL 只允许主键定位的 UPDATE/DELETE 由程序生成；用户自定义 SQL 属用户行为，提供"事务提交前确认"开关 |
@@ -467,6 +467,7 @@ MagicCat/
 | M144 | 连接配置文件收纳到连接名称目录，统一使用 `connections/<provider_key>/Servers/<连接名称>/connection.json`；旧的 `Servers/<连接名称>.json` 不读取、不迁移 | ✅ | 连接目录读写、重命名清理、旧扁平路径隔离回归；Ruff |
 | M145 | 默认本地数据根目录从应用配置目录迁移到各平台用户文档目录下的 `MagicCat`；保留 `MAGICCAT_HOME` 覆盖，Linux 支持 XDG 用户文档目录 | ✅ | 207 项全量回归（含跨平台路径/XDG 文档目录）；Ruff |
 | M146 | 移除连接存储中的 `connections` 中间目录，产品目录直接位于 `MagicCat` 根下，对齐 Navicat 的 `<产品>/Servers/<连接>/connection.json`；旧路径不读取、不迁移 | ✅ | 产品目录、查询目录和旧路径隔离回归；207 项全量回归；Ruff |
+| M147 | 连接名称唯一性收窄为同一 `provider_key` 内唯一，不同数据库产品允许使用相同连接名；连接表单即时校验与磁盘加载校验保持一致 | ✅ | 同产品重复名拦截、跨产品同名通过、重命名与目录隔离回归；Ruff |
 
 - 自动化测试：`uv run pytest`（207 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
