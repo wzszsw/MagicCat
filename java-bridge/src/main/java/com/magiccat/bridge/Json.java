@@ -81,12 +81,19 @@ public final class Json {
         return "{\"kind\":\"update\",\"affected\":" + Math.max(affected, 0) + "}";
     }
 
-    /** 表数据页：{total,truncated,pk,kind,columns,rows}。 */
+    /** 表数据页：{total,truncated,sql,pk,kind,columns,rows}。 */
     public static String dataset(String[] columns, List<String[]> rows, long total,
                                  String[] pk, boolean truncated) {
+        return dataset(columns, rows, total, pk, truncated, "");
+    }
+
+    /** 表数据页（带本次分页执行的 SQL，供状态栏展示）。 */
+    public static String dataset(String[] columns, List<String[]> rows, long total,
+                                 String[] pk, boolean truncated, String sql) {
         StringBuilder b = new StringBuilder(256);
         b.append("{\"total\":").append(total)
                 .append(",\"truncated\":").append(truncated)
+                .append(",\"sql\":").append(q(sql))
                 .append(",\"pk\":[");
         for (int i = 0; i < pk.length; i++) {
             if (i > 0) {

@@ -41,42 +41,43 @@ public final class TableDataApi {
         return page(configId, "", schema, table, offset, limit, orderBy, where);
     }
 
-    /** 分页读表：返回 {columns, rows, total, pk, truncated}。offset 从 0 开始。
+    /** 分页读表：返回 {columns, rows, total, pk, truncated, sql}。
+     * offset 从 0 开始。
      *  database 仅对 PG 有意义（跨库时临时连到该库），MySQL 传空即可。 */
     public static String page(String configId, String database, String schema, String table,
                               int offset, int limit, String orderBy, String where) {
         String qtable = quoteIdent(configId, schema) + "." + quoteIdent(configId, table);
-        String whereClause = (where == null || where.isBlank()) ? " WHERE 1=1" : " WHERE " + where.trim();
-        long total;
+        String whereClause = (where == null || where.isBlank()) ? "" : " WHERE " + where.trim();
+        int pageSize = Math.max(limit, 1);
         List<String[]> rows = new ArrayList<>();
         String[] columns;
-        try (Connection conn = requireConnection(configId, database);
-             PreparedStatement countPs = conn.prepareStatement(
-                     "SELECT COUNT(*) FROM " + qtable + whereClause);
-             ResultSet countRs = countPs.executeQuery()) {
-            countRs.next();
-            total = countRs.getLong(1);
-        } catch (SQLException e) {
-            throw new IllegalStateException("统计行数失败: " + e.getMessage(), e);
-        }
         String orderSql = (orderBy == null || orderBy.isBlank()) ? "" : " ORDER BY " + orderBy;
-        // MySQL: LIMIT offset, limit; PostgreSQL: LIMIT limit OFFSET offset
-        String limitSql = ConnectionRegistry.isPostgres(configId)
-                ? " LIMIT " + Math.max(limit, 1) + " OFFSET " + Math.max(offset, 0)
-                : " LIMIT " + Math.max(offset, 0) + ", " + Math.max(limit, 1);
-        String sql = "SELECT * FROM " + qtable + whereClause + orderSql + limitSql;
+        String sourceSql = "SELECT * FROM " + qtable + whereClause;
+        // 状态栏展示用户可理解的分页 SQL；内部查询用窗口总数一次返回当前结果集总条数。
+        String displaySql = sourceSql + orderSql + paginationClause(configId, offset, pageSize);
+        String limitSql = paginationClause(configId, offset, pageSize);
+        String sql = "SELECT page_source.*, COUNT(*) OVER() AS __mc_total FROM ("
+                + sourceSql + ") page_source" + orderSql + limitSql;
+        long total = 0;
         try (Connection conn = requireConnection(configId, database);
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             ResultSetMetaData md = rs.getMetaData();
             int n = md.getColumnCount();
-            columns = new String[n];
-            for (int i = 1; i <= n; i++) {
+            int dataColumns = Math.max(n - 1, 0);
+            columns = new String[dataColumns];
+            for (int i = 1; i <= dataColumns; i++) {
                 columns[i - 1] = md.getColumnLabel(i);
             }
             while (rs.next()) {
-                String[] row = new String[n];
-                for (int i = 1; i <= n; i++) {
+                if (rows.isEmpty()) {
+                    total = rs.getLong(n);
+                    if (rs.wasNull()) {
+                        total = 0;
+                    }
+                }
+                String[] row = new String[dataColumns];
+                for (int i = 1; i <= dataColumns; i++) {
                     row[i - 1] = Facade.cellToString(rs.getObject(i));
                 }
                 rows.add(row);
@@ -85,7 +86,19 @@ public final class TableDataApi {
             throw new IllegalStateException("读取数据失败: " + e.getMessage(), e);
         }
         String[] pk = primaryKey(configId, database, schema, table);
-        return Json.dataset(columns, rows, total, pk, rows.size() >= Math.max(limit, 1));
+        // Navicat 风格：不预判下一页，分页器始终允许向后翻页；空页自然返回空 rows。
+        boolean fullPage = rows.size() >= pageSize;
+        return Json.dataset(columns, rows, total, pk, fullPage, displaySql);
+    }
+
+    /** 按数据库方言生成 LIMIT/OFFSET 片段，集中维护分页语义。 */
+    private static String paginationClause(String configId, int offset, int limit) {
+        int safeOffset = Math.max(offset, 0);
+        int safeLimit = Math.max(limit, 1);
+        // MySQL/MariaDB: LIMIT offset, limit; PostgreSQL/GaussDB: LIMIT limit OFFSET offset
+        return ConnectionRegistry.isPostgres(configId)
+                ? " LIMIT " + safeLimit + " OFFSET " + safeOffset
+                : " LIMIT " + safeOffset + ", " + safeLimit;
     }
 
     /** 主键列（按 ORDINAL_POSITION 排序），无主键返回空数组。 */

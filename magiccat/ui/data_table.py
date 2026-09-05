@@ -13,24 +13,29 @@ import logging
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from magiccat.models.profile import ConnectionProfile
 from magiccat.services.data_service import DataService
+from magiccat.services.dialects import DEFAULT_PAGE_SIZE
 from magiccat.services.metadata_service import MetadataService
 from magiccat.ui.grid import DISPLAY_LIMIT, ResultView, _display_text
 from magiccat.ui.job import run_async
 
 logger = logging.getLogger(__name__)
 
-PAGE_SIZE = 100
+PAGE_SIZE = DEFAULT_PAGE_SIZE
 
 
 class EditableTableModel(QAbstractTableModel):
@@ -160,24 +165,15 @@ class DataTableWidget(QWidget):
         root = QVBoxLayout(self)
 
         bar = QHBoxLayout()
-        self.btn_first = QPushButton("⏮")
-        self.btn_prev = QPushButton("◀ 上一页")
-        self.btn_next = QPushButton("下一页 ▶")
-        self.page_label = QLabel("…")
         self.btn_refresh = QPushButton("刷新")
         self.btn_add = QPushButton("新增行")
         self.btn_delete = QPushButton("删除选中")
         self.btn_save = QPushButton("保存更改")
         self.btn_paste = QPushButton("粘贴…")
         self.btn_export = QPushButton("导出…")
-        for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,
-                  self.btn_add, self.btn_delete, self.btn_save, self.btn_paste,
-                  self.btn_export):
+        for b in (self.btn_refresh, self.btn_add, self.btn_delete, self.btn_save,
+                  self.btn_paste, self.btn_export):
             bar.addWidget(b)
-        self.btn_first.clicked.connect(lambda: self._goto(0))
-        self.btn_prev.clicked.connect(lambda: self._goto(max(0, self._offset - self._limit)))
-        self.btn_next.clicked.connect(
-            lambda: self._goto(self._offset + self._limit))
         self.btn_refresh.clicked.connect(self._reload)
         self.btn_add.clicked.connect(self._add_row)
         self.btn_delete.clicked.connect(self._delete_selected)
@@ -198,8 +194,58 @@ class DataTableWidget(QWidget):
         self.view._mc_paste_tsv = self._paste_from_clipboard
         root.addWidget(self.view, 1)
 
+        status_bar = QWidget(self)
+        status_layout = QHBoxLayout(status_bar)
+        status_layout.setContentsMargins(4, 2, 4, 2)
+        status_layout.setSpacing(4)
+        self.sql_label = QLabel("未执行 SQL")
+        self.sql_label.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                     QSizePolicy.Policy.Preferred)
+        self.sql_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.sql_label.setToolTip("当前页执行的 SQL")
+        status_layout.addWidget(self.sql_label, 1)
+        status_layout.addWidget(self._status_separator())
         self.status_label = QLabel("")
-        root.addWidget(self.status_label)
+        self.status_label.setStyleSheet("color: #6b7280;")
+        status_layout.addWidget(self.status_label)
+        status_layout.addWidget(self._status_separator())
+
+        self.btn_first = QToolButton()
+        self.btn_first.setText("⏮")
+        self.btn_first.setToolTip("第一页")
+        self.btn_prev = QToolButton()
+        self.btn_prev.setText("◀")
+        self.btn_prev.setToolTip("上一页")
+        self.page_spin = QSpinBox()
+        self.page_spin.setRange(0, 0)
+        self.page_spin.setValue(0)
+        self.page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.page_spin.setAlignment(Qt.AlignCenter)
+        self.page_spin.setFixedWidth(54)
+        self.page_spin.setToolTip("跳转到页码")
+        self.btn_next = QToolButton()
+        self.btn_next.setText("▶")
+        self.btn_next.setToolTip("下一页")
+        self.btn_last = QToolButton()
+        self.btn_last.setText("⏭")
+        self.btn_last.setToolTip("最后一页")
+        self.btn_first.clicked.connect(lambda: self._goto(0))
+        self.btn_prev.clicked.connect(lambda: self._goto(max(0, self._offset - self._limit)))
+        self.btn_next.clicked.connect(lambda: self._goto(self._offset + self._limit))
+        self.btn_last.clicked.connect(lambda: self._goto_page(self._page_count))
+        self.page_spin.editingFinished.connect(self._goto_spin_page)
+        for control in (self.btn_first, self.btn_prev, self.page_spin,
+                        self.btn_next, self.btn_last):
+            status_layout.addWidget(control)
+        root.addWidget(status_bar)
+
+    @staticmethod
+    def _status_separator() -> QFrame:
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setFixedWidth(1)
+        return separator
 
     # ---- 数据加载 ----
     def _order_for(self, pk: list[str], sort: tuple | None) -> str:
@@ -219,7 +265,7 @@ class DataTableWidget(QWidget):
         return quote_ident(self.profile.provider_key, name)
 
     def _reload(self) -> None:
-        """后台拉取 列元数据(首次) + 当前页 + 总行数。"""
+        """后台拉取列元数据（首次）与当前结果集分页。"""
         if self._busy:
             return
         self._busy = True
@@ -243,7 +289,13 @@ class DataTableWidget(QWidget):
             cols_meta, pk, page = payload
             self._columns_meta = cols_meta or self._columns_meta
             self._pk = pk
-            self._total = int(page.get("total", 0))
+            incoming_total = int(page.get("total", 0))
+            # 窗口统计在空页没有行可携带；向后翻到空页时保留上一页已知的
+            # 当前结果集总数，避免状态栏被清成 0。
+            if page.get("rows") or self._offset == 0 or not self._total:
+                self._total = incoming_total
+            self.sql_label.setText(str(page.get("sql") or "未执行 SQL"))
+            self.sql_label.setToolTip(str(page.get("sql") or "当前页执行的 SQL"))
             self._apply_page(page)
 
         def error(msg: str) -> None:
@@ -266,31 +318,61 @@ class DataTableWidget(QWidget):
         self._model = EditableTableModel(columns, rows, list(page.get("pk", [])), pk_indexes)
         self._model.readonly = not self._pk
         self.view.setModel(self._model)
-        if not self._pk:
-            self.status_label.setText("（该表无主键：只读浏览，编辑/删除已禁用）")
-        self._update_page_label()
-        if page.get("truncated"):
+        self._update_pager_controls()
+        page_no = self._offset // self._limit + 1
+        if rows:
+            first_record = self._offset + 1
             self.status_label.setText(
-                self.status_label.text() + f" · 仅显示前 {self._limit} 行（请用筛选缩小范围）")
+                f"第 {first_record} 条记录（共 {self._total} 条）于第 {page_no} 页"
+            )
+        else:
+            self.status_label.setText(f"第 {page_no} 页没有记录")
 
-    def _update_page_label(self) -> None:
+    def _update_pager_controls(self) -> None:
         if self._total <= 0:
-            self.page_label.setText("0 行")
+            self._page_count = 0
+            page_no = self._offset // self._limit + 1
+            self.page_spin.blockSignals(True)
+            self.page_spin.setRange(1, 2_147_483_647)
+            self.page_spin.setValue(page_no)
+            self.page_spin.blockSignals(False)
+            self.btn_first.setEnabled(self._offset > 0)
+            self.btn_prev.setEnabled(self._offset > 0)
+            self.btn_next.setEnabled(True)
+            self.btn_last.setEnabled(False)
             return
         page_no = self._offset // self._limit + 1
-        pages = (self._total - 1) // self._limit + 1
-        self.page_label.setText(
-            f"第 {page_no}/{pages} 页 · 共 {self._total} 行（当前页 {self._offset + 1}-"
-            f"{min(self._offset + self._limit, self._total)}）")
+        self._page_count = (self._total - 1) // self._limit + 1
+        self.page_spin.blockSignals(True)
+        self.page_spin.setRange(1, 2_147_483_647)
+        self.page_spin.setValue(page_no)
+        self.page_spin.blockSignals(False)
         self.btn_first.setEnabled(self._offset > 0)
         self.btn_prev.setEnabled(self._offset > 0)
-        self.btn_next.setEnabled(self._offset + self._limit < self._total)
+        self.btn_next.setEnabled(True)
+        self.btn_last.setEnabled(page_no < self._page_count)
 
     def _goto(self, offset: int) -> None:
-        if offset < 0 or (self._total and offset >= self._total):
+        if offset < 0:
             return
         self._offset = offset
         self._reload()
+
+    @property
+    def _page_count(self) -> int:
+        return getattr(self, "_page_count_value", 0)
+
+    @_page_count.setter
+    def _page_count(self, value: int) -> None:
+        self._page_count_value = max(int(value), 0)
+
+    def _goto_page(self, page_no: int) -> None:
+        if page_no < 1:
+            return
+        self._goto((page_no - 1) * self._limit)
+
+    def _goto_spin_page(self) -> None:
+        self._goto_page(self.page_spin.value())
 
     def _apply_filter(self) -> None:
         self._where = self.filter_edit.text().strip()
@@ -492,7 +574,7 @@ class DataTableWidget(QWidget):
                    self._data, self._metadata, where=self._where or None)
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
-        for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_refresh,
-                  self.btn_add, self.btn_delete, self.btn_save, self.btn_paste,
-                  self.btn_export):
+        for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_last,
+                  self.btn_refresh, self.btn_add, self.btn_delete, self.btn_save,
+                  self.btn_paste, self.btn_export, self.page_spin):
             b.setEnabled(enabled)

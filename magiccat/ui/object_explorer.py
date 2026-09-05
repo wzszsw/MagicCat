@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 from magiccat.models.profile import ConnectionProfile
 from magiccat.services.connection_service import ConnectionService
+from magiccat.services.dialects import supports_schema
 from magiccat.services.metadata_service import MetadataService
 from magiccat.ui.dialogs import ConnectionEditDialog
 from magiccat.ui.job import run_async
@@ -120,7 +121,8 @@ class ObjectExplorer(QTreeWidget):
             if kind == "database":
                 desc = {"kind": "database", "profile_id": pid, "schema": data.get("schema")}
                 context = (pid, data.get("schema", ""),
-                           "" if profile.is_postgres else data.get("schema", ""),
+                           "" if supports_schema(profile.provider_key)
+                           else data.get("schema", ""),
                            "tables")
             elif kind in ("table", "view"):
                 desc = {"kind": kind, "profile_id": pid, "schema": data.get("schema"),
@@ -284,7 +286,7 @@ class ObjectExplorer(QTreeWidget):
         if profile is None:
             return
 
-        if profile.is_postgres:
+        if supports_schema(profile.provider_key):
             self._load_database_schemas(item, profile, database)
             return
 

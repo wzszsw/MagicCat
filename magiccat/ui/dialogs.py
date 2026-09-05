@@ -32,7 +32,11 @@ from PySide6.QtWidgets import (
 )
 
 from magiccat.models.profile import DEFAULT_GROUP, ConnectionProfile
-from magiccat.services.dialects import PROVIDERS, supported_keys
+from magiccat.services.dialects import (
+    PROVIDERS,
+    requires_initial_database,
+    supported_keys,
+)
 from magiccat.services.settings import AppSettings
 from magiccat.utils.errors import clean_java_error
 
@@ -150,6 +154,7 @@ class ConnectionEditDialog(QDialog):
         title = QLabel(spec["title"])
         title.setStyleSheet("font-weight: bold; font-size: 14px;")
         form.addRow("", title)
+        self._form_title = title
 
         self.name_edit = QLineEdit(src.name)
         self.type_combo = QComboBox()
@@ -208,6 +213,7 @@ class ConnectionEditDialog(QDialog):
         self._apply_defaults(force_user=True)
         spec = self._product_form_spec(self._selected_key)
         if hasattr(self, "_database_label"):
+            self._form_title.setText(spec["title"])
             self._database_label.setText(spec["database_label"])
             self.db_edit.setPlaceholderText(spec["database_placeholder"])
             self._product_hint.setText(spec["hint"])
@@ -219,7 +225,7 @@ class ConnectionEditDialog(QDialog):
         保留 ``db_edit`` 属性供 PostgreSQL/GaussDB 的必填初始化数据库使用，
         但 MySQL/MariaDB 的表单不展示该行，也不把历史值带回新的配置。
         """
-        visible = self._selected_key in ("postgresql", "gaussdb")
+        visible = requires_initial_database(self._selected_key)
         self._database_label.setVisible(visible)
         self.db_edit.setVisible(visible)
         if not visible:
@@ -294,6 +300,7 @@ class ConnectionEditDialog(QDialog):
     def _go_next(self) -> None:
         # 刚从产品页选中一个新产品：应用该产品的默认 主机/端口/用户名
         self._sync_type_combo()
+        self._form_title.setText(self._product_form_spec(self._selected_key)["title"])
         self._apply_defaults(force_user=True)
         self._stack.setCurrentWidget(self._form_page)
         self._sync_buttons()
@@ -326,8 +333,8 @@ class ConnectionEditDialog(QDialog):
             self.name_edit.setFocus()
             self.name_edit.setPlaceholderText("名称不能为空")
             return
-        if (self.type_combo.currentData() in ("postgresql", "gaussdb")
-                and not self.db_edit.text().strip()):
+        key = self.type_combo.currentData() or self._selected_key
+        if requires_initial_database(key) and not self.db_edit.text().strip():
             QMessageBox.warning(self, "初始数据库", "PostgreSQL/GaussDB 连接必须指定初始数据库。")
             self.db_edit.setFocus()
             return
@@ -344,7 +351,7 @@ class ConnectionEditDialog(QDialog):
         base.username = self.user_edit.text().strip() or "root"
         base.password = self.pass_edit.text()
         base.database = (self.db_edit.text().strip()
-                         if base.provider_key in ("postgresql", "gaussdb") else "")
+                         if requires_initial_database(base.provider_key) else "")
         return base
 
 

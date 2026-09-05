@@ -119,6 +119,11 @@
   MySQL 只有 JDBC 不覆盖的引擎/估计行数/索引/触发器等富信息才走 `information_schema`，且不得让这些 SQL 路由到 PG/GaussDB。
   若 PG/GaussDB 驱动的 `getCatalogs()` 只返回当前库，数据库全量枚举允许定向使用 `pg_database` 兜底。
 - 标识符/分页语法**按方言**：PG 双引号 + `LIMIT n OFFSET m`，MySQL 反引号 + `LIMIT offset, limit`。
+- 应用层方言由 `magiccat/services/dialects.py` 的 `Dialect` 能力对象统一提供：是否支持独立 schema、是否支持序列、分页片段、database 是否等价 schema、初始化数据库是否必填；UI 领域判断必须使用这些能力，不能散落硬编码产品名。
+- 对象页的作用域语义：MySQL/MariaDB 在应用对象树中把 database 视作 schema；PostgreSQL/GaussDB 必须同时激活 database 与 schema 才加载表/视图/函数等 schema 作用域对象，也不得激活表工作区。仅选中 database 时清空旧列表并保持未加载，不擅自补 `public`、初始库或首个 schema；缺少作用域的底层调用不由 UI 伪造默认值。
+- 表数据浏览固定每页 1000 行；分页器始终允许向后翻页，超出结果集时自然显示空页；在同一当前筛选结果集上返回窗口总数。禁止单独执行全表 `SELECT COUNT(*)`；底部状态栏左侧显示本次分页 SQL，右侧显示当前页/当前结果集总条数与分页器。
+- 表数据页底部状态栏按 Navicat 分为独立区段：SQL、记录状态、分页器之间使用竖向分隔线；有数据时显示“第 n 条记录（共 m 条）于第 p 页”，空页只显示“第 p 页没有记录”。
+- 新建连接向导第二页标题必须跟随当前产品显示（如 MySQL 连接、PostgreSQL 连接、GaussDB 连接），不得固定为 MySQL。
 - **限定名 = 每个标识符分别加引号，再以 `.` 连接**：`"schema"."table"`（PG）、`` `schema`.`table` ``（MySQL）。
   **绝不能把整个 `schema.table` 当成一个标识符包进一对引号**（即 `"schema.table"` 或 `` `schema.table` ``），
   否则 PG/MySQL 都报 "relation does not exist / 找不到"。

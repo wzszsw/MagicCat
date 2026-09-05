@@ -42,7 +42,9 @@ class ConnectionProfile:
     @property
     def is_postgres(self) -> bool:
         """是否使用 PostgreSQL 兼容的 catalog/schema 与 SQL 语义。"""
-        return self.provider_key in ("postgresql", "gaussdb")
+        from magiccat.services.dialects import dialect
+
+        return dialect(self.provider_key).postgres_compatible
 
     def to_dict(self) -> dict:
         """序列化不含密码的连接字段，密码由存储层按配置写入。"""

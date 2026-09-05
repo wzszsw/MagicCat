@@ -139,9 +139,9 @@ Server
 
 ### 4.3 查询执行与分页
 
-- 查询返回 `ResultPage{ columns, rows(可空值标记), total, hasMore, truncated }`。
-- 前端网格采用**服务端分页**：`LIMIT offset,size`（MySQL 方言由 `MySqlDialect` 生成，包住用户原始 SQL 时使用子查询包裹，保证 ORDER BY 正确）。
-- 行数估算：`SELECT COUNT(*)` 单独执行并缓存给状态栏；超大表上可降级为"仅提示已加载行数"。
+- 查询返回 `ResultPage{ columns, rows(可空值标记), total, truncated, sql }`。
+- 表数据页固定每页 1000 行，采用服务端分页；MySQL/MariaDB 使用 `LIMIT offset,size`，PostgreSQL/GaussDB 使用 `LIMIT size OFFSET offset`。分页器始终允许向后翻页，超出结果集时自然返回空页，不再单独执行全表 `SELECT COUNT(*)`。
+- `total` 由窗口统计返回当前筛选结果集的总条数，不是忽略筛选条件的全表计数；底部状态栏分为 SQL、记录状态、分页器三个区段并用竖线分隔，有数据时显示“第 n 条记录（共 m 条）于第 p 页”，空页只显示“第 p 页没有记录”。
 - 单元格统一用 `JdbcValueConverter` 转成稳定 Java 数据类型（见 §6），避免 `ResultSet.getObject()` 的方言抖动。
 
 ### 4.4 取消机制
@@ -458,6 +458,8 @@ MagicCat/
 | M135 | 对象页表头增加 Navicat 式字段分隔线，名称列补齐对象图标；用户纳入对象领域并由窗口状态驱动 | ✅ | 对象表头/图标与用户领域切换 Qt 回归；Ruff |
 | M136 | 未保存查询标签统一显示“无标题”，使用 UUID 内部 `tab_key` 与显示名解耦 | ✅ | 新查询标题/唯一键 Qt 回归；Ruff |
 | M137 | 编辑器标签按内容类型显示对象图标，固定“对象”页图标随当前领域切换 | ✅ | 固定页/查询/对象编辑/表数据标签图标 Qt 回归；Ruff |
+| M138 | 引入应用层 Dialect 能力并收口 database/schema 作用域；PG/GaussDB 未激活 schema 不加载表工作区；表数据改为每页 1000 行、当前结果集分页统计与 Navicat 底部 SQL/分页状态栏，移除独立全表计数 | ✅ | 方言/对象上下文/分页 Qt 与静态回归；Java Maven package；Ruff |
+| M139 | 对齐 Navicat 数据页底部状态栏分区与空页记录文案；修复新建连接向导第二页标题固定为 MySQL 的问题，标题随产品动态更新 | ✅ | 分页/向导/对象上下文 Qt 回归；Ruff |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

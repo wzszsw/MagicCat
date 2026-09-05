@@ -8,6 +8,7 @@ import jpype
 
 from magiccat.models.profile import ConnectionProfile
 from magiccat.services.connection_service import ConnectionService
+from magiccat.services.dialects import DEFAULT_PAGE_SIZE
 from magiccat.services.runtime import get_runtime
 
 
@@ -33,7 +34,7 @@ class DataService:
         return get_runtime().jclass("com.magiccat.bridge.TableDataApi")
 
     def load_page(self, profile: ConnectionProfile, schema: str, table: str,
-                  offset: int = 0, limit: int = 100,
+                  offset: int = 0, limit: int = DEFAULT_PAGE_SIZE,
                   order_by: str | None = None, where: str | None = None,
                   database: str = "") -> dict:
         """返回 {columns, rows, total, pk, truncated}。database 仅 PG 跨库时传目标库。"""

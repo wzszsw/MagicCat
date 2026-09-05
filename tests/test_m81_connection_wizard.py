@@ -22,16 +22,19 @@ def test_wizard_product_page_and_defaults(qtbot):
 
     d._select_product("postgresql")
     assert d._stack.currentWidget() is d._form_page
+    assert d._form_title.text() == "PostgreSQL 连接"
     assert d.host_edit.text() in ("127.0.0.1", "localhost")
     assert d.port_spin.value() == 5432
     assert d.user_edit.text() == "postgres"
     assert d.db_edit.text() == "postgres"
 
     d.type_combo.setCurrentIndex(d.type_combo.findData("mysql"))
+    assert d._form_title.text() == "MySQL 连接"
     assert d.port_spin.value() == 3306
     assert d.user_edit.text() == "root"
 
     d.type_combo.setCurrentIndex(d.type_combo.findData("gaussdb"))
+    assert d._form_title.text() == "GaussDB 连接"
     assert d.port_spin.value() == 5432
     assert d.user_edit.text() == "gaussdb"
     assert d.db_edit.text() == "postgres"

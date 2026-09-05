@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from magiccat.models.profile import ConnectionProfile
 from magiccat.resources import app_icon_png
 from magiccat.services.connection_service import ConnectionService
+from magiccat.services.dialects import supports_schema, supports_sequences
 from magiccat.services.history import HistoryStore
 from magiccat.services.metadata_service import MetadataService
 from magiccat.services.query_service import QueryService
@@ -52,6 +53,9 @@ from magiccat.ui.theme import apply_theme
 logger = logging.getLogger(__name__)
 
 _SYSTEM_SCHEMAS = {"information_schema", "performance_schema", "mysql", "sys"}
+_SCHEMA_SCOPED_DOMAINS = frozenset({
+    "tables", "views", "routines", "triggers", "sequences",
+})
 
 
 def _is_editor(widget) -> bool:
@@ -307,16 +311,26 @@ class MainWindow(QMainWindow):
         self._reload_query_browse()
 
     def _show_domain(self, cat_type: str, schema: str = "", database: str = "",
-                     activate: bool = True) -> None:
+                     activate: bool = True,
+                     scope_profile: ConnectionProfile | None = None) -> bool:
         """对象树选中某分类 → 对象页切到对应领域子页并展示列表。"""
         page = self._domain_pages.get(cat_type)
         if page is None:
-            return
+            return False
+        profile = scope_profile or self._current_profile()
+        if (profile is not None
+                and not self._domain_context_ready(profile, cat_type, schema, database)):
+            # PG/GaussDB 只有 database、尚未激活 schema 时，没有可展示的对象域。
+            # 清掉该页旧列表，避免把上一个 schema 的对象误留在当前库下。
+            if hasattr(page, "clear"):
+                page.clear()
+            return False
         self._set_domain_action(cat_type)
         self.domain_stack.setCurrentWidget(page)
         if activate:
             self.editor_tabs.setCurrentIndex(0)
-        self._reload_current_domain(schema=schema, database=database)
+        self._reload_current_domain(schema=schema, database=database, profile=profile)
+        return True
 
     def _object_scope(self, profile: ConnectionProfile, schema: str = "",
                       database: str = "") -> tuple[str, str]:
@@ -332,26 +346,50 @@ class MainWindow(QMainWindow):
             schema = schema or context[2]
         database = (database or "").strip()
         schema = (schema or "").strip()
-        if profile.is_postgres:
+        if supports_schema(profile.provider_key):
             return database, schema
         database = database or schema
         schema = schema or database
         return database, schema
 
-    def _reload_current_domain(self, schema: str = "", database: str = "") -> None:
+    def _domain_context_ready(self, profile: ConnectionProfile, domain: str,
+                              schema: str = "", database: str = "") -> bool:
+        """判断领域是否拥有足够的对象作用域。
+
+        MySQL/MariaDB 在应用对象树语义中把 database 当作 schema 使用；
+        PostgreSQL/GaussDB 则必须同时有 database 和 schema。这里是 UI
+        领域判断，不改变 JDBC 层对 MySQL ``schema=null`` 的协议约定。
+        """
+        if domain not in _SCHEMA_SCOPED_DOMAINS:
+            return True
+        database, schema = self._object_scope(profile, schema, database)
+        if supports_schema(profile.provider_key):
+            return bool(database and schema)
+        # MySQL 没有独立 schema；缺少 database 时不替用户补库，交给底层自然报错/返回空。
+        return True
+
+    def _reload_current_domain(self, schema: str = "", database: str = "",
+                               profile: ConnectionProfile | None = None) -> None:
         page = self.domain_stack.currentWidget()
+        profile = profile or self._current_profile()
+        if (profile is not None
+                and not self._domain_context_ready(profile, self._current_domain,
+                                                   schema, database)):
+            if hasattr(page, "clear"):
+                page.clear()
+            return
         if page is self.browse_page:
-            self._reload_query_browse(schema=schema, database=database)
+            self._reload_query_browse(profile=profile, schema=schema, database=database)
         elif page is self.table_page:
-            self._reload_table_browse(schema=schema, database=database)
+            self._reload_table_browse(profile=profile, schema=schema, database=database)
         elif page is self.view_page:
-            self._reload_view_browse(schema=schema, database=database)
+            self._reload_view_browse(profile=profile, schema=schema, database=database)
         elif page is self.routine_page:
-            self._reload_routine_browse(schema=schema, database=database)
+            self._reload_routine_browse(profile=profile, schema=schema, database=database)
         elif page is self.trigger_page:
-            self._reload_trigger_browse(schema=schema, database=database)
+            self._reload_trigger_browse(profile=profile, schema=schema, database=database)
         elif page is self.sequence_page:
-            self._reload_sequence_browse(database=database, schema=schema)
+            self._reload_sequence_browse(profile=profile, database=database, schema=schema)
         elif page is self.user_page:
             self._reload_user_browse()
         else:
@@ -369,7 +407,7 @@ class MainWindow(QMainWindow):
         self.browse_page.load_queries(profile.id, schema)
         self.browse_page.ctx_label.setText(
             f"{profile.display_name} · {database} · {schema or '默认'}"
-            if profile.is_postgres else
+            if supports_schema(profile.provider_key) else
             f"{profile.display_name} · {schema or '默认'}")
 
     def _reload_table_browse(self, profile=None, schema: str = "",
@@ -381,9 +419,13 @@ class MainWindow(QMainWindow):
             self.table_page.ctx_label.setText("")
             return
         database, schema = self._object_scope(profile, schema, database)
+        if (supports_schema(profile.provider_key)
+                and not self._domain_context_ready(profile, "tables", schema, database)):
+            self.table_page.clear()
+            return
         self.table_page.ctx_label.setText(
             f"{profile.display_name} · {database} · {schema or '默认'}"
-             if profile.is_postgres else
+             if supports_schema(profile.provider_key) else
              f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
@@ -396,7 +438,7 @@ class MainWindow(QMainWindow):
             # 错误不占用表页操作栏，保留当前上下文并用统一错误框提示。
             self.table_page.ctx_label.setText(
                 f"{profile.display_name} · {database} · {schema or '默认'}"
-                 if profile.is_postgres else
+                 if supports_schema(profile.provider_key) else
                  f"{profile.display_name} · {schema or '默认'}")
             from magiccat.utils.errors import clean_java_error
 
@@ -415,7 +457,7 @@ class MainWindow(QMainWindow):
         database, schema = self._object_scope(profile, schema, database)
         self.view_page.ctx_label.setText(
             f"{profile.display_name} · {database} · {schema or '默认'}"
-             if profile.is_postgres else
+             if supports_schema(profile.provider_key) else
              f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
@@ -439,7 +481,7 @@ class MainWindow(QMainWindow):
         database, schema = self._object_scope(profile, schema, database)
         self.routine_page.ctx_label.setText(
             f"{profile.display_name} · {database} · {schema or '默认'}"
-             if profile.is_postgres else
+             if supports_schema(profile.provider_key) else
              f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
@@ -464,7 +506,7 @@ class MainWindow(QMainWindow):
         database, schema = self._object_scope(profile, schema, database)
         self.trigger_page.ctx_label.setText(
             f"{profile.display_name} · {database} · {schema or '默认'}"
-             if profile.is_postgres else
+             if supports_schema(profile.provider_key) else
              f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
@@ -504,12 +546,12 @@ class MainWindow(QMainWindow):
             f"{profile.display_name} · {database} · {schema or '默认'}")
 
         def fetch():
-            if not profile.is_postgres:
+            if not supports_sequences(profile.provider_key):
                 return []
             return self._metadata.sequences_in_database(profile, database, schema)
 
         def done(rows: list[dict]) -> None:
-            if profile.is_postgres:
+            if supports_sequences(profile.provider_key):
                 self.sequence_page.load_sequences(profile.id, database, schema, rows)
             else:
                 self.sequence_page.clear()
@@ -1176,7 +1218,7 @@ class MainWindow(QMainWindow):
 
     def _reload_ws_context(self, ws, profile) -> None:
         """加载一个查询标签自己的 Catalog/Schema 下拉，不影响其它标签。"""
-        ws.set_schema_visible(profile.is_postgres)
+        ws.set_schema_visible(supports_schema(profile.provider_key))
         ws.database_combo.blockSignals(True)
         ws.database_combo.clear()
         ws.database_combo.setEnabled(False)
@@ -1208,7 +1250,7 @@ class MainWindow(QMainWindow):
             ws._pending_database = ""
             ws.database_combo.blockSignals(False)
             ws.database_combo.setEnabled(True)
-            if profile.is_postgres and desired:
+            if supports_schema(profile.provider_key) and desired:
                 self._reload_ws_schemas(ws, profile, desired)
             else:
                 self._clear_ws_schema(ws)
@@ -1283,7 +1325,7 @@ class MainWindow(QMainWindow):
         if profile is None:
             return
         database = (ws.database_combo.currentText() or "").strip()
-        if profile.is_postgres and database:
+        if supports_schema(profile.provider_key) and database:
             self._reload_ws_schemas(ws, profile, database)
         else:
             self._clear_ws_schema(ws)
@@ -1300,7 +1342,7 @@ class MainWindow(QMainWindow):
         catalog = (ws.database_combo.currentText()
                    or getattr(ws, "_pending_database", "")
                    or "").strip()
-        if not profile.is_postgres:
+        if not supports_schema(profile.provider_key):
             # MySQL/MariaDB 只有 catalog；schema 必须保持 SQL NULL 语义。
             return catalog, None
         pending = getattr(ws, "_pending_schema", None)
@@ -1538,7 +1580,7 @@ class MainWindow(QMainWindow):
         """对象页双击表：补齐该列表加载时的 Catalog 后复用树侧入口。"""
         database = self.table_page.database_context()
         profile = self._connections.get(profile_id)
-        if profile is not None and not profile.is_postgres:
+        if profile is not None and not supports_schema(profile.provider_key):
             database = database or schema
         self._on_open_table(profile_id, database, schema, table)
 
@@ -1791,7 +1833,7 @@ class MainWindow(QMainWindow):
         self._set_current_profile(profile_id)
         # 具名查询的上下文随标签打开：MySQL 保存字段是 Catalog，PG 是 Schema。
         saved_scope = (record.get("schema") or "").strip()
-        if profile.is_postgres:
+        if supports_schema(profile.provider_key):
             if saved_scope:
                 ws.set_schema(saved_scope)
         else:
@@ -1995,17 +2037,23 @@ class MainWindow(QMainWindow):
 
     def _on_domain_selected(self, profile_id: str, schema: str, cat_type: str) -> None:
         """对象树选中某分类 → 「对象」页切到该领域子页并按选中库展示列表。"""
+        profile = self._connections.get(profile_id)
         self._set_current_profile(profile_id)
-        self._show_domain(cat_type, schema=schema)
+        self._show_domain(cat_type, schema=schema, scope_profile=profile)
 
     def _on_object_context_selected(self, profile_id: str, database: str,
                                     schema: str, cat_type: str) -> None:
         """左树跟手只更新固定「对象」页，不改写已打开查询工作区。"""
+        profile = self._connections.get(profile_id)
         self._object_context = (profile_id, database, schema)
         self.state_store.dispatch(SetCurrentProfile(profile_id or None))
         if profile_id:
             self._set_current_profile(profile_id)
-        self._show_domain(cat_type, schema=schema, database=database, activate=False)
+        if profile is None:
+            self._show_domain(cat_type, schema=schema, database=database, activate=False)
+        else:
+            self._show_domain(cat_type, schema=schema, database=database,
+                              activate=False, scope_profile=profile)
 
     def _on_new_query_from_explorer(self, profile_id: str, database: str,
                                     schema: str) -> None:
@@ -2018,8 +2066,8 @@ class MainWindow(QMainWindow):
         # 模式级传具体 schema，均作为一次性初始化值写入新标签。
         self._new_editor_with_context(
             profile_id, database or "",
-            schema if profile.is_postgres else None,
-            schema_explicit=profile.is_postgres)
+            schema if supports_schema(profile.provider_key) else None,
+            schema_explicit=supports_schema(profile.provider_key))
         self._status("已新建查询"
                      + (f"（{database} · {schema}）" if schema else
                         (f"（{database}）" if database else "")), 4000)
