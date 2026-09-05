@@ -25,6 +25,7 @@
 ## 3. 界面与交互偏好
 
 - **顶部图标栏 = 功能领域切换器**，不是固定操作工具条；查询操作放在中央查询工作区，不占全局顶栏。
+- 左侧连接树 Dock 标题使用“我的连接”，与连接管理入口保持直观命名。
 - **中央工作区第 1 页固定「对象」**（不可关闭占位页），它是所有功能领域的**列表态**统一体现：
   `连接 → [database → schema] → 表/视图/实体化视图/函数/触发器/查询/… → 对象`。
   - 对象树选中什么分类，「对象」页就展示什么列表；双击对象 → 在**后面的标签页**打开编辑态。
@@ -130,6 +131,7 @@
 - **避免 N+1**：循环内不做数据库 I/O；同类信息尽量**一次批查**（用户明确定义 N+1 = 循环内网络 IO）。
 - 跨库枚举（如 PG 某库的 schema/对象）需**临时连到目标库**查询。
 - 连接配置有 `provider_key`（方言/驱动 key），贯穿 open/test/连接图标/元数据。
+- `provider_key` 统一使用数据库产品的官方名称（例如 `MySQL`、`MariaDB`、`PostgreSQL`、`GaussDB`、`SQL Server`），不得使用全小写缩写；官方名称包含空格时保留空格（`SQL Server` 已确认），不得擅自移除或替换。
 - GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；
   JDBC 驱动 `gaussdbjdbc.jar` 受版权约束，不随软件分发。用户通过「工具 → 环境」指定本机 JAR，
   设置保存于 SQLite，连接打开时动态加载。
@@ -167,7 +169,9 @@
 - 类型注解全覆盖；`uv run ruff check .` 必须通过。
 - `uv run pytest` 全绿（含真实 MySQL/PostgreSQL 集成；JVM 相关测试避免 faulthandler 误报）。
 - 遇到明确的 `PermissionError` / “拒绝访问”时，先核对目标路径和操作范围，再优先申请该目标所需权限；不得将权限环境问题误判为功能失败。
-- **报错统一风格**：错误提示统一用 `QMessageBox` 弹出（`warning`/`critical`），并清理 Java 重复前缀
+- **报错统一风格**：运行失败、加载失败、执行失败、保存失败等错误统一用
+  `QMessageBox.critical` 弹出，禁止用 `QMessageBox.warning` 代替；输入校验类提醒
+  （例如必填字段、格式不合法）才使用 `warning`。所有错误文本清理 Java 重复前缀
   （`clean_java_error`）；运行期错误不要只在状态栏/日志里静默带过。表数据/连接/对象加载失败均弹 MessageBox。
 - 改 Java 后需重新 `mvn package` 构建 jar（开发态走 `java-bridge/target/`）。
 - **打包**（exe + 便携 zip + `--selftest`）：仅在用户**明确要求**时执行；否则只 commit，不打包。
@@ -194,15 +198,23 @@
   （完整 SQLite 库，含多表 + FTS 全文搜索 + `utc_time` 字段）；每个连接目录有 `id_cache.db`(-wal/-shm)。
 - **连接配置 / 对象树结构 / 查询收藏**存于**注册表**：`HKCU\Software\PremiumSoft\Navicat\Servers\<conn>\...`
   （含 Profiles / Schemas / TableView / Columns / Query 等键）。
-- **查询 SQL 内容**存为 `.sql` 文件：`Documents\Navicat\MySQL\Servers\<conn>\<schema>\<name>.sql`。
+- **查询 SQL 内容**存为 `.sql` 文件：`Documents\Navicat\<Product>\Servers\<conn>\<database>\<schema>\<name>.sql`；MySQL/MariaDB 省略独立 schema 层。
 - **日志**：`Documents\Navicat\Premium\logs\history.log`，每条形如
   `[2026-09-03 23:29:37.687][localhost_3306][...][MYSQL][]`（即 `YYYY-MM-DD HH:MM:SS.mmm`）。
 - 结论：Navicat 对"简单数据/缓存/历史"确实用 **SQLite**；配置多为注册表/JSON；SQL 文件用文件系统。
-- **MagicCat 已按此重构本地存储**（三合一，对标 Navicat；不兼容旧 profiles.json/query.json/history.json，
+- **MagicCat 已按此重构本地存储**（不兼容旧 profiles.json/query.json/history.json/connections.json，
   旧数据弃用、不迁移、不留兼容代码）：
-  - 连接配置 → **用户数据目录下的版本化 JSON** `connections.json`（密码明文，原子写入；不依赖注册表）。
-  - 查询 SQL 内容 → **.sql 文件** `<MAGICCAT_HOME>/queries/<profile_id>/<schema>/<name>.sql`。
+  - 连接配置 → **用户文档目录下按产品类型/连接名称逐目录保存的版本化 JSON** `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/connection.json`（密码明文，原子写入；连接名称全局唯一；绝不使用 Windows 注册表）。
+  - 连接分组 → 独立的 `groups.json`，只保存真实组名和连接 ID；未分组连接不写入组索引，直接显示在连接树根部。
+  - 查询 SQL 内容 → **连接目录下的 .sql 文件**；PG 为 `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/<database>/<schema>/<name>.sql`，MySQL/MariaDB 省略独立 schema 层。
   - 元数据缓存/历史/收藏/设置/片段/任务/窗口状态 → **SQLite** `metacache.db`（kv / metadata_cache / history / favorites 表）。
-  - 统一入口：`magiccat/storage/{__init__,profile_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`；未设置 `MAGICCAT_HOME` 时按 Windows `%APPDATA%`、macOS `~/Library/Application Support`、Linux `$XDG_CONFIG_HOME` 选择目录。
+  - 统一入口：`magiccat/storage/{__init__,profile_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`；未设置 `MAGICCAT_HOME` 时使用各平台用户文档目录下的 `MagicCat`（Windows/macOS 为 `~/Documents/MagicCat`，Linux/Unix 优先解析 XDG 用户文档目录，回退到 `~/Documents/MagicCat`）。
   - 相关服务（ProfileStore/QueryLibrary/HistoryStore/AppSettings/SnippetStore/TaskStore）接口保持，
     内部实现改为上述新存储。
+  - 新建/编辑连接表单不包含“组”字段；连接树支持拖拽连接到组或根部，右键菜单负责新建、重命名、删除组和移动到分组。
+
+- **Navicat Premium 17 本机探测（2026-09-06）**：连接详情按产品写在
+  `HKCU\Software\PremiumSoft\Navicat*\Servers\<connection>`，对象缓存写在
+  `Documents\Navicat\<Product>\Servers\<connection>\id_cache.db`，查询 SQL 为同目录下的 `.sql` 文件；
+  组关系单独位于 `Documents\Navicat\Premium\profiles\vgroup.json`，格式为 `vgroups[].items[]`
+  引用连接名，未分组连接不出现在任何 item 中。该探测仅用于行为对齐，MagicCat 不读取注册表、不读取 Navicat 文件。

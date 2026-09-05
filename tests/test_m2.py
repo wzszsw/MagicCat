@@ -24,10 +24,11 @@ def test_profile_persistence_password_plaintext(tmp_path, profile_store, connect
     profile.password = "s3cret中文!@#pass"
     connection_service.add(profile)
 
-    config_path = profile_store.root / "connections.json"
+    config_path = (profile_store.connections_dir / "MySQL" / "Servers"
+                   / "配置测试" / "connection.json")
     document = json.loads(config_path.read_text(encoding="utf-8"))
-    entry = next(item for item in document["connections"] if item["id"] == profile.id)
-    assert entry["password"] == profile.password
+    assert document["id"] == profile.id
+    assert document["password"] == profile.password
     assert profile.password in config_path.read_text(encoding="utf-8")
 
     from magiccat.services.connection_service import ConnectionService

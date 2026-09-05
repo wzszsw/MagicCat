@@ -6,7 +6,7 @@ from __future__ import annotations
 def test_product_connection_icons(qtbot):
     from magiccat.ui.icons import icon
 
-    keys = ["mysql", "postgresql", "mariadb", "oracle", "sqlserver"]
+    keys = ["MySQL", "PostgreSQL", "MariaDB", "Oracle", "SQL Server"]
     icons = {k: icon("profile", k) for k in keys}
     for k, ic in icons.items():
         assert not ic.isNull(), f"{k} 图标不应为空"
@@ -25,17 +25,17 @@ def test_profile_node_uses_provider_icon(qtbot, connection_service):
 
     # 建一个 PG 连接，验证树里 profile 节点图标使用 PG 专属（非 MySQL 通用）
     p = ConnectionProfile(name="PGi", group=DEFAULT_GROUP, host="1.2.3.4", port=5432,
-                          provider_key="postgresql")
+                          provider_key="PostgreSQL")
     connection_service.add(p)
     ex = ObjectExplorer(connection_service, MetadataService(connection_service))
     qtbot.addWidget(ex)
     ex.load_profiles()
 
-    node_icon = ex.topLevelItem(0).child(0).icon(0)
+    node_icon = ex.profile_item(p.id).icon(0)
     from magiccat.ui.icons import closed_profile_icon
-    assert node_icon.cacheKey() == closed_profile_icon("postgresql").cacheKey(), \
+    assert node_icon.cacheKey() == closed_profile_icon("PostgreSQL").cacheKey(), \
         "关闭的 PG 连接节点应使用 PostgreSQL 的灰度图标"
-    assert node_icon.cacheKey() != closed_profile_icon("mysql").cacheKey(), \
+    assert node_icon.cacheKey() != closed_profile_icon("MySQL").cacheKey(), \
         "关闭的 PG 节点图标不应与 MySQL 相同"
     connection_service.close(p.id)
 
@@ -50,9 +50,9 @@ def test_closed_profile_icon_only_affects_explorer_nodes(qtbot, connection_servi
     from magiccat.ui.profile_combo import add_profile_item
 
     mysql = ConnectionProfile(name="MySQL", group=DEFAULT_GROUP, host="1.2.3.4", port=3306,
-                              provider_key="mysql")
+                              provider_key="MySQL")
     postgres = ConnectionProfile(name="PostgreSQL", group=DEFAULT_GROUP, host="1.2.3.5", port=5432,
-                                 provider_key="postgresql")
+                                 provider_key="PostgreSQL")
     connection_service.add(mysql)
     connection_service.add(postgres)
     explorer = ObjectExplorer(connection_service, MetadataService(connection_service))
@@ -64,24 +64,24 @@ def test_closed_profile_icon_only_affects_explorer_nodes(qtbot, connection_servi
     assert mysql_item is not None
     assert postgres_item is not None
     # 启动时 JDBC 连接均未打开，树中全部为关闭态灰度图标。
-    assert mysql_item.icon(0).cacheKey() == closed_profile_icon("mysql").cacheKey()
-    assert postgres_item.icon(0).cacheKey() == closed_profile_icon("postgresql").cacheKey()
+    assert mysql_item.icon(0).cacheKey() == closed_profile_icon("MySQL").cacheKey()
+    assert postgres_item.icon(0).cacheKey() == closed_profile_icon("PostgreSQL").cacheKey()
 
     # 左树选中不改变连接打开状态或图标。
     explorer.setCurrentItem(mysql_item)
-    assert mysql_item.icon(0).cacheKey() == closed_profile_icon("mysql").cacheKey()
+    assert mysql_item.icon(0).cacheKey() == closed_profile_icon("MySQL").cacheKey()
 
     monkeypatch.setattr(connection_service, "is_open", lambda profile_id: profile_id == mysql.id)
     explorer._set_profile_icon(mysql_item)
     explorer._set_profile_icon(postgres_item)
-    assert mysql_item.icon(0).cacheKey() == icon("profile", "mysql").cacheKey()
-    assert postgres_item.icon(0).cacheKey() == closed_profile_icon("postgresql").cacheKey()
+    assert mysql_item.icon(0).cacheKey() == icon("profile", "MySQL").cacheKey()
+    assert postgres_item.icon(0).cacheKey() == closed_profile_icon("PostgreSQL").cacheKey()
 
     # 查询等连接下拉仍始终使用彩色产品图标，树状态不外溢。
     combo = QComboBox()
     qtbot.addWidget(combo)
     add_profile_item(combo, mysql)
-    assert combo.itemIcon(0).cacheKey() == icon("profile", "mysql").cacheKey()
+    assert combo.itemIcon(0).cacheKey() == icon("profile", "MySQL").cacheKey()
 
 
 def test_profile_context_menu_lists_open_close_first(qtbot, connection_service, monkeypatch):

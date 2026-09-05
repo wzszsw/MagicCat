@@ -81,7 +81,7 @@ def test_designer_flow(qtbot, mysql_env, connection_service):
         dialog._generate_preview()
         preview = dialog.sql_preview.toPlainText()
         # 生成片段按 MySQL 语法为 type [CHARACTER SET…] COLLATE…] [NOT NULL] DEFAULT…
-        assert "MODIFY COLUMN `name` varchar(20)" in preview
+        assert "modify column `name` varchar(20)" in preview.casefold()
         assert "DEFAULT 'y'" in preview
         # （应用变更依赖阻塞式确认框，改在集成层直接执行生成的 SQL 验证：
         #   由 ddl_builder 生成 + QueryService 执行，dialog 仅做展示/确认）

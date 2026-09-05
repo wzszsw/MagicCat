@@ -28,9 +28,14 @@ class QueryBrowseView(ObjectBrowseView):
         self.new_object.connect(self.new_query)
         self.delete_object.connect(self.delete_query)
 
-    def load_queries(self, profile_id: str, schema: str) -> None:
+    def load_queries(self, profile_id: str, schema: str, database: str = "") -> None:
         items = query_library.QueryLibrary.default().list(profile_id)
-        rows = [q for q in items if (q.get("schema") or "") == schema]
+        rows = [dict(q) for q in items
+                if (q.get("database") or "") == (database or "")
+                and (q.get("schema") or "") == (schema or "")]
+        # 对象页的列名沿用 Navicat 的“库”：MySQL 展示 database，PG 展示 schema。
+        for row in rows:
+            row["schema"] = row.get("schema") or row.get("database") or ""
         self.load(profile_id, rows)
 
     def _selection_desc(self) -> dict | None:

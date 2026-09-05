@@ -7,6 +7,9 @@ from magiccat.services.query_library import QueryLibrary
 
 
 def test_query_library_crud(tmp_path):
+    from magiccat.storage.profile_store import JsonProfileStore
+
+    JsonProfileStore(tmp_path).save_profile(ConnectionProfile(id="p1", name="p1"))
     lib = QueryLibrary(tmp_path)
     assert lib.list("p1") == []
     lib.save("p1", "查询A", "SELECT 1", schema="test")
@@ -17,7 +20,7 @@ def test_query_library_crud(tmp_path):
     assert lib.get("p1", "查询A")["content"] == "SELECT 2"
     assert lib.get("p1", "b")["schema"] == ""
     assert lib.delete("p1", "b") is True
-    assert lib.list("p1") == [{"name": "查询A", "schema": "test",
+    assert lib.list("p1") == [{"name": "查询A", "database": "", "schema": "test",
                                "updated_at": lib.list("p1")[0]["updated_at"]}]
 
 
@@ -29,7 +32,7 @@ def test_query_folder_in_tree(qtbot, mysql_env, connection_service):
                                 host=mysql_env["host"], port=mysql_env["port"],
                                 username=mysql_env["user"], password=mysql_env["password"])
     connection_service.add(profile)
-    QueryLibrary.default().save(profile.id, "统计分析", "SELECT MAX(id) FROM t", schema="test")
+    QueryLibrary.default().save(profile.id, "统计分析", "SELECT MAX(id) FROM t", database="test")
 
     explorer = ObjectExplorer(connection_service, MetadataService(connection_service))
     qtbot.addWidget(explorer)
@@ -71,7 +74,7 @@ def test_open_saved_query_in_editor(qtbot, mysql_env, connection_service):
                                 host=mysql_env["host"], port=mysql_env["port"],
                                 username=mysql_env["user"], password=mysql_env["password"])
     connection_service.add(profile)
-    QueryLibrary.default().save(profile.id, "q_开库", "SELECT 42 AS answer;", schema="test")
+    QueryLibrary.default().save(profile.id, "q_开库", "SELECT 42 AS answer;", database="test")
 
     win = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(win)

@@ -73,7 +73,7 @@ class EditDatabaseDialog(QDialog):
             self._fill_collations(current_cs, info["cl"])
         except Exception as exc:  # noqa: BLE001
             self._buttons.button(QDialogButtonBox.Ok).setEnabled(False)
-            QMessageBox.warning(self, "编辑数据库", f"读取元数据失败：{exc}")
+            QMessageBox.critical(self, "编辑数据库", f"读取元数据失败：{exc}")
 
     def _fill_collations(self, charset: str, current: str | None = None) -> None:
         self.collation_combo.clear()
@@ -101,7 +101,7 @@ class EditDatabaseDialog(QDialog):
             f"ALTER DATABASE `{self._schema}` CHARACTER SET {charset} COLLATE {collation}")
         errors = [r for r in results if r.get("kind") == "error"]
         if errors:
-            QMessageBox.warning(self, "编辑数据库", errors[0]["message"])
+            QMessageBox.critical(self, "编辑数据库", errors[0]["message"])
             return
         QMessageBox.information(self, "编辑数据库", "已更新字符集/排序规则。")
         self.accept()

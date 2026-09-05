@@ -520,7 +520,7 @@ class TableDesignerDialog(QDialog):
     def _on_applied(self, results: list[dict]) -> None:
         errors = [r for r in results if r.get("kind") == "error"]
         if errors:
-            QMessageBox.warning(self, "应用变更", "\n".join(e["message"] for e in errors))
+            QMessageBox.critical(self, "应用变更", "\n".join(e["message"] for e in errors))
             self.btn_apply.setEnabled(True)
             return
         verb = "创建" if self.new_table else "变更"

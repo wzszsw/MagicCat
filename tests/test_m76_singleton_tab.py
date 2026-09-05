@@ -13,7 +13,7 @@ def test_saved_query_singleton_tab(qtbot, connection_service):
     profile = ConnectionProfile(name="M76", group=DEFAULT_GROUP,
                                 host="127.0.0.1", port=3306, username="root", password="")
     connection_service.add(profile)
-    QueryLibrary.default().save(profile.id, "q_single", "SELECT 1;", schema="test")
+    QueryLibrary.default().save(profile.id, "q_single", "SELECT 1;", database="test")
 
     win = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(win)
@@ -42,8 +42,8 @@ def test_object_tab_mixed_dedup(qtbot, connection_service):
     profile = ConnectionProfile(name="M76b", group=DEFAULT_GROUP,
                                 host="127.0.0.1", port=3306, username="root", password="")
     connection_service.add(profile)
-    QueryLibrary.default().save(profile.id, "q1", "SELECT 1;", schema="test")
-    QueryLibrary.default().save(profile.id, "q2", "SELECT 2;", schema="test")
+    QueryLibrary.default().save(profile.id, "q1", "SELECT 1;", database="test")
+    QueryLibrary.default().save(profile.id, "q2", "SELECT 2;", database="test")
 
     win = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(win)

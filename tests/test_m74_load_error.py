@@ -25,16 +25,8 @@ def test_load_error_collapses_and_pops_messagebox(qtbot, monkeypatch, connection
     qtbot.addWidget(ex)
     ex.load_profiles()
 
-    # 定位 profile 节点
-    target = None
-    for i in range(ex.topLevelItemCount()):
-        it = ex.topLevelItem(i)
-        if it.text(0) == "默认分组":
-            for j in range(it.childCount()):
-                c = it.child(j)
-                info = c.data(0, 0x0100) or {}
-                if info.get("kind") == "profile" and info.get("data", {}).get("profile_id") == profile.id:
-                    target = c
+    # 未分组连接直接位于树根。
+    target = ex.profile_item(profile.id)
     assert target is not None
 
     # 直接调用 _show_error（模拟加载失败），断言折叠 + MessageBox

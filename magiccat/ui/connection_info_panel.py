@@ -178,7 +178,8 @@ class ConnectionInfoPanel(QWidget):
         self._labels["端口"].setText(str(profile.port))
         self._labels["初始数据库"].setText(profile.database or "（未指定）")
         self._labels["用户名"].setText(profile.username)
-        self._labels["配置文件"].setText(str(self._connections.config_path))
+        self._labels["配置文件"].setText(
+            str(self._connections.profile_config_path(profile.id)))
 
         def fetch() -> dict:
             return self._connections.server_info(profile)

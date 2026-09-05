@@ -50,10 +50,10 @@ public final class ConnectionRegistry {
     /** 打开（或替换）一个连接池。重复 open 会先关闭旧池。 */
     public static String open(String configId, String host, int port, String database,
                               String user, String password) {
-        return open(configId, "mysql", host, port, database, user, password, "");
+        return open(configId, "MySQL", host, port, database, user, password, "");
     }
 
-    /** 打开（或替换）一个连接池；flavor 为方言 key（mysql/mariadb/postgresql…）。 */
+    /** 打开（或替换）一个连接池；flavor 为官方产品名称（MySQL/MariaDB/PostgreSQL…）。 */
     public static String open(String configId, String flavor, String host, int port,
                               String database, String user, String password) {
         return open(configId, flavor, host, port, database, user, password, "");

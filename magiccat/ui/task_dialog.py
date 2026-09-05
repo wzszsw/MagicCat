@@ -140,7 +140,7 @@ class TaskDialog(QDialog):
         self._refresh()
         self.statusHint = status
         if error:
-            QMessageBox.warning(self, "任务执行", status)
+            QMessageBox.critical(self, "任务执行", status)
         else:
             QMessageBox.information(self, "任务执行", status)
 

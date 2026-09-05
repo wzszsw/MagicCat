@@ -404,7 +404,8 @@ class MainWindow(QMainWindow):
             self.browse_page.ctx_label.setText("")
             return
         database, schema = self._object_scope(profile, schema, database)
-        self.browse_page.load_queries(profile.id, schema)
+        query_schema = schema if supports_schema(profile.provider_key) else ""
+        self.browse_page.load_queries(profile.id, query_schema, database=database)
         self.browse_page.ctx_label.setText(
             f"{profile.display_name} · {database} · {schema or '默认'}"
             if supports_schema(profile.provider_key) else
@@ -625,7 +626,7 @@ class MainWindow(QMainWindow):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, "删除序列", errors[0]["message"])
+                QMessageBox.critical(self, "删除序列", errors[0]["message"])
                 return
             self._reload_sequence_browse(profile, database, schema)
             self._status(f"序列已删除：{schema}.{name}", 4000)
@@ -642,7 +643,7 @@ class MainWindow(QMainWindow):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, verb, errors[0]["message"])
+                QMessageBox.critical(self, verb, errors[0]["message"])
                 return
             self._status(f"{verb}成功", 4000)
             QMessageBox.information(self, verb, f"{verb}成功")
@@ -675,7 +676,7 @@ class MainWindow(QMainWindow):
         self.explorer.object_context_selected.connect(self._on_object_context_selected)
         self.explorer.new_query_requested.connect(self._on_new_query_from_explorer)
         self.explorer.profile_activated.connect(self._set_current_profile)
-        dock = QDockWidget("对象浏览器", self)
+        dock = QDockWidget("我的连接", self)
         dock.setObjectName("explorer_dock")
         dock.setMinimumWidth(180)
         dock.setSizePolicy(QSizePolicy.Policy.Preferred,
@@ -837,7 +838,7 @@ class MainWindow(QMainWindow):
         try:
             dbs = [d["name"] for d in self._metadata.databases(profile)]
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "快速创建", f"读取库列表失败：{exc}")
+            QMessageBox.critical(self, "快速创建", f"读取库列表失败：{exc}")
             return None
         name, ok = QInputDialog.getItem(self, "快速创建", "选择库：", dbs, 0, False)
         return name if ok and name else None
@@ -1519,7 +1520,7 @@ class MainWindow(QMainWindow):
 
             os.startfile(str(log_dir))
         except OSError as exc:
-            QMessageBox.warning(self, "日志目录", f"打开失败：{exc}")
+            QMessageBox.critical(self, "日志目录", f"打开失败：{exc}")
 
     def _about(self) -> None:
         import magiccat
@@ -1532,9 +1533,14 @@ class MainWindow(QMainWindow):
             "首发支持：MySQL / MariaDB（Windows）</p>")
 
     def _add_connection(self) -> None:
-        dialog = ConnectionEditDialog(self, groups=self._connections.groups)
+        dialog = ConnectionEditDialog(
+            self, name_validator=self._connections.validate_name)
         if dialog.exec():
-            self._connections.add(dialog.profile())
+            try:
+                self._connections.add(dialog.profile())
+            except ValueError as exc:
+                QMessageBox.critical(self, "新建连接", str(exc))
+                return
             self.explorer.load_profiles()
             self._reload_connection_combo()
             self._status("连接已保存", 3000)
@@ -1553,7 +1559,7 @@ class MainWindow(QMainWindow):
         run_async(
             lambda: self._connections.test(profile),
             lambda version: self._status(f"「{profile.name}」连接成功：{version}", 5000),
-            lambda err: QMessageBox.warning(self, "测试连接", f"「{profile.name}」失败：\n{err}"))
+            lambda err: QMessageBox.critical(self, "测试连接", f"「{profile.name}」失败：\n{err}"))
 
     def _on_open_table(self, profile_id: str, database: str, schema: str, table: str) -> None:
         profile = self._connections.get(profile_id)
@@ -1611,7 +1617,7 @@ class MainWindow(QMainWindow):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, "删除表", errors[0]["message"])
+                QMessageBox.critical(self, "删除表", errors[0]["message"])
                 return
             self._reload_table_browse(profile, schema)
             self._status(f"表已删除：{schema}.{table}", 4000)
@@ -1638,7 +1644,7 @@ class MainWindow(QMainWindow):
             self._status(f"已打开视图「{name}」", 4000)
 
         run_async(fetch, done,
-                  lambda err: QMessageBox.warning(self, "打开视图", f"失败：{err}"))
+                  lambda err: QMessageBox.critical(self, "打开视图", f"失败：{err}"))
 
     def _delete_view(self, profile_id: str, schema: str, name: str) -> None:
         """删除视图（对象页动作）：确认后 DROP VIEW，并刷新「视图」对象页。"""
@@ -1657,7 +1663,7 @@ class MainWindow(QMainWindow):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, "删除视图", errors[0]["message"])
+                QMessageBox.critical(self, "删除视图", errors[0]["message"])
                 return
             self._reload_view_browse(profile, schema)
             self._status(f"视图已删除：{schema}.{name}", 4000)
@@ -1810,16 +1816,20 @@ class MainWindow(QMainWindow):
         ws = self._current_query_ws()
         if ws is not None:
             catalog, current_schema = self._workspace_context(ws, profile)
-            # 查询库存储字段仍称 schema：PG 保存实际模式，MySQL 保存 catalog（database）。
-            schema = current_schema or catalog
+            database = catalog
+            schema = current_schema or ""
         else:
-            schema = self.schema_combo.currentText() or ""
+            database = self.schema_combo.currentText() or ""
+            schema = ""
         lib = QueryLibrary.default()
-        lib.save(profile.id, name, editor.toPlainText(), schema=schema)
-        if schema:
-            self.explorer.refresh_schema_queries(profile.id, schema)
+        lib.save(profile.id, name, editor.toPlainText(), schema=schema, database=database)
+        if database or schema:
+            self.explorer.refresh_schema_queries(profile.id, database, schema)
         self._reload_query_browse()
-        self._status(f"查询已保存：{name}（{profile.display_name} · {schema or '默认'}）", 5000)
+        scope = database
+        if schema:
+            scope = f"{database} · {schema}" if database else schema
+        self._status(f"查询已保存：{name}（{profile.display_name} · {scope or '默认'}）", 5000)
 
     def _open_saved_query(self, profile_id: str, name: str) -> None:
         from magiccat.services.query_library import QueryLibrary
@@ -1831,15 +1841,19 @@ class MainWindow(QMainWindow):
         tab_key = f"query:{profile_id}:{name}"
         ws = self._open_object_tab(tab_key, name, record["content"])
         self._set_current_profile(profile_id)
-        # 具名查询的上下文随标签打开：MySQL 保存字段是 Catalog，PG 是 Schema。
-        saved_scope = (record.get("schema") or "").strip()
+        # 具名查询的上下文随标签打开：数据库和模式分别来自保存记录。
+        saved_database = (record.get("database") or "").strip()
+        saved_schema = (record.get("schema") or "").strip()
         if supports_schema(profile.provider_key):
-            if saved_scope:
-                ws.set_schema(saved_scope)
+            if saved_database:
+                ws.set_database(saved_database)
+            if saved_schema:
+                ws.set_schema(saved_schema)
         else:
-            ws.set_database(saved_scope)
+            ws.set_database(saved_database)
         self._status(f"已打开查询「{name}」（{profile.display_name}"
-                     f"{' · ' + record['schema'] if record.get('schema') else ''}）", 5000)
+                     f"{' · ' + saved_schema if saved_schema else ''}"
+                     f"{' · ' + saved_database if saved_database and not saved_schema else ''}）", 5000)
 
     def _delete_saved_query(self, profile_id: str, name: str) -> None:
         """删除查询：确认后从收藏库移除，并刷新浏览态 + 树。"""
@@ -1853,9 +1867,10 @@ class MainWindow(QMainWindow):
         record = QueryLibrary.default().get(profile_id, name)
         QueryLibrary.default().delete(profile_id, name)
         self._reload_query_browse()
+        database = (record.get("database") or "") if record else ""
         schema = (record.get("schema") or "") if record else ""
-        if schema:
-            self.explorer.refresh_schema_queries(profile_id, schema)
+        if database or schema:
+            self.explorer.refresh_schema_queries(profile_id, database, schema)
         self._status(f"查询已删除：{name}", 4000)
 
     def _on_create_routine(self, profile_id: str, schema: str) -> None:
@@ -1943,7 +1958,7 @@ class MainWindow(QMainWindow):
             self._open_routine_sql(profile_id, name, sql_text, kind)
 
         run_async(fetch, done,
-                  lambda err: QMessageBox.warning(self, "打开函数", f"失败：{err}"))
+                  lambda err: QMessageBox.critical(self, "打开函数", f"失败：{err}"))
 
     def _delete_routine(self, profile_id: str, schema: str, name: str) -> None:
         """删除函数/过程（对象页动作）：确认后 DROP，并刷新「函数」对象页。"""
@@ -1971,7 +1986,7 @@ class MainWindow(QMainWindow):
             def done(results: list[dict]) -> None:
                 errors = [r for r in results if r.get("kind") == "error"]
                 if errors:
-                    QMessageBox.warning(self, "删除对象", errors[0]["message"])
+                    QMessageBox.critical(self, "删除对象", errors[0]["message"])
                     return
                 self._reload_routine_browse(profile, schema)
                 self._status(f"已删除 {word}：{schema}.{name}", 4000)
@@ -1980,7 +1995,7 @@ class MainWindow(QMainWindow):
                       done, lambda err: QMessageBox.critical(self, "删除对象", err))
 
         run_async(fetch_type, ask,
-                  lambda err: QMessageBox.warning(self, "删除对象", f"失败：{err}"))
+                  lambda err: QMessageBox.critical(self, "删除对象", f"失败：{err}"))
 
     def _open_trigger(self, profile_id: str, schema: str, name: str) -> None:
         """打开触发器（对象页动作）：取 SHOW CREATE TRIGGER 定义，开到一个编辑器标签。"""
@@ -2001,7 +2016,7 @@ class MainWindow(QMainWindow):
             self._status(f"已打开触发器「{name}」", 4000)
 
         run_async(fetch, done,
-                  lambda err: QMessageBox.warning(self, "打开触发器", f"失败：{err}"))
+                  lambda err: QMessageBox.critical(self, "打开触发器", f"失败：{err}"))
 
     def _delete_trigger(self, profile_id: str, schema: str, name: str) -> None:
         """删除触发器（对象页动作）：确认后 DROP TRIGGER，并刷新「触发器」对象页。"""
@@ -2020,7 +2035,7 @@ class MainWindow(QMainWindow):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, "删除触发器", errors[0]["message"])
+                QMessageBox.critical(self, "删除触发器", errors[0]["message"])
                 return
             self._reload_trigger_browse(profile, schema)
             self._status(f"触发器已删除：{schema}.{name}", 4000)

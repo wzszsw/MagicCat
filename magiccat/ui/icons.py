@@ -395,17 +395,17 @@ def _conn_by_provider(provider_key: str) -> QImage | None:
     资产缺失时，已接入产品回退到项目既有图标，GaussDB 不使用自绘品牌图形。
     """
     logo = _logo_image(provider_key)
-    if provider_key == "gaussdb":
+    if provider_key == "GaussDB":
         # GaussDB 使用 GitHub Simple Icons 的 Huawei 素材；缺失时不回退自绘。
         return logo
     if logo is not None:
         return logo
     return {
-        "mysql": _conn_mysql(),
-        "postgresql": _conn_postgres(),
-        "mariadb": _conn_mariadb(),
-        "oracle": _conn_oracle(),
-        "sqlserver": _conn_sqlserver(),
+        "MySQL": _conn_mysql(),
+        "PostgreSQL": _conn_postgres(),
+        "MariaDB": _conn_mariadb(),
+        "Oracle": _conn_oracle(),
+        "SQL Server": _conn_sqlserver(),
     }.get(provider_key, _connection())
 
 
@@ -440,12 +440,12 @@ def _logo_image(provider_key: str) -> QImage | None:
 
     base = resource_dir() / "logos"
     for size in (64, 32, 16):
-        path = base / f"{provider_key}-{size}.png"
+        path = base / f"{provider_key.casefold()}-{size}.png"
         if path.exists():
             img = QImage(str(path))
             if not img.isNull():
                 return img
-    if provider_key == "gaussdb":
+    if provider_key == "GaussDB":
         # SVG 源文件直接由 QtSvg 渲染，避免重新绘制品牌图形。
         svg_path = base / "huawei.svg"
         if svg_path.exists():

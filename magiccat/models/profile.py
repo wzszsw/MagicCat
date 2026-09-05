@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-DEFAULT_GROUP = "默认分组"
+DEFAULT_GROUP: str | None = None
 
 
 def _now() -> str:
@@ -25,8 +25,8 @@ class ConnectionProfile:
     username: str = "root"
     password: str = ""
     database: str = ""
-    group: str = DEFAULT_GROUP
-    provider_key: str = "mysql"   # 方言/驱动 key（见 services/dialects.py）
+    group: str | None = None
+    provider_key: str = "MySQL"   # 官方产品名称（见 services/dialects.py）
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
@@ -51,7 +51,6 @@ class ConnectionProfile:
         return {
             "id": self.id,
             "name": self.name,
-            "group": self.group,
             "host": self.host,
             "port": self.port,
             "username": self.username,
@@ -66,12 +65,12 @@ class ConnectionProfile:
         return cls(
             id=data["id"],
             name=data["name"],
-            group=data.get("group", DEFAULT_GROUP),
+            group=None,
             host=data.get("host", "127.0.0.1"),
             port=int(data.get("port", 3306)),
             username=data.get("username", "root"),
             database=data.get("database", ""),
-            provider_key=data.get("provider_key", "mysql"),
+            provider_key=data.get("provider_key", "MySQL"),
             password=password,
             created_at=data.get("created_at", _now()),
             updated_at=data.get("updated_at", _now()),

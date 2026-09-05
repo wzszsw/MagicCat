@@ -170,7 +170,7 @@ Server
 
 | 模块 | 关键实现 | 说明 |
 |---|---|---|
-| ConnectionManager | `ConnectionService` + `JsonProfileStore`（用户数据目录 `connections.json`，版本化 JSON + 明文口令） | 分组树、复制连接、测试连接、批量导入连接配置 |
+| ConnectionManager | `ConnectionService` + `JsonProfileStore`（用户文档目录下的 `MagicCat/<provider_key>/Servers/<连接名称>/connection.json` 按产品类型逐连接目录保存 JSON + 独立 `groups.json`，明文口令） | 分组树、拖拽调整归属、复制连接、测试连接 |
 | ObjectExplorer | `ObjectTreeModel` + 右键菜单 | 按 4.2 对象树展示；双击表 → 表设计/数据页 |
 | SqlEditor | `SqlEditorWidget`（自研） | 多标签；语法高亮（QSyntaxHighlighter，MySQL 关键字/字符串/注释/变量）；**自动补全**：关键字 + 已连库的表/列（元数据缓存驱动 QCompleter）；语句级执行/选中执行/全部执行；sqlparse 美化；查询历史落盘 |
 | ResultGrid | `ResultTableModel` + `ResultTableView` | 虚拟滚动（单次最多取页大小，滚动到底自动取下一页）；类型化渲染与编辑；右键：复制行/复制带表头/导出当前结果/筛选排序追加 SQL |
@@ -222,7 +222,7 @@ JPype 下不需要序列化，但仍需**稳定的跨语言类型映射**（避�
 
 | 项 | 方案 |
 |---|---|
-| 连接口令存储 | 用户数据目录 `connections.json`（版本化 JSON，连接配置、分组和 `password` 明文）；文件采用原子替换，Unix 权限为 `0600` |
+| 连接口令存储 | 用户文档目录下的 `MagicCat/<provider_key>/Servers/<连接名称>/connection.json`（按产品类型逐连接目录保存版本化 JSON，`password` 明文；连接名称全局唯一，不生成哈希或碰撞后缀）；组关系独立保存于 `MagicCat/groups.json`；文件采用原子替换，Unix 权限为 `0600`，不使用 Windows 注册表 |
 | 内存中的口令 | 连接建立后即从内存配置中清除明文引用；日志一律脱敏（`****`） |
 | 传输 | 直连 JDBC，无自建网络层；无中间人面 |
 | SQL 安全 | 编辑类 SQL 只允许主键定位的 UPDATE/DELETE 由程序生成；用户自定义 SQL 属用户行为，提供"事务提交前确认"开关 |
@@ -288,7 +288,7 @@ MagicCat/
 1. Java 侧：Maven `package` 产出 `magiccat-bridge.jar` + 复制 `mysql-connector-j*.jar` → `magiccat/jvm/`。
 2. JVM 运行时：用 `jlink --add-modules java.sql,java.naming,java.management,jdk.unsupported …` 裁剪出 `runtime/jre`（目标体积 ~40–60MB）。
 3. Python 侧：PyInstaller（`--windowed`，收集 JPype 原生库与上述 jvm 资源），已知坑位统一处理：JPype 动态库 hidden import、`java.home` 探测、资源路径在 `sys._MEIPASS` 下解包。
-4. 安装器：Inno Setup —— 装到 `%LocalAppData%\Programs\MagicCat`，写开始菜单/桌面快捷方式，卸载清理 `%APPDATA%\MagicCat` 用户数据除外。
+4. 安装器：Inno Setup —— 装到 `%LocalAppData%\Programs\MagicCat`，写开始菜单/桌面快捷方式，卸载不删除用户文档目录下的 `MagicCat` 数据。
 5. 体积预估：Python+Qt ≈ 150–250MB + JRE ≈ 60MB + 驱动 ≈ 5MB；如需瘦身可对 Qt 模块裁剪。
 
 ---
@@ -448,7 +448,7 @@ MagicCat/
 | M125 | 修复 MySQL 标准元数据表列表为空：借出连接后按 database 设置 JDBC catalog，保持 schema 永远为 null | ✅ | 本地 MySQL root 空密码数据库/表元数据回归 + JDBC 路由契约 |
 | M126 | 兼容 MySQL 系统库表类型：标准 JDBC 表枚举纳入 `SYSTEM TABLE`，恢复 `mysql.user` 等系统表展示 | ✅ | 本地 MySQL 表/列元数据回归 15 项；Maven package + Ruff |
 | M127 | 关闭态连接仅允许定位和查看信息，不激活当前连接及“对象”工作区；打开态保持树跟手 | ✅ | 关闭/打开态对象树信号回归 8 项；Ruff |
-| M128 | 连接配置移除 Windows 注册表，改为用户数据目录下版本化 `connections.json`（密码明文；不兼容旧注册表/JSON，不迁移） | ✅ | JSON 明文回环、原子写入、跨平台目录解析；Ruff |
+| M128 | 连接配置移除 Windows 注册表，改为用户数据目录下按连接名称拆分的版本化 `connections/<连接名称>.json`（密码明文；不兼容旧注册表/JSON，不迁移） | ✅ | JSON 明文回环、原子写入、跨平台目录解析；Ruff |
 | M129 | 修复 MySQL JDBC `NULLABLE=YES/NO` 解析导致的数据页加载异常，并将“对象”列表改为 Navicat 式无边框平面表格 | ✅ | Java bridge Maven package；MySQL 可空标志静态回归；对象表格 Qt 回归；Ruff |
 | M130 | 左侧对象树表节点暂不展开列明细，保留双击打开表数据及表操作菜单 | ✅ | 表节点无展开指示器/无列子项 Qt 回归；Ruff |
 | M131 | “消息”面板按语句记录 SQL、成功/错误状态、影响行数与查询耗时，贴近 Navicat 消息日志 | ✅ | 消息面板 Qt 回归；并发执行消息回归；Ruff |
@@ -460,8 +460,15 @@ MagicCat/
 | M137 | 编辑器标签按内容类型显示对象图标，固定“对象”页图标随当前领域切换 | ✅ | 固定页/查询/对象编辑/表数据标签图标 Qt 回归；Ruff |
 | M138 | 引入应用层 Dialect 能力并收口 database/schema 作用域；PG/GaussDB 未激活 schema 不加载表工作区；表数据改为每页 1000 行、当前结果集分页统计与 Navicat 底部 SQL/分页状态栏，移除独立全表计数 | ✅ | 方言/对象上下文/分页 Qt 与静态回归；Java Maven package；Ruff |
 | M139 | 对齐 Navicat 数据页底部状态栏分区与空页记录文案；修复新建连接向导第二页标题固定为 MySQL 的问题，标题随产品动态更新 | ✅ | 分页/向导/对象上下文 Qt 回归；Ruff |
+| M140 | 按 Navicat 重构连接本地存储为可读连接名 JSON + 独立组索引；未分组连接直挂树根，连接树支持拖拽改组，连接表单移除组字段；连接名称全局唯一且文件名不使用哈希/碰撞后缀 | ✅ | 202 项回归（含可读逐连接明文配置、重复名约束、独立组索引、无注册表路径、连接树分组与拖拽路由）；Ruff |
+| M141 | 全局统一错误对话框为 `QMessageBox.critical`；`warning` 仅保留给输入校验类提醒 | ✅ | 202 项回归；Ruff |
+| M142 | 连接配置目录按官方 `provider_key` 产品类型分层，形成 `connections/<provider_key>/Servers/<连接名称>.json`（`SQL Server` 保留空格）；不读取旧的扁平连接文件 | ✅ | 产品目录/文件名/重命名路径回归；202 项全量回归；Ruff |
+| M143 | 保存查询按 Navicat 连接目录组织：`<产品>/Servers/<连接>/<database>/<schema>/<name>.sql`，MySQL/MariaDB 省略独立 schema 层；SQLite 仅保存索引与作用域元数据 | ✅ | 206 项回归（含 MySQL/PG/SQL Server 路径、对象树与查询工作区作用域）；Ruff |
+| M144 | 连接配置文件收纳到连接名称目录，统一使用 `connections/<provider_key>/Servers/<连接名称>/connection.json`；旧的 `Servers/<连接名称>.json` 不读取、不迁移 | ✅ | 连接目录读写、重命名清理、旧扁平路径隔离回归；Ruff |
+| M145 | 默认本地数据根目录从应用配置目录迁移到各平台用户文档目录下的 `MagicCat`；保留 `MAGICCAT_HOME` 覆盖，Linux 支持 XDG 用户文档目录 | ✅ | 207 项全量回归（含跨平台路径/XDG 文档目录）；Ruff |
+| M146 | 移除连接存储中的 `connections` 中间目录，产品目录直接位于 `MagicCat` 根下，对齐 Navicat 的 `<产品>/Servers/<连接>/connection.json`；旧路径不读取、不迁移 | ✅ | 产品目录、查询目录和旧路径隔离回归；207 项全量回归；Ruff |
 
-- 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（207 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

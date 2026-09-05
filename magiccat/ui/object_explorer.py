@@ -88,6 +88,11 @@ class ObjectExplorer(QTreeWidget):
         self._queries = QueryLibrary.default()
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QTreeWidget.DragDrop)
+        self.setDefaultDropAction(Qt.MoveAction)
         self.customContextMenuRequested.connect(self._show_menu)
         self.itemExpanded.connect(self._on_expanded)
         self.itemDoubleClicked.connect(self._on_double_clicked)
@@ -171,25 +176,39 @@ class ObjectExplorer(QTreeWidget):
 
     # ---- 装载 ----
     def load_profiles(self) -> None:
-        """重建整树（分组 → 连接）。本地配置读取，同步执行。"""
+        """重建整树。组节点只代表真实组，未分组连接直接位于树根。"""
         self.clear()
-        by_group: dict[str, list[ConnectionProfile]] = {}
-        for p in self._connections.profiles:
-            by_group.setdefault(p.group, []).append(p)
-        for group, profiles in by_group.items():
+        profiles = self._connections.profiles
+        by_group = {group: [] for group in self._connections.groups}
+        ungrouped: list[ConnectionProfile] = []
+        for profile in profiles:
+            if profile.group is None:
+                ungrouped.append(profile)
+            elif profile.group in by_group:
+                by_group[profile.group].append(profile)
+            else:
+                # 索引中不存在的关系按未分组呈现，不创建隐式组。
+                ungrouped.append(profile)
+        for group, grouped_profiles in by_group.items():
             group_item = _make_item(group, "group")
             self.addTopLevelItem(group_item)
-            for profile in profiles:
+            for profile in grouped_profiles:
                 self._add_profile_item(group_item, profile)
             group_item.setExpanded(True)
+        for profile in ungrouped:
+            self._add_profile_item(None, profile)
 
-    def _add_profile_item(self, parent: QTreeWidgetItem, profile: ConnectionProfile) -> None:
+    def _add_profile_item(self, parent: QTreeWidgetItem | None,
+                          profile: ConnectionProfile) -> None:
         # type=provider_key → 连接图标按数据库产品区分（MySQL/PostgreSQL/…）
         item = _make_item(profile.display_name, "profile", profile_id=profile.id,
                           type=profile.provider_key)
         self._set_profile_icon(item)
         _placeholder(item)
-        parent.addChild(item)
+        if parent is None:
+            self.addTopLevelItem(item)
+        else:
+            parent.addChild(item)
 
     def _set_profile_icon(self, item: QTreeWidgetItem) -> None:
         """已打开连接用彩色产品图标，关闭连接用保留透明通道的灰度版本。"""
@@ -261,20 +280,26 @@ class ObjectExplorer(QTreeWidget):
 
         run_async(fetch, done, lambda err: self._fail_load(item, f"连接失败：{err}"))
 
-    def refresh_schema_queries(self, profile_id: str, schema: str) -> None:
-        """保存/删除查询后刷新【库级】“查询”分类（连接级无查询节点，与 Navicat 一致）。"""
+    def refresh_schema_queries(self, profile_id: str, database: str, schema: str = "") -> None:
+        """保存/删除查询后刷新对应 database/schema 分类。"""
+        profile = self._connections.get(profile_id)
+        if profile is not None and not supports_schema(profile.provider_key):
+            schema = ""
         for item in self._walk():
             info = _info(item)
             data = info.get(DATA_KEY, {})
             if (info.get(KIND_KEY) == "category"
                     and data.get("cat_type") == "queries"
-                    and data.get("schema") == schema):
+                    and data.get("database", "") == (database or "")
+                    and (data.get("schema", "") == (schema or "")
+                         or (not schema and data.get("schema", "") == database))):
                 _replace_children(item, [
                     _make_item(q["name"], "saved_query", profile_id=profile_id,
-                               name=q["name"], schema=q.get("schema", ""))
+                               name=q["name"], database=q.get("database", ""),
+                               schema=q.get("schema", ""))
                     for q in self._queries.list(profile_id)
-                    if (q.get("schema") or "") == schema])
-                return
+                    if (q.get("database") or "") == (database or "")
+                    and (q.get("schema") or "") == (schema or "")])
                 return
 
     def _load_database(self, item: QTreeWidgetItem) -> None:
@@ -293,17 +318,20 @@ class ObjectExplorer(QTreeWidget):
         children: list[QTreeWidgetItem] = []
         for label, cat_type in (("表", "tables"), ("视图", "views"), ("函数", "routines"),
                                 ("触发器", "triggers")):
-            cat = _make_item(label, "category", schema=database, cat_type=cat_type)
+            cat = _make_item(label, "category", database=database, schema=database,
+                             cat_type=cat_type)
             # 占位子项使分类可展开；展开时才拉取该层数据（逐层懒加载，避免 N+1）
             _placeholder(cat)
             children.append(cat)
         # 查询：本地具名查询，立即填充（无数据库交互）
-        cat = _make_item("查询", "category", schema=database, cat_type="queries")
+        cat = _make_item("查询", "category", database=database, schema=database,
+                         cat_type="queries")
         children.append(cat)
         for q in self._queries.list(profile.id):
-            if (q.get("schema") or "") == database:
+            if (q.get("database") or "") == database and not (q.get("schema") or ""):
                 cat.addChild(_make_item(q["name"], "saved_query", profile_id=profile.id,
-                                        name=q["name"], schema=q.get("schema", "")))
+                                        name=q["name"], database=q.get("database", ""),
+                                        schema=q.get("schema", "")))
         _replace_children(item, children)
 
     def _load_database_schemas(self, item: QTreeWidgetItem, profile: ConnectionProfile,
@@ -349,10 +377,12 @@ class ObjectExplorer(QTreeWidget):
         profile = self._profile_of(item)
         if profile is not None:
             for q in self._queries.list(profile.id):
-                if (q.get("schema") or "") == schema:
+                if ((q.get("database") or "") == database
+                        and (q.get("schema") or "") == schema):
                     cat.addChild(_make_item(q["name"], "saved_query",
                                             profile_id=profile.id,
-                                            name=q["name"], schema=q.get("schema", "")))
+                                            name=q["name"], database=q.get("database", ""),
+                                            schema=q.get("schema", "")))
         _replace_children(item, children)
 
     def _schema_of(self, item: QTreeWidgetItem) -> str | None:
@@ -576,9 +606,98 @@ class ObjectExplorer(QTreeWidget):
                 self.open_trigger_requested.emit(
                     profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["name"])
 
+    def dropEvent(self, event) -> None:
+        """通过拖拽连接节点修改组归属。"""
+        item = self.currentItem()
+        if item is None or _info(item).get(KIND_KEY) != "profile":
+            event.ignore()
+            return
+        target = self.itemAt(event.position().toPoint())
+        target_kind = _info(target).get(KIND_KEY) if target is not None else None
+        if target_kind == "group":
+            group_name: str | None = target.text(0)
+        elif target_kind == "profile":
+            parent = target.parent()
+            group_name = (parent.text(0)
+                          if parent is not None
+                          and _info(parent).get(KIND_KEY) == "group" else None)
+        elif target is None:
+            group_name = None
+        else:
+            event.ignore()
+            return
+        profile_id = _info(item).get(DATA_KEY, {}).get("profile_id")
+        if not profile_id:
+            event.ignore()
+            return
+        try:
+            self._connections.move_to_group(profile_id, group_name)
+        except ValueError as exc:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "移动连接", str(exc))
+            event.ignore()
+            return
+        event.accept()
+        self.load_profiles()
+
+    def _new_group(self) -> None:
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        name, ok = QInputDialog.getText(self, "新建分组", "分组名称：")
+        if not ok:
+            return
+        try:
+            self._connections.add_group(name)
+        except ValueError as exc:
+            QMessageBox.critical(self, "新建分组", str(exc))
+            return
+        self.load_profiles()
+
+    def _rename_group(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        old_name = item.text(0)
+        name, ok = QInputDialog.getText(self, "重命名分组", "分组名称：",
+                                         text=old_name)
+        if not ok:
+            return
+        try:
+            self._connections.rename_group(old_name, name)
+        except ValueError as exc:
+            QMessageBox.critical(self, "重命名分组", str(exc))
+            return
+        self.load_profiles()
+
+    def _delete_group(self, item: QTreeWidgetItem) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        name = item.text(0)
+        if QMessageBox.question(
+                self, "删除分组", f"确定删除分组「{name}」？其中连接将移到未分组。",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        self._connections.remove_group(name)
+        self.load_profiles()
+
+    def _move_profile(self, profile: ConnectionProfile,
+                      group_name: str | None) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        try:
+            self._connections.move_to_group(profile.id, group_name)
+        except ValueError as exc:
+            QMessageBox.critical(self, "移动连接", str(exc))
+            return
+        self.load_profiles()
+
     def _show_menu(self, pos) -> None:
         item = self.itemAt(pos)
         if item is None:
+            menu = QMenu(self)
+            action_new_group = menu.addAction("新建分组")
+            if menu.exec(self.mapToGlobal(pos)) is action_new_group:
+                self._new_group()
             return
         info = _info(item)
         kind = info.get(KIND_KEY)
@@ -594,10 +713,28 @@ class ObjectExplorer(QTreeWidget):
         action_open_query = action_del_query = None
         action_run_sql = action_new_routine = action_edit_db = None
         action_new_query = None
+        action_new_group = action_rename_group = action_delete_group = None
+        action_move_group = None
+        move_targets: dict[QAction, str | None] = {}
+        act_dump_all = act_dump_schema = None
 
-        if kind == "profile":
+        if kind == "group":
+            action_new_group = menu.addAction("新建分组")
+            action_rename_group = menu.addAction("重命名分组…")
+            action_delete_group = menu.addAction("删除分组…")
+            menu.addSeparator()
+            action_move_group = None
+        elif kind == "profile":
             (action_test, action_open, action_close, action_refresh, action_edit,
              action_delete) = self._add_profile_menu_items(menu, profile)
+            menu.addSeparator()
+            move_menu = menu.addMenu("移动到分组")
+            action_move_group = move_menu.addAction("未分组")
+            move_targets[action_move_group] = None
+            move_menu.addSeparator()
+            for group_name in self._connections.groups:
+                action = move_menu.addAction(group_name)
+                move_targets[action] = group_name
         elif kind in ("database", "table", "view", "routine", "trigger", "category"):
             action_refresh = menu.addAction("刷新")
         if kind in ("database", "schema"):
@@ -632,7 +769,15 @@ class ObjectExplorer(QTreeWidget):
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen is None:
             return
-        if chosen is action_test:
+        if chosen is action_new_group:
+            self._new_group()
+        elif chosen is action_rename_group:
+            self._rename_group(item)
+        elif chosen is action_delete_group:
+            self._delete_group(item)
+        elif kind == "profile" and chosen in move_targets:
+            self._move_profile(profile, move_targets[chosen])
+        elif chosen is action_test:
             self._run_profile_action(profile, self._connections.test, "测试成功：")
         elif chosen is action_open:
             self._run_profile_action(profile, self._connections.open, "已打开：")
@@ -733,7 +878,7 @@ class ObjectExplorer(QTreeWidget):
             QMessageBox.information(self, "复制 CREATE", f"已复制到剪贴板（{len(create_sql)} 字符）。")
 
         run_async(lambda: ddl.show_create(profile, schema, table), done,
-                  lambda err: QMessageBox.warning(self, "复制 CREATE", f"失败：{err}"))
+                  lambda err: QMessageBox.critical(self, "复制 CREATE", f"失败：{err}"))
 
     # ---- 对象管理动作 ----
     def refresh_schema(self, profile_id: str, schema: str) -> None:
@@ -806,7 +951,7 @@ class ObjectExplorer(QTreeWidget):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, "新建数据库", errors[0]["message"])
+                QMessageBox.critical(self, "新建数据库", errors[0]["message"])
                 return
             QMessageBox.information(self, "新建数据库", f"数据库 `{name}` 创建成功。")
             profile_item = self.profile_item(profile.id)
@@ -839,7 +984,7 @@ class ObjectExplorer(QTreeWidget):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, f"{verb}表", errors[0]["message"])
+                QMessageBox.critical(self, f"{verb}表", errors[0]["message"])
                 return
             # 刷新父级数据库节点
             db_item = item.parent().parent() if item.parent() else None
@@ -880,7 +1025,7 @@ class ObjectExplorer(QTreeWidget):
                                     f"已复制到剪贴板（{len(sql)} 字符）。")
 
         run_async(fetch, done,
-                  lambda err: QMessageBox.warning(self, "复制 CREATE", f"失败：{err}"))
+                  lambda err: QMessageBox.critical(self, "复制 CREATE", f"失败：{err}"))
 
     def _drop_object(self, item: QTreeWidgetItem) -> None:
         from PySide6.QtWidgets import QMessageBox
@@ -912,7 +1057,7 @@ class ObjectExplorer(QTreeWidget):
         def done(results: list[dict]) -> None:
             errors = [r for r in results if r.get("kind") == "error"]
             if errors:
-                QMessageBox.warning(self, "删除对象", errors[0]["message"])
+                QMessageBox.critical(self, "删除对象", errors[0]["message"])
                 return
             db_item = item.parent().parent() if item.parent() else None
             while db_item is not None and _info(db_item).get(KIND_KEY) != "database":
@@ -962,9 +1107,11 @@ class ObjectExplorer(QTreeWidget):
             return
         self._queries.delete(profile_id, name)
         # 刷新其所属库的“查询”分类
-        schema = (item.parent().data(0, 0x0100) or {}).get("data", {}).get("schema") if item.parent() else None
-        if schema:
-            self.refresh_schema_queries(profile_id, schema)
+        parent_data = (item.parent().data(0, 0x0100) or {}).get("data", {}) if item.parent() else {}
+        database = parent_data.get("database", "")
+        schema = parent_data.get("schema", "")
+        if database or schema:
+            self.refresh_schema_queries(profile_id, database, schema)
 
     def _dump_database(self, item: QTreeWidgetItem, with_data: bool) -> None:
         """转储整个数据库为 SQL 文件（对标 Navicat：结构和数据 / 仅结构）+ 进度对话框。"""
@@ -1050,7 +1197,7 @@ class ObjectExplorer(QTreeWidget):
                 QMessageBox.information(self, "运行 SQL 文件",
                                         f"完成：{res['statements']} 条语句执行成功。")
             else:
-                QMessageBox.warning(
+                QMessageBox.critical(
                     self, "运行 SQL 文件",
                     f"{res['statements']} 条语句中 {len(res['errors'])} 条失败：\n"
                     + "\n".join(res["errors"]))
@@ -1110,11 +1257,18 @@ class ObjectExplorer(QTreeWidget):
                     self._load_database(parent)
 
     def _edit_profile(self, profile: ConnectionProfile) -> None:
-        dialog = ConnectionEditDialog(self, profile, self._connections.groups)
+        dialog = ConnectionEditDialog(
+            self, profile, name_validator=self._connections.validate_name)
         if dialog.exec():
             edited = dialog.profile()
             edited.id = profile.id
-            self._connections.update(edited)
+            try:
+                self._connections.update(edited)
+            except ValueError as exc:
+                from PySide6.QtWidgets import QMessageBox
+
+                QMessageBox.critical(self, "编辑连接", str(exc))
+                return
             self.load_profiles()
             if self._connections.is_open(edited.id):
                 self._connections.close(edited.id)

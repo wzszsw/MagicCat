@@ -17,10 +17,10 @@ def test_wizard_product_page_and_defaults(qtbot):
     qtbot.addWidget(d)
     # 新建：落在产品页
     assert d._stack.currentWidget() is d._product_page
-    assert sorted(d._cards.keys()) == ["gaussdb", "mariadb", "mysql", "postgresql"]
+    assert sorted(d._cards.keys()) == ["GaussDB", "MariaDB", "MySQL", "PostgreSQL"]
     assert "oracle" not in d._cards, "Oracle 不应出现在可选产品"
 
-    d._select_product("postgresql")
+    d._select_product("PostgreSQL")
     assert d._stack.currentWidget() is d._form_page
     assert d._form_title.text() == "PostgreSQL 连接"
     assert d.host_edit.text() in ("127.0.0.1", "localhost")
@@ -28,12 +28,12 @@ def test_wizard_product_page_and_defaults(qtbot):
     assert d.user_edit.text() == "postgres"
     assert d.db_edit.text() == "postgres"
 
-    d.type_combo.setCurrentIndex(d.type_combo.findData("mysql"))
+    d.type_combo.setCurrentIndex(d.type_combo.findData("MySQL"))
     assert d._form_title.text() == "MySQL 连接"
     assert d.port_spin.value() == 3306
     assert d.user_edit.text() == "root"
 
-    d.type_combo.setCurrentIndex(d.type_combo.findData("gaussdb"))
+    d.type_combo.setCurrentIndex(d.type_combo.findData("GaussDB"))
     assert d._form_title.text() == "GaussDB 连接"
     assert d.port_spin.value() == 5432
     assert d.user_edit.text() == "gaussdb"
@@ -44,7 +44,7 @@ def test_wizard_edit_locks_product_and_preserves(qtbot):
     from magiccat.ui.dialogs import ConnectionEditDialog
 
     p = ConnectionProfile(name="MyPG", group=DEFAULT_GROUP, host="10.0.0.1", port=5432,
-                          username="postgres", password="x", provider_key="postgresql")
+                          username="postgres", password="x", provider_key="PostgreSQL")
     d = ConnectionEditDialog(profile=p, groups=["默认分组"])
     qtbot.addWidget(d)
     # 编辑：直接落表单页
@@ -54,7 +54,7 @@ def test_wizard_edit_locks_product_and_preserves(qtbot):
     # 保留原值
     assert d.host_edit.text() == "10.0.0.1"
     assert d.port_spin.value() == 5432
-    assert d.type_combo.currentData() == "postgresql"
+    assert d.type_combo.currentData() == "PostgreSQL"
 
 
 def test_wizard_profile_roundtrip(qtbot):
@@ -62,10 +62,10 @@ def test_wizard_profile_roundtrip(qtbot):
 
     d = ConnectionEditDialog(groups=["默认分组"])
     qtbot.addWidget(d)
-    d._select_product("postgresql")
+    d._select_product("PostgreSQL")
     d.name_edit.setText("p1")
     prof = d.profile()
-    assert prof.provider_key == "postgresql"
+    assert prof.provider_key == "PostgreSQL"
     assert prof.port == 5432
     assert prof.username == "postgres"
     assert prof.group == DEFAULT_GROUP

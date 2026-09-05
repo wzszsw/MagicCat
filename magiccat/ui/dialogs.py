@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from magiccat.models.profile import DEFAULT_GROUP, ConnectionProfile
+from magiccat.models.profile import ConnectionProfile
 from magiccat.services.dialects import (
     PROVIDERS,
     requires_initial_database,
@@ -61,11 +62,13 @@ class ConnectionEditDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None,
                  profile: ConnectionProfile | None = None,
-                 groups: list[str] | None = None) -> None:
+                 groups: list[str] | None = None,
+                 name_validator: Callable[[str, str | None], str] | None = None) -> None:
         super().__init__(parent)
         self._editing = profile is not None
         self._profile_id = profile.id if profile is not None else None
-        self._selected_key: str = profile.provider_key if profile is not None else "mysql"
+        self._name_validator = name_validator
+        self._selected_key: str = profile.provider_key if profile is not None else "MySQL"
 
         self.setWindowTitle("编辑连接" if profile else "新建连接")
         self.setMinimumWidth(560)
@@ -174,18 +177,7 @@ class ConnectionEditDialog(QDialog):
         self.pass_edit.setEchoMode(QLineEdit.Password)
         self.db_edit = QLineEdit(src.database)
         self.db_edit.setPlaceholderText(spec["database_placeholder"])
-        self.group_combo = QComboBox()
-        for g in groups or []:
-            self.group_combo.addItem(g)
-        if src.group and self.group_combo.findText(src.group) < 0:
-            self.group_combo.addItem(src.group)
-        if self.group_combo.findText(DEFAULT_GROUP) < 0:
-            self.group_combo.addItem(DEFAULT_GROUP)
-        self.group_combo.setCurrentText(src.group or DEFAULT_GROUP)
-        self.group_combo.setEditable(True)
-
         form.addRow("连接名称 *", self.name_edit)
-        form.addRow("分组", self.group_combo)
         self._type_label = QLabel("数据库类型")
         self._type_label.setVisible(False)
         form.addRow(self._type_label, self.type_combo)
@@ -208,7 +200,7 @@ class ConnectionEditDialog(QDialog):
         self._apply_defaults()
 
     def _on_type_changed(self) -> None:
-        self._selected_key = self.type_combo.currentData() or "mysql"
+        self._selected_key = self.type_combo.currentData() or "MySQL"
         # 切换到新产品：采用该产品的默认 主机/端口/用户名
         self._apply_defaults(force_user=True)
         spec = self._product_form_spec(self._selected_key)
@@ -239,10 +231,10 @@ class ConnectionEditDialog(QDialog):
         """
         key = self._selected_key
         defaults = {
-            "mysql": ("localhost", 3306, "root", ""),
-            "mariadb": ("localhost", 3306, "root", ""),
-            "postgresql": ("localhost", 5432, "postgres", "postgres"),
-            "gaussdb": ("localhost", 5432, "gaussdb", "postgres"),
+            "MySQL": ("localhost", 3306, "root", ""),
+            "MariaDB": ("localhost", 3306, "root", ""),
+            "PostgreSQL": ("localhost", 5432, "postgres", "postgres"),
+            "GaussDB": ("localhost", 5432, "gaussdb", "postgres"),
         }.get(key)
         if defaults:
             host, port, user, database = defaults
@@ -260,25 +252,25 @@ class ConnectionEditDialog(QDialog):
     def _product_form_spec(key: str) -> dict[str, str]:
         """每种产品独立的常规表单文案与字段语义。"""
         return {
-            "mysql": {
+            "MySQL": {
                 "title": "MySQL 连接",
                 "database_label": "",
                 "database_placeholder": "",
                 "hint": "MySQL：连接后从服务器选择数据库。",
             },
-            "mariadb": {
+            "MariaDB": {
                 "title": "MariaDB 连接",
                 "database_label": "",
                 "database_placeholder": "",
                 "hint": "MariaDB：连接后从服务器选择数据库。",
             },
-            "postgresql": {
+            "PostgreSQL": {
                 "title": "PostgreSQL 连接",
                 "database_label": "初始化数据库 *",
                 "database_placeholder": "必填，默认 postgres",
                 "hint": "PostgreSQL：初始化数据库用于首次连接，连接后仍会列出其它数据库。",
             },
-            "gaussdb": {
+            "GaussDB": {
                 "title": "GaussDB 连接",
                 "database_label": "初始化数据库 *",
                 "database_placeholder": "必填，默认 postgres",
@@ -326,13 +318,22 @@ class ConnectionEditDialog(QDialog):
             ver = ConnectionService(ProfileStore.default()).test(prof)
             QMessageBox.information(self, "测试连接", f"连接成功：{ver}")
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "测试连接", f"连接失败：\n{clean_java_error(exc)}")
+            QMessageBox.critical(self, "测试连接", f"连接失败：\n{clean_java_error(exc)}")
 
     def _validate_accept(self) -> None:
-        if not self.name_edit.text().strip():
+        name = self.name_edit.text().strip()
+        if not name:
             self.name_edit.setFocus()
             self.name_edit.setPlaceholderText("名称不能为空")
             return
+        if self._name_validator is not None:
+            try:
+                self._name_validator(name, self._profile_id)
+            except ValueError as exc:
+                QMessageBox.critical(self, "连接名称", str(exc))
+                self.name_edit.setFocus()
+                self.name_edit.selectAll()
+                return
         key = self.type_combo.currentData() or self._selected_key
         if requires_initial_database(key) and not self.db_edit.text().strip():
             QMessageBox.warning(self, "初始数据库", "PostgreSQL/GaussDB 连接必须指定初始数据库。")
@@ -344,8 +345,7 @@ class ConnectionEditDialog(QDialog):
         base = ConnectionProfile(name=self.name_edit.text().strip())
         if self._profile_id is not None:
             base.id = self._profile_id
-        base.group = self.group_combo.currentText().strip() or DEFAULT_GROUP
-        base.provider_key = self.type_combo.currentData() or self._selected_key or "mysql"
+        base.provider_key = self.type_combo.currentData() or self._selected_key or "MySQL"
         base.host = self.host_edit.text().strip() or "127.0.0.1"
         base.port = self.port_spin.value()
         base.username = self.user_edit.text().strip() or "root"
@@ -406,7 +406,7 @@ class EnvironmentDialog(QDialog):
         if path and not Path(path).is_file():
             from PySide6.QtWidgets import QMessageBox
 
-            QMessageBox.warning(self, "环境", f"驱动 JAR 不存在：{path}")
+            QMessageBox.critical(self, "环境", f"驱动 JAR 不存在：{path}")
             return
         self._settings.set("gaussdb_driver_jar", path)
         self.accept()

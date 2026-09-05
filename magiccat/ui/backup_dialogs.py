@@ -203,7 +203,7 @@ def run_restore_script(parent, connections: ConnectionService,
                 parent, "执行 SQL 脚本",
                 f"完成：{result['statements']} 条语句执行成功。")
         else:
-            QMessageBox.warning(
+            QMessageBox.critical(
                 parent, "执行 SQL 脚本",
                 f"{result['statements']} 条语句中 {len(result['errors'])} 条失败：\n"
                 + "\n".join(result["errors"]))

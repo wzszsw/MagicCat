@@ -522,7 +522,7 @@ class DataTableWidget(QWidget):
             self._busy = False
             self._set_buttons_enabled(True)
             if errs:
-                QMessageBox.warning(self, "保存更改", "\n".join(errs))
+                QMessageBox.critical(self, "保存更改", "\n".join(errs))
             self._errors = errs
             self._reload()
 

@@ -11,7 +11,7 @@ def test_pg_connection_and_metadata(qtbot, pg_env, connection_service):
     profile = ConnectionProfile(name="PG1", group=DEFAULT_GROUP,
                                 host=pg_env["host"], port=pg_env["port"],
                                 username=pg_env["user"], password=pg_env["password"],
-                                provider_key="postgresql")
+                                provider_key="PostgreSQL")
     connection_service.add(profile)
 
     # 打开连接并自检：返回 PostgreSQL 版本
@@ -33,7 +33,7 @@ def test_pg_connection_and_metadata(qtbot, pg_env, connection_service):
 def test_pg_provider_supported():
     from magiccat.services import dialects
 
-    assert dialects.provider("postgresql").state == "supported"
+    assert dialects.provider("PostgreSQL").state == "supported"
     assert dialects.build_jdbc_url(
-        "postgresql", "127.0.0.1", 5432, "app"
+        "PostgreSQL", "127.0.0.1", 5432, "app"
     ) == "jdbc:postgresql://127.0.0.1:5432/app"
