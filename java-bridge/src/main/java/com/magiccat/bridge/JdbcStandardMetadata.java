@@ -194,29 +194,27 @@ public final class JdbcStandardMetadata {
      *
      * <p>不使用 JDBC 的 SEQUENCE 类型枚举：该接口只能提供名称，无法统一提供
      * 当前值、缓存等属性，而且先枚举再补查会形成两阶段读取。GaussDB 的
-     * information_schema.sequences 提供标准字段，openGauss 序列参数函数作为
-     * 行内记录函数补充当前值和缓存；整个方法只执行一次 PreparedStatement。
+     * information_schema.sequences 提供标准字段，按序列 OID 读取的函数补充
+     * 当前值和缓存；整个方法只执行一次 PreparedStatement。
      */
     public static String gaussSequences(String configId, String catalog, String schema) {
         String useCatalog = catalog(catalog);
         String useSchema = catalog(schema);
         List<String[]> rows = new ArrayList<>();
         try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
-            String sql = "SELECT c.relname AS name, "
+            String sql = "SELECT s.sequence_name AS name, "
                     + "pg_get_userbyid(c.relowner) AS owner, "
-                    + "p.increment AS increment, p.last_value AS last_value, "
-                    + "p.minimum_value AS min_value, p.maximum_value AS max_value, "
-                    + "p.start_value AS start_value, p.cache_size AS cache, "
-                    + "CASE WHEN p.cycle_option THEN 'YES' ELSE 'NO' END AS cycle "
+                    + "s.increment AS increment, "
+                    + "(pg_sequence_last_value(c.oid)).last_value AS last_value, "
+                    + "s.minimum_value AS min_value, s.maximum_value AS max_value, "
+                    + "s.start_value AS start_value, "
+                    + "(pg_sequence_last_value(c.oid)).cache_value AS cache, "
+                    + "s.cycle_option AS cycle "
                     + "FROM information_schema.sequences s "
                     + "JOIN pg_catalog.pg_namespace n ON n.nspname = s.sequence_schema "
                     + "JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid "
                     + "AND c.relname = s.sequence_name "
                     + "AND c.relkind IN ('S', 'L') "
-                    // GaussDB supports the record function in a regular CROSS JOIN;
-                    // the PostgreSQL-only join spelling is not portable here.
-                    + "CROSS JOIN pg_sequence_all_parameters("
-                    + "format('%I.%I', n.nspname, c.relname)) p "
                     + "WHERE s.sequence_schema = ? ORDER BY s.sequence_name";
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, useSchema);

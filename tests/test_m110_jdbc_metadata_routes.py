@@ -45,11 +45,12 @@ def test_gaussdb_sequences_use_one_batch_sql_for_all_fields() -> None:
     end = standard.index("    private static void addTables", start)
     body = standard[start:end]
     assert "information_schema.sequences" in body
-    assert "CROSS JOIN pg_sequence_all_parameters" in body
+    assert "pg_sequence_last_value(c.oid)" in body
+    assert "pg_sequence_all_parameters" not in body
+    assert "CROSS JOIN" not in body
     assert "LATERAL" not in body
     assert "md.getTables" not in body
     assert body.count("prepareStatement(") == 1
-    assert "pg_sequence_all_parameters" in standard
 
 
 def test_pg_and_gaussdb_urls_do_not_receive_mysql_timeout_parameters() -> None:

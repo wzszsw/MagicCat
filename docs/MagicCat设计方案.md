@@ -440,6 +440,7 @@ MagicCat/
 | M117 | 固定“对象”页跟随左树连接/库/模式/分类/对象上下文更新；查询标签上下文与当前页保持隔离 | ✅ | 对象页跟手上下文回归 + 查询标签不抢焦点回归 |
 | M118 | 修复“其它→序列”未沿用左树上下文：序列入口及刷新/DDL 后重载保持最近 database/schema | ✅ | 序列入口树上下文回归 |
 | M119 | GaussDB 序列改为单条 `information_schema`/系统目录批量 SQL，一次返回列表所需字段，移除 JDBC 名称枚举与不兼容的 `LATERAL` 写法 | ✅ | 单 SQL 路由静态回归 + openGauss 7.0 JDBC 实测 |
+| M120 | 修复部分 GaussDB 不允许表函数横向引用前置别名：序列当前值/缓存改按 OID 行内读取，保持单条批量 SQL | ✅ | 远端报错定位 + openGauss JDBC 实测 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
