@@ -25,6 +25,11 @@ from PySide6.QtWidgets import (
 _DEFAULT_MAX = "9223372036854775807"
 
 
+def _quote_identifier(value: str) -> str:
+    """引用 PostgreSQL 标识符，避免所有者/对象名中的双引号破坏 SQL。"""
+    return '"' + value.replace('"', '""') + '"'
+
+
 class SequenceDialog(QDialog):
     """序列编辑对话框。mode: create | edit。"""
 
@@ -35,6 +40,7 @@ class SequenceDialog(QDialog):
         self.name = name
         self.mode = mode
         self.data = data or {}
+        self._original_owner = str(self.data.get("owner") or "").strip()
         self.setWindowTitle(("新建序列" if mode == "create" else "设计序列")
                             + f" · {schema}.{name or ''}")
         self.setMinimumWidth(440)
@@ -99,7 +105,7 @@ class SequenceDialog(QDialog):
 
     # ---- SQL 生成 ----
     def sql(self) -> str:
-        q = f'"{self.schema}"."{self.name}"'
+        q = f"{_quote_identifier(self.schema)}.{_quote_identifier(self.name)}"
         if self.mode == "create":
             parts = [f"CREATE SEQUENCE {q}",
                      f"    INCREMENT BY {self.increment_spin.value()}",
@@ -110,17 +116,25 @@ class SequenceDialog(QDialog):
             if self.cycle_check.isChecked():
                 parts.append("    CYCLE")
             return "\n".join(parts) + ";"
-        # edit：ALTER SEQUENCE
+        # edit：ALTER SEQUENCE；当前值用 RESTART WITH 才会真正写回序列。
         parts = [f"ALTER SEQUENCE {q}",
                  f"    INCREMENT BY {self.increment_spin.value()}",
+                 f"    START WITH {self.start_edit.text().strip() or '1'}",
                  f"    MINVALUE {self.min_edit.text().strip() or '1'}",
                  f"    MAXVALUE {self.max_edit.text().strip() or _DEFAULT_MAX}",
                  f"    CACHE {self.cache_spin.value()}"]
+        current = self.current_edit.text().strip()
+        if current:
+            parts.append(f"    RESTART WITH {current}")
         if self.cycle_check.isChecked():
             parts.append("    CYCLE")
         else:
             parts.append("    NO CYCLE")
-        return "\n".join(parts) + ";"
+        statements = ["\n".join(parts) + ";"]
+        owner = self.owner_edit.text().strip()
+        if owner and owner != self._original_owner:
+            statements.append(f"ALTER SEQUENCE {q} OWNER TO {_quote_identifier(owner)};")
+        return "\n".join(statements)
 
     def _refresh_preview(self) -> None:
         self.preview.setPlainText(self.sql())

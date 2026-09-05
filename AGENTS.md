@@ -113,6 +113,7 @@
   `ENGINE`/`TABLE_ROWS` 等 MySQL 专用字段的批量查询。
 - GaussDB 序列列表必须使用一条批量 SQL 一次返回名称、所有者、当前值、步长、最小/最大值、开始值、缓存和循环标志；
   不再先用 JDBC `DatabaseMetaData.getTables(..., {"SEQUENCE"})` 枚举名称再补查，避免两阶段读取和 N+1 演进风险。
+- 序列“设计”点击确定后必须执行 ALTER SQL 并沿用序列页的 database/schema 上下文；当前值使用 `RESTART WITH`，开始值使用 `START WITH`，成功后弹出反馈并刷新列表。
 - PostgreSQL / GaussDB 的连接配置中“初始化数据库”为必填项，默认值统一为 `postgres`；
   该值只决定首次连接目标，数据库树仍必须枚举服务器上的其它数据库。
 - GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；

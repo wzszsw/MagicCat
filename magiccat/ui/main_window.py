@@ -499,7 +499,8 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             data = {}
         dlg = SequenceDialog(schema, name=name, mode="edit", data=data, parent=self)
-        dlg.exec()
+        if dlg.exec():
+            self._run_sequence_sql(profile, dlg.sql(), "设计序列", database, schema)
 
     def _new_sequence(self) -> None:
         """新建序列：PG 下弹新建序列对话框。"""
@@ -507,12 +508,14 @@ class MainWindow(QMainWindow):
         if profile is None or not profile.is_postgres:
             QMessageBox.information(self, "新建序列", "仅 PostgreSQL 支持序列。")
             return
-        schema = self.schema_combo.currentText() or profile.database or ""
+        database = getattr(self.sequence_page, "_database", None) or profile.database or ""
+        schema = getattr(self.sequence_page, "_schema", None) or self.schema_combo.currentText() \
+            or profile.database or ""
         from magiccat.ui.sequence_dialog import SequenceDialog
 
         dlg = SequenceDialog(schema, name="new_sequence", mode="create", parent=self)
         if dlg.exec():
-            self._run_sequence_sql(profile, dlg.sql(), "新建序列")
+            self._run_sequence_sql(profile, dlg.sql(), "新建序列", database, schema)
 
     def _delete_sequence(self, profile_id: str, database: str, schema: str,
                          name: str) -> None:
@@ -537,10 +540,12 @@ class MainWindow(QMainWindow):
             self._reload_sequence_browse(profile, database, schema)
             self._status(f"序列已删除：{schema}.{name}", 4000)
 
-        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+        run_async(lambda: QueryService(self._connections).execute(
+                      profile, sql, database=database, schema=schema),
                   done, lambda err: QMessageBox.critical(self, "删除序列", err))
 
-    def _run_sequence_sql(self, profile, sql: str, verb: str) -> None:
+    def _run_sequence_sql(self, profile, sql: str, verb: str,
+                          database: str = "", schema: str = "") -> None:
         """执行序列 SQL（CREATE/ALTER），成功后刷新序列对象页。"""
         from magiccat.services.query_service import QueryService
 
@@ -550,9 +555,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, verb, errors[0]["message"])
                 return
             self._status(f"{verb}成功", 4000)
-            self._reload_sequence_browse(profile)
+            QMessageBox.information(self, verb, f"{verb}成功")
+            self._reload_sequence_browse(profile, database, schema)
 
-        run_async(lambda: QueryService(self._connections).execute(profile, sql),
+        run_async(lambda: QueryService(self._connections).execute(
+                      profile, sql, database=database or None, schema=schema or None),
                   done, lambda err: QMessageBox.critical(self, verb, err))
 
     def _query_btn(self, text: str, handler, bar: QHBoxLayout):

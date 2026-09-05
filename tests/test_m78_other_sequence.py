@@ -127,3 +127,75 @@ def test_sequence_load_error_uses_messagebox_not_context_label(
     assert window.sequence_page.ctx_label.text() == (
         f"{profile.display_name} · postgres · public"
     )
+
+
+def test_design_sequence_ok_executes_sql_with_tree_context(
+    qtbot, monkeypatch, connection_service
+):
+    from magiccat.services import query_service
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui import main_window as main_window_module
+    from magiccat.ui.main_window import MainWindow
+    from magiccat.ui.sequence_dialog import SequenceDialog
+
+    profile = ConnectionProfile(name="设计序列", provider_key="postgresql",
+                                database="postgres")
+    connection_service.add(profile)
+    window = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        window._metadata,
+        "sequences_in_database",
+        lambda *_args: [{"name": "seq", "increment": "1", "last_value": "7",
+                         "start_value": "1", "min_value": "1",
+                         "max_value": "100", "cache": "1", "cycle": "NO",
+                         "owner": "postgres"}],
+    )
+    monkeypatch.setattr(window, "_reload_sequence_browse", lambda *_args: None)
+    monkeypatch.setattr(
+        main_window_module.QMessageBox, "information",
+        staticmethod(lambda *_args, **_kwargs: None),
+    )
+
+    class _AcceptedDialog(SequenceDialog):
+        def exec(self) -> int:
+            return 1
+
+        def sql(self) -> str:
+            return "ALTER SEQUENCE \"public\".\"seq\" RESTART WITH 42;"
+
+    monkeypatch.setattr("magiccat.ui.sequence_dialog.SequenceDialog", _AcceptedDialog)
+    calls: list[tuple] = []
+
+    def execute(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return [{"kind": "update", "affected": 0}]
+
+    monkeypatch.setattr(query_service.QueryService, "execute", execute)
+    monkeypatch.setattr(main_window_module, "run_async",
+                        lambda work, done, error: done(work()))
+
+    window._design_sequence(profile.id, "target_db", "public", "seq")
+
+    assert calls == [((profile, 'ALTER SEQUENCE "public"."seq" RESTART WITH 42;'),
+                      {"database": "target_db", "schema": "public"})]
+
+
+def test_sequence_edit_sql_writes_start_and_current_values(qtbot):
+    from magiccat.ui.sequence_dialog import SequenceDialog
+
+    dialog = SequenceDialog(
+        "public", "seq", mode="edit",
+        data={"owner": "postgres", "increment": "1", "last_value": "7",
+              "start_value": "1", "min_value": "1", "max_value": "100",
+              "cache": "1", "cycle": "NO"},
+    )
+    qtbot.addWidget(dialog)
+    dialog.start_edit.setText("11")
+    dialog.current_edit.setText("42")
+
+    sql = dialog.sql()
+
+    assert "START WITH 11" in sql
+    assert "RESTART WITH 42" in sql
