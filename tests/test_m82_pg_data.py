@@ -9,7 +9,7 @@ from magiccat.models.profile import ConnectionProfile
 def _profile(pg_env, name="M82pg"):
     return ConnectionProfile(name=name, host=pg_env["host"], port=pg_env["port"],
                              username=pg_env["user"], password=pg_env["password"],
-                             provider_key="PostgreSQL")
+                             provider_key="PGSQL")
 
 
 def test_pg_table_data_crud(qtbot, pg_env, connection_service):

@@ -46,7 +46,7 @@ def test_workspace_context_is_per_tab(qtbot):
 def test_query_service_context_arguments_and_mysql_null_schema(monkeypatch):
     from magiccat.services import query_service as module
 
-    profile = ConnectionProfile(name="mysql", provider_key="MySQL")
+    profile = ConnectionProfile(name="mysql", provider_key="MYSQL")
     connections = _FakeConnections(profile)
     calls: list[tuple] = []
 
@@ -74,7 +74,7 @@ def test_query_service_context_arguments_and_mysql_null_schema(monkeypatch):
 def test_query_service_preserves_legacy_executor_without_context(monkeypatch):
     from magiccat.services import query_service as module
 
-    profile = ConnectionProfile(name="mysql", provider_key="MySQL")
+    profile = ConnectionProfile(name="mysql", provider_key="MYSQL")
     connections = _FakeConnections(profile)
     calls: list[tuple] = []
 
@@ -102,7 +102,7 @@ def test_workspace_context_uses_catalog_and_schema_for_pg(qtbot):
     from magiccat.ui.main_window import MainWindow
     from magiccat.ui.query_workspace import QueryWorkspace
 
-    profile = ConnectionProfile(name="pg", provider_key="PostgreSQL")
+    profile = ConnectionProfile(name="pg", provider_key="PGSQL")
     workspace = QueryWorkspace(SqlEditorWidget())
     qtbot.addWidget(workspace)
     workspace.database_combo.addItem("app_db")
@@ -158,7 +158,7 @@ def test_new_query_from_database_or_schema_keeps_requested_location(
     from magiccat.ui.main_window import MainWindow
 
     profile = ConnectionProfile(
-        name="pg-context", provider_key="PostgreSQL", database="postgres"
+        name="pg-context", provider_key="PGSQL", database="postgres"
     )
     connection_service.add(profile)
 
@@ -208,7 +208,7 @@ def test_plain_new_query_inherits_tree_context_only_at_creation(
     from magiccat.ui.object_explorer import _make_item
 
     profile = ConnectionProfile(
-        name="tree-context", provider_key="PostgreSQL", database="postgres"
+        name="tree-context", provider_key="PGSQL", database="postgres"
     )
     connection_service.add(profile)
 

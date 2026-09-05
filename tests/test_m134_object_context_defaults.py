@@ -8,7 +8,7 @@ def test_mysql_connection_form_has_no_database_field(qtbot):
     from magiccat.ui.dialogs import ConnectionEditDialog
 
     dialog = ConnectionEditDialog(
-        profile=ConnectionProfile(name="mysql", provider_key="MySQL", database="legacy")
+        profile=ConnectionProfile(name="mysql", provider_key="MYSQL", database="legacy")
     )
     qtbot.addWidget(dialog)
 
@@ -78,7 +78,7 @@ def test_postgres_database_selection_does_not_invent_public_schema(
     from magiccat.services.metadata_service import MetadataService
     from magiccat.ui.object_explorer import ObjectExplorer, _make_item
 
-    profile = ConnectionProfile(name="pg", provider_key="PostgreSQL",
+    profile = ConnectionProfile(name="pg", provider_key="PGSQL",
                                 database="postgres")
     connection_service.add(profile)
     monkeypatch.setattr(connection_service, "is_open", lambda _pid: True)

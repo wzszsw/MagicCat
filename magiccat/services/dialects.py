@@ -50,44 +50,44 @@ Provider = Dialect
 
 
 PROVIDERS: dict[str, Dialect] = {
-    "MySQL": Dialect(
-        key="MySQL", display="MySQL", driver_class="com.mysql.cj.jdbc.Driver",
+    "MYSQL": Dialect(
+        key="MYSQL", display="MySQL", driver_class="com.mysql.cj.jdbc.Driver",
         url_template="jdbc:mysql://{host}:{port}/{database}",
         quote_open="`", quote_close="`", state="supported", standard_metadata=False,
         supports_schema=False, pagination_style="mysql_limit", database_is_schema=True),
-    "MariaDB": Dialect(
-        key="MariaDB", display="MariaDB", driver_class="org.mariadb.jdbc.Driver",
+    "MARIADB": Dialect(
+        key="MARIADB", display="MariaDB", driver_class="org.mariadb.jdbc.Driver",
         url_template="jdbc:mariadb://{host}:{port}/{database}",
         quote_open="`", quote_close="`", state="supported", standard_metadata=False,
         supports_schema=False, pagination_style="mysql_limit", database_is_schema=True),
-    "PostgreSQL": Dialect(
-        key="PostgreSQL", display="PostgreSQL",
+    "PGSQL": Dialect(
+        key="PGSQL", display="PostgreSQL",
         driver_class="org.postgresql.Driver",
         url_template="jdbc:postgresql://{host}:{port}/{database}",
         state="supported", standard_metadata=True, supports_schema=True,
         supports_sequences=True, requires_initial_database=True,
         postgres_compatible=True),
-    "GaussDB": Dialect(
-        key="GaussDB", display="GaussDB",
+    "GAUSSDB": Dialect(
+        key="GAUSSDB", display="GaussDB",
         driver_class="com.huawei.gaussdb.jdbc.Driver",
         url_template="jdbc:gaussdb://{host}:{port}/{database}",
         state="supported", standard_metadata=True, requires_external_driver=True,
         supports_schema=True, supports_sequences=True, requires_initial_database=True,
         postgres_compatible=True),
-    "Oracle": Dialect(
-        key="Oracle", display="Oracle", driver_class="oracle.jdbc.OracleDriver",
+    "ORACLE": Dialect(
+        key="ORACLE", display="Oracle", driver_class="oracle.jdbc.OracleDriver",
         url_template="jdbc:oracle:thin:@//{host}:{port}/{database}",
         state="planned", standard_metadata=True, supports_schema=True,
         supports_sequences=True),
-    "SQL Server": Dialect(
-        key="SQL Server", display="SQL Server",
+    "MSSQL": Dialect(
+        key="MSSQL", display="SQL Server",
         driver_class="com.microsoft.sqlserver.jdbc.SQLServerDriver",
         url_template="jdbc:sqlserver://{host}:{port};databaseName={database}",
         state="planned", standard_metadata=True, supports_schema=True,
         supports_sequences=True, pagination_style="offset_fetch"),
 }
 
-DEFAULT_KEY = "MySQL"
+DEFAULT_KEY = "MYSQL"
 DEFAULT_PAGE_SIZE = 1000
 
 

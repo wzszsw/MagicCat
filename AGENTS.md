@@ -131,7 +131,7 @@
 - **避免 N+1**：循环内不做数据库 I/O；同类信息尽量**一次批查**（用户明确定义 N+1 = 循环内网络 IO）。
 - 跨库枚举（如 PG 某库的 schema/对象）需**临时连到目标库**查询。
 - 连接配置有 `provider_key`（方言/驱动 key），贯穿 open/test/连接图标/元数据。
-- `provider_key` 统一使用数据库产品的官方名称（例如 `MySQL`、`MariaDB`、`PostgreSQL`、`GaussDB`、`SQL Server`），不得使用全小写缩写；官方名称包含空格时保留空格（`SQL Server` 已确认），不得擅自移除或替换。
+- `provider_key` 统一使用大写产品 key（`MYSQL`、`MARIADB`、`PGSQL`、`GAUSSDB`、`MSSQL`、`ORACLE`）；用户可见名称由方言的 `display` 提供（如 `MySQL`、`PostgreSQL`、`SQL Server`），不得混用 key 与 display。
 - GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；
   JDBC 驱动 `gaussdbjdbc.jar` 受版权约束，不随软件分发。用户通过「工具 → 环境」指定本机 JAR，
   设置保存于 SQLite，连接打开时动态加载。
@@ -204,9 +204,9 @@
 - 结论：Navicat 对"简单数据/缓存/历史"确实用 **SQLite**；配置多为注册表/JSON；SQL 文件用文件系统。
 - **MagicCat 已按此重构本地存储**（不兼容旧 profiles.json/query.json/history.json/connections.json，
   旧数据弃用、不迁移、不留兼容代码）：
-  - 连接配置 → **用户文档目录下按产品类型/连接名称逐目录保存的版本化 JSON** `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/connection.json`（密码明文，原子写入；同一 `provider_key` 内连接名称唯一，不同产品可同名；绝不使用 Windows 注册表）。
-  - 连接分组 → 独立的 `groups.json`，只保存真实组名和连接 ID；未分组连接不写入组索引，直接显示在连接树根部。
-  - 查询 SQL 内容 → **连接目录下的 .sql 文件**；PG 为 `<MAGICCAT_HOME>/<provider_key>/Servers/<连接名称>/<database>/<schema>/<name>.sql`，MySQL/MariaDB 省略独立 schema 层。
+  - 连接配置 → **用户文档目录下按产品 display/连接名称逐目录保存的版本化 JSON** `<MAGICCAT_HOME>/<display>/Servers/<连接名称>/connection.json`（密码明文，原子写入；同一大写 `provider_key` 内连接名称唯一，不同产品可同名；绝不使用 Windows 注册表）。
+  - 连接分组 → 独立的 `Premium/profiles/vgroup.json`，结构对齐 Navicat：`version: "1.1"`、`vgroups[].vgroup_name`、`vgroups[].items[]`（`name`、`type: "CONNECTION"`、`server_type`）；未分组连接不写入分组项，直接显示在连接树根部。文件只保存名称和大写产品 key 引用，不保存连接配置。
+  - 查询 SQL 内容 → **连接目录下的 .sql 文件**；PG 为 `<MAGICCAT_HOME>/<display>/Servers/<连接名称>/<database>/<schema>/<name>.sql`，MySQL/MariaDB 省略独立 schema 层。
   - 元数据缓存/历史/收藏/设置/片段/任务/窗口状态 → **SQLite** `metacache.db`（kv / metadata_cache / history / favorites 表）。
   - 统一入口：`magiccat/storage/{__init__,profile_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`；未设置 `MAGICCAT_HOME` 时使用各平台用户文档目录下的 `MagicCat`（Windows/macOS 为 `~/Documents/MagicCat`，Linux/Unix 优先解析 XDG 用户文档目录，回退到 `~/Documents/MagicCat`）。
   - 相关服务（ProfileStore/QueryLibrary/HistoryStore/AppSettings/SnippetStore/TaskStore）接口保持，

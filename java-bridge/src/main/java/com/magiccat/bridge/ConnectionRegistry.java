@@ -50,10 +50,10 @@ public final class ConnectionRegistry {
     /** 打开（或替换）一个连接池。重复 open 会先关闭旧池。 */
     public static String open(String configId, String host, int port, String database,
                               String user, String password) {
-        return open(configId, "MySQL", host, port, database, user, password, "");
+        return open(configId, "MYSQL", host, port, database, user, password, "");
     }
 
-    /** 打开（或替换）一个连接池；flavor 为官方产品名称（MySQL/MariaDB/PostgreSQL…）。 */
+    /** 打开（或替换）一个连接池；flavor 为大写 provider key（MYSQL/PGSQL/…）。 */
     public static String open(String configId, String flavor, String host, int port,
                               String database, String user, String password) {
         return open(configId, flavor, host, port, database, user, password, "");
@@ -310,8 +310,8 @@ public final class ConnectionRegistry {
     /** 该配置是否为 PostgreSQL 兼容产品（按连接时的 flavor 判定）。 */
     public static boolean isPostgres(String configId) {
         ConnectParams p = PARAMS.get(configId);
-        return p != null && ("postgresql".equalsIgnoreCase(p.flavor())
-                || "gaussdb".equalsIgnoreCase(p.flavor()));
+        return p != null && ("PGSQL".equalsIgnoreCase(p.flavor())
+                || "GAUSSDB".equalsIgnoreCase(p.flavor()));
     }
 
     /** 若是 PG 且指定了 database，则对【该库】建临时连接（跨库访问）；否则用连接池连接。 */

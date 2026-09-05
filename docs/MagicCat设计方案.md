@@ -170,7 +170,7 @@ Server
 
 | 模块 | 关键实现 | 说明 |
 |---|---|---|
-| ConnectionManager | `ConnectionService` + `JsonProfileStore`（用户文档目录下的 `MagicCat/<provider_key>/Servers/<连接名称>/connection.json` 按产品类型逐连接目录保存 JSON + 独立 `groups.json`，明文口令） | 分组树、拖拽调整归属、复制连接、测试连接 |
+| ConnectionManager | `ConnectionService` + `JsonProfileStore`（用户文档目录下的 `MagicCat/<display>/Servers/<连接名称>/connection.json` 按产品 display 逐连接目录保存 JSON + 独立 `Premium/profiles/vgroup.json`，明文口令） | 分组树、拖拽调整归属、复制连接、测试连接 |
 | ObjectExplorer | `ObjectTreeModel` + 右键菜单 | 按 4.2 对象树展示；双击表 → 表设计/数据页 |
 | SqlEditor | `SqlEditorWidget`（自研） | 多标签；语法高亮（QSyntaxHighlighter，MySQL 关键字/字符串/注释/变量）；**自动补全**：关键字 + 已连库的表/列（元数据缓存驱动 QCompleter）；语句级执行/选中执行/全部执行；sqlparse 美化；查询历史落盘 |
 | ResultGrid | `ResultTableModel` + `ResultTableView` | 虚拟滚动（单次最多取页大小，滚动到底自动取下一页）；类型化渲染与编辑；右键：复制行/复制带表头/导出当前结果/筛选排序追加 SQL |
@@ -222,7 +222,7 @@ JPype 下不需要序列化，但仍需**稳定的跨语言类型映射**（避�
 
 | 项 | 方案 |
 |---|---|
-| 连接口令存储 | 用户文档目录下的 `MagicCat/<provider_key>/Servers/<连接名称>/connection.json`（按产品类型逐连接目录保存版本化 JSON，`password` 明文；同一 `provider_key` 内连接名称唯一，不同产品可同名，不生成哈希或碰撞后缀）；组关系独立保存于 `MagicCat/groups.json`；文件采用原子替换，Unix 权限为 `0600`，不使用 Windows 注册表 |
+| 连接口令存储 | 用户文档目录下的 `MagicCat/<display>/Servers/<连接名称>/connection.json`（按产品 display 逐连接目录保存版本化 JSON，`password` 明文；同一大写 `provider_key` 内连接名称唯一，不同产品可同名，不生成哈希或碰撞后缀）；组关系独立保存于 `MagicCat/Premium/profiles/vgroup.json`，结构对齐 Navicat 的 `version` / `vgroups` / `connections`；文件采用原子替换，Unix 权限为 `0600`，不使用 Windows 注册表 |
 | 内存中的口令 | 连接建立后即从内存配置中清除明文引用；日志一律脱敏（`****`） |
 | 传输 | 直连 JDBC，无自建网络层；无中间人面 |
 | SQL 安全 | 编辑类 SQL 只允许主键定位的 UPDATE/DELETE 由程序生成；用户自定义 SQL 属用户行为，提供"事务提交前确认"开关 |
@@ -468,8 +468,10 @@ MagicCat/
 | M145 | 默认本地数据根目录从应用配置目录迁移到各平台用户文档目录下的 `MagicCat`；保留 `MAGICCAT_HOME` 覆盖，Linux 支持 XDG 用户文档目录 | ✅ | 207 项全量回归（含跨平台路径/XDG 文档目录）；Ruff |
 | M146 | 移除连接存储中的 `connections` 中间目录，产品目录直接位于 `MagicCat` 根下，对齐 Navicat 的 `<产品>/Servers/<连接>/connection.json`；旧路径不读取、不迁移 | ✅ | 产品目录、查询目录和旧路径隔离回归；207 项全量回归；Ruff |
 | M147 | 连接名称唯一性收窄为同一 `provider_key` 内唯一，不同数据库产品允许使用相同连接名；连接表单即时校验与磁盘加载校验保持一致 | ✅ | 同产品重复名拦截、跨产品同名通过、重命名与目录隔离回归；Ruff |
+| M148 | 分组索引改为 Navicat 对齐的 `vgroup.json` 结构：`version: "1.1"`、`vgroups[].vgroup_name/items[]`、顶层 `connections`；分组项按连接名称和产品类型引用，不读取旧 `groups.json` | ✅ | Navicat 结构回归、名称/产品类型引用、重命名后分组引用刷新、旧文件隔离；Ruff |
+| M149 | 统一数据库产品 key 为大写（含 `PGSQL`、`MSSQL`），连接配置与查询目录改用方言 `display` 名称；分组文件固定为 `Premium/profiles/vgroup.json`，`server_type` 直接使用大写 key | ✅ | 大写 key 方言/图标/JDBC 回归、display 目录路径、Navicat 分组类型匹配；Ruff |
 
-- 自动化测试：`uv run pytest`（207 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（210 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

@@ -8,7 +8,7 @@ def test_gaussdb_schema_tables_uses_catalog_schema_path(monkeypatch):
     from magiccat.services.metadata_service import MetadataService
 
     profile = ConnectionProfile(
-        name="GaussDB", provider_key="GaussDB", database="aps"
+        name="GaussDB", provider_key="GAUSSDB", database="aps"
     )
     service = object.__new__(MetadataService)
     calls: list[tuple[str, str, str]] = []
@@ -29,5 +29,4 @@ def test_gaussdb_schema_tables_uses_catalog_schema_path(monkeypatch):
     assert service.schema_tables(profile, "public", "aps") == [
         {"name": "t_demo", "type": "BASE TABLE"}
     ]
-    assert calls == [("aps", "public", "GaussDB")]
-
+    assert calls == [("aps", "public", "GAUSSDB")]

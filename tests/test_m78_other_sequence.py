@@ -36,7 +36,7 @@ def test_other_menu_has_sequence_for_pg(qtbot, connection_service, pg_env):
     profile = ConnectionProfile(name="PG78", group=DEFAULT_GROUP,
                                 host=pg_env["host"], port=pg_env["port"],
                                 username=pg_env["user"], password=pg_env["password"],
-                                provider_key="PostgreSQL")
+                                provider_key="PGSQL")
     connection_service.add(profile)
     win = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(win)
@@ -93,7 +93,7 @@ def test_sequence_load_error_uses_messagebox_not_context_label(
     from magiccat.ui import main_window as main_window_module
     from magiccat.ui.main_window import MainWindow
 
-    profile = ConnectionProfile(name="序列错误", provider_key="PostgreSQL",
+    profile = ConnectionProfile(name="序列错误", provider_key="PGSQL",
                                 database="postgres")
     connection_service.add(profile)
     window = MainWindow(connection_service, MetadataService(connection_service))
@@ -138,7 +138,7 @@ def test_design_sequence_ok_executes_sql_with_tree_context(
     from magiccat.ui.main_window import MainWindow
     from magiccat.ui.sequence_dialog import SequenceDialog
 
-    profile = ConnectionProfile(name="设计序列", provider_key="PostgreSQL",
+    profile = ConnectionProfile(name="设计序列", provider_key="PGSQL",
                                 database="postgres")
     connection_service.add(profile)
     window = MainWindow(connection_service, MetadataService(connection_service))

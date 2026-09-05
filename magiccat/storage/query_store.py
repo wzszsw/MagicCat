@@ -1,6 +1,6 @@
 """具名查询（SQL）的本地存储——对标 Navicat：查询内容存 `.sql` 文件，元数据存 SQLite 收藏。
 
-- 目录结构：`<root>/<provider>/Servers/<connection>/<database>/<schema>/<name>.sql`；
+- 目录结构：`<root>/<display>/Servers/<connection>/<database>/<schema>/<name>.sql`；
   MySQL 没有独立 schema，省略 schema 层。
 - 元数据（名称/所属 database/schema/更新时间）存 SQLite `favorites`（kind='query'），内容在 .sql 文件。
 - 不兼容旧 queries/<profile_id>.json：旧文件弃用、不迁移。

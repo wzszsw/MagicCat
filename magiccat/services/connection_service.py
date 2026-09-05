@@ -125,6 +125,9 @@ class ConnectionService:
                 break
         else:
             self._profiles.append(profile)
+        if profile.group is not None:
+            # Navicat 的分组文件按名称引用连接；重命名后立即重写引用。
+            self._persist_groups()
 
     def remove(self, profile_id: str) -> None:
         self.close(profile_id)
@@ -243,7 +246,7 @@ class ConnectionService:
 
     @staticmethod
     def _driver_jar(profile: ConnectionProfile) -> str:
-        if profile.provider_key != "GaussDB":
+        if profile.provider_key != "GAUSSDB":
             return ""
         path = str(AppSettings.default().get("gaussdb_driver_jar", "") or "").strip()
         if not path:

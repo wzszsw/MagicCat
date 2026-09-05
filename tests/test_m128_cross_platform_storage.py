@@ -18,7 +18,7 @@ def test_json_profile_store_roundtrip_and_password_is_plaintext(tmp_path):
         username="admin",
         password="密钥-123!",
         database="app",
-        provider_key="MariaDB",
+        provider_key="MARIADB",
     )
     store = JsonProfileStore(tmp_path)
 
@@ -35,6 +35,20 @@ def test_json_profile_store_roundtrip_and_password_is_plaintext(tmp_path):
     assert store.load() == [profile]
 
     store.save_groups([{"name": "常用", "profile_ids": [profile.id]}])
+    vgroup = json.loads((tmp_path / "Premium" / "profiles" / "vgroup.json").read_text(encoding="utf-8"))
+    assert vgroup == {
+        "version": "1.1",
+        "vgroups": [{
+            "vgroup_name": "常用",
+            "vgroup_type": "CONNECTION",
+            "items": [{
+                "name": profile.name,
+                "type": "CONNECTION",
+                "server_type": "MARIADB",
+            }],
+        }],
+        "connections": [],
+    }
     assert store.load_groups() == [{"name": "常用", "profile_ids": [profile.id]}]
 
 

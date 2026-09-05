@@ -80,3 +80,16 @@ def test_pg_and_gaussdb_urls_do_not_receive_mysql_timeout_parameters() -> None:
 
     assert 'return "jdbc:postgresql://" + host + ":" + port + "/" + db;' in facade
     assert 'return "jdbc:gaussdb://" + host + ":" + port + "/" + db;' in facade
+
+
+def test_pgsql_key_routes_to_postgresql_in_java_bridge() -> None:
+    registry = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+                "magiccat" / "bridge" / "ConnectionRegistry.java").read_text(
+                    encoding="utf-8"
+                )
+    facade = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+              "magiccat" / "bridge" / "Facade.java").read_text(encoding="utf-8")
+
+    assert 'open(configId, "MYSQL", host, port, database, user, password, "")' in registry
+    assert '"PGSQL".equalsIgnoreCase(p.flavor())' in registry
+    assert 'if ("pgsql".equals(f))' in facade

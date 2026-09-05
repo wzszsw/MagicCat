@@ -1,6 +1,6 @@
 """具名查询库 —— 迁移到「.sql 文件 + SQLite 收藏」（对标 Navicat）。
 
-- 查询内容：`<MAGICCAT_HOME>/<provider>/Servers/<connection>/<database>/<schema>/<name>.sql`。
+- 查询内容：`<MAGICCAT_HOME>/<display>/Servers/<connection>/<database>/<schema>/<name>.sql`。
 - 元数据（名称/所属 database/schema/更新时间）：SQLite favorites（kind='query'）。
 - 兼容旧接口 list/get/save/delete；**不兼容旧 queries/<profile_id>.json**（弃用、不迁移）。
 """

@@ -1,7 +1,8 @@
 """按连接拆分的跨平台配置存储。
 
-每个连接使用独立的 ``<provider_key>/Servers/<连接名称>/connection.json`` 文件，
-组关系使用根目录下独立的 ``groups.json``。写入采用临时文件 + 原子替换；密码
+每个连接使用独立的 ``<display>/Servers/<连接名称>/connection.json`` 文件，
+组关系使用 ``Premium/profiles/vgroup.json``，结构对齐 Navicat 的 ``version`` /
+``vgroups`` / ``connections``。写入采用临时文件 + 原子替换；密码
 按用户要求直接保存为 ``password`` 字段。这里不读取 Windows 注册表或任何旧版
 聚合 JSON。
 """
@@ -23,14 +24,14 @@ from magiccat.storage import home_dir
 logger = logging.getLogger(__name__)
 
 _FORMAT_VERSION = 1
-
+_VGROUP_VERSION = "1.1"
 
 class JsonProfileStore:
     """按连接拆分的配置实现；旧的大文件格式不再读取。"""
 
     def __init__(self, root: Path | None = None) -> None:
         self.root = Path(root) if root is not None else home_dir()
-        self.groups_path = self.root / "groups.json"
+        self.vgroup_path = self.root / "Premium" / "profiles" / "vgroup.json"
         self._lock = threading.RLock()
 
     @classmethod
@@ -65,11 +66,11 @@ class JsonProfileStore:
 
     @staticmethod
     def _safe_provider_dir(provider_key: str) -> str:
-        """返回官方产品目录名，不改写产品名称中的空格。"""
+        """按大写产品 key 校验，并返回用户可见的 display 目录名。"""
         normalized = provider_key.strip()
         if normalized not in PROVIDERS:
             raise ValueError(f"不支持的数据库产品名称：{provider_key}")
-        return normalized
+        return PROVIDERS[normalized].display
 
     def _profile_dir(self, provider_key: str) -> Path:
         return self.root / self._safe_provider_dir(provider_key) / "Servers"
@@ -77,8 +78,8 @@ class JsonProfileStore:
     def _iter_profile_paths(self):
         if not self.root.is_dir():
             return
-        for provider_key in PROVIDERS:
-            servers_dir = self.root / provider_key / "Servers"
+        for provider in PROVIDERS.values():
+            servers_dir = self.root / provider.display / "Servers"
             if servers_dir.is_dir():
                 yield from servers_dir.glob("*/connection.json")
 
@@ -175,31 +176,83 @@ class JsonProfileStore:
     def load_groups(self) -> list[dict[str, object]]:
         with self._lock:
             try:
-                document = json.loads(self.groups_path.read_text(encoding="utf-8"))
+                document = json.loads(self.vgroup_path.read_text(encoding="utf-8"))
             except FileNotFoundError:
                 return []
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-                logger.warning("读取连接分组失败 [%s]: %s", self.groups_path, exc)
+                logger.warning("读取连接分组失败 [%s]: %s", self.vgroup_path, exc)
                 return []
-            if not isinstance(document, dict) or document.get("version") != _FORMAT_VERSION:
+            if not isinstance(document, dict) or document.get("version") != _VGROUP_VERSION:
                 return []
-            groups = document.get("groups")
+            groups = document.get("vgroups")
             if not isinstance(groups, list):
                 return []
+            profiles_by_key = {
+                (profile.provider_key, profile.name.strip().casefold()): profile.id
+                for profile in self.load()
+            }
             result: list[dict[str, object]] = []
             for group in groups:
-                if not isinstance(group, dict) or not isinstance(group.get("name"), str):
+                if not isinstance(group, dict):
                     continue
-                ids = group.get("profile_ids", [])
-                if not isinstance(ids, list):
-                    ids = []
-                result.append({"name": group["name"],
-                               "profile_ids": [str(pid) for pid in ids]})
+                name = group.get("vgroup_name")
+                if not isinstance(name, str) or group.get("vgroup_type") != "CONNECTION":
+                    continue
+                items = group.get("items", [])
+                if not isinstance(items, list):
+                    items = []
+                profile_ids: list[str] = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") != "CONNECTION":
+                        continue
+                    item_name = item.get("name")
+                    provider_key = item.get("server_type")
+                    if (not isinstance(item_name, str)
+                            or not isinstance(provider_key, str)
+                            or provider_key not in PROVIDERS):
+                        continue
+                    profile_id = profiles_by_key.get(
+                        (provider_key, item_name.strip().casefold())
+                    )
+                    if profile_id is not None:
+                        profile_ids.append(profile_id)
+                result.append({"name": name, "profile_ids": profile_ids})
             return result
 
     def save_groups(self, groups: list[dict[str, object]]) -> None:
-        self._atomic_write(self.groups_path, {"version": _FORMAT_VERSION,
-                                              "groups": groups})
+        profiles_by_id = {profile.id: profile for profile in self.load()}
+        vgroups: list[dict[str, object]] = []
+        for group in groups:
+            name = group.get("name")
+            if not isinstance(name, str):
+                continue
+            profile_ids = group.get("profile_ids", [])
+            if not isinstance(profile_ids, list):
+                profile_ids = []
+            items: list[dict[str, str]] = []
+            for profile_id in profile_ids:
+                profile = profiles_by_id.get(str(profile_id))
+                if profile is None:
+                    continue
+                if profile.provider_key not in PROVIDERS:
+                    continue
+                items.append({
+                    "name": profile.name,
+                    "type": "CONNECTION",
+                    "server_type": profile.provider_key,
+                })
+            vgroups.append({
+                "vgroup_name": name,
+                "vgroup_type": "CONNECTION",
+                "items": items,
+            })
+        self._atomic_write(self.vgroup_path, {
+            "version": _VGROUP_VERSION,
+            "vgroups": vgroups,
+            "connections": [],
+        })
 
     def _atomic_write(self, path: Path, document: dict[str, object]) -> None:
         payload = json.dumps(document, ensure_ascii=False, indent=2) + "\n"

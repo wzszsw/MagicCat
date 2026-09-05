@@ -27,10 +27,20 @@ def test_profiles_are_separate_and_groups_are_optional(tmp_path):
     assert json.loads(files[0].read_text(encoding="utf-8"))["password"] in {
         "plain-1", "plain-2"
     }
-    assert json.loads((tmp_path / "groups.json").read_text(encoding="utf-8")) == {
-        "version": 1,
-        "groups": [{"name": "工作", "profile_ids": [second.id]}],
+    assert json.loads((tmp_path / "Premium" / "profiles" / "vgroup.json").read_text(encoding="utf-8")) == {
+        "version": "1.1",
+        "vgroups": [{
+            "vgroup_name": "工作",
+            "vgroup_type": "CONNECTION",
+            "items": [{
+                "name": second.name,
+                "type": "CONNECTION",
+                "server_type": "MYSQL",
+            }],
+        }],
+        "connections": [],
     }
+    assert not (tmp_path / "groups.json").exists()
 
     reloaded = ConnectionService(ProfileStore(tmp_path))
     assert reloaded.get(first.id).group is None
@@ -45,6 +55,49 @@ def test_connection_form_has_no_group_field(qtbot):
     dialog = ConnectionEditDialog()
     qtbot.addWidget(dialog)
     assert not hasattr(dialog, "group_combo")
+
+
+def test_vgroup_file_matches_navicat_shape_and_resolves_by_name_and_product(tmp_path):
+    from magiccat.services.connection_service import ConnectionService
+    from magiccat.services.profile_store import ProfileStore
+
+    service = ConnectionService(ProfileStore(tmp_path))
+    mysql = ConnectionProfile(name="同名", provider_key="MYSQL")
+    pg = ConnectionProfile(name="同名", provider_key="PGSQL")
+    service.add(mysql)
+    service.add(pg)
+    service.add_group("数据库")
+    service.move_to_group(pg.id, "数据库")
+
+    document = json.loads((tmp_path / "Premium" / "profiles" / "vgroup.json").read_text(encoding="utf-8"))
+    assert set(document) == {"version", "vgroups", "connections"}
+    assert document["version"] == "1.1"
+    assert document["connections"] == []
+    assert document["vgroups"][0]["items"] == [{
+        "name": "同名",
+        "type": "CONNECTION",
+        "server_type": "PGSQL",
+    }]
+
+    reloaded = ConnectionService(ProfileStore(tmp_path))
+    assert reloaded.get(pg.id).group == "数据库"
+    assert reloaded.get(mysql.id).group is None
+
+
+def test_old_groups_json_is_not_read_or_written(tmp_path):
+    from magiccat.services.profile_store import ProfileStore
+
+    (tmp_path / "groups.json").write_text(json.dumps({
+        "version": 1,
+        "groups": [{"name": "旧组", "profile_ids": ["old-id"]}],
+    }), encoding="utf-8")
+    store = ProfileStore(tmp_path)
+    assert store.load_groups() == []
+    store.save_groups([])
+    assert json.loads((tmp_path / "groups.json").read_text(encoding="utf-8"))["groups"]
+    assert json.loads((tmp_path / "Premium" / "profiles" / "vgroup.json").read_text(encoding="utf-8")) == {
+        "version": "1.1", "vgroups": [], "connections": []
+    }
 
 
 def test_duplicate_name_is_reported_before_dialog_accepts(qtbot, monkeypatch, tmp_path):
@@ -66,7 +119,7 @@ def test_duplicate_name_is_reported_before_dialog_accepts(qtbot, monkeypatch, tm
 
     dialog = ConnectionEditDialog(name_validator=service.validate_name)
     qtbot.addWidget(dialog)
-    dialog._select_product("MySQL")
+    dialog._select_product("MYSQL")
     dialog.name_edit.setText("已存在")
     dialog._validate_accept()
 
@@ -90,12 +143,12 @@ def test_connection_names_are_unique_per_product_and_renames_follow_filename(tmp
     else:
         raise AssertionError("同一数据库产品内不应允许连接名称重复")
 
-    cross_product = ConnectionProfile(name="同名", provider_key="PostgreSQL")
+    cross_product = ConnectionProfile(name="同名", provider_key="PGSQL")
     service.add(cross_product)
     assert service.get(cross_product.id) is cross_product
     reloaded = ConnectionService(ProfileStore(tmp_path))
     assert {(profile.provider_key, profile.name) for profile in reloaded.profiles} == {
-        ("MySQL", "同名"), ("PostgreSQL", "同名")
+        ("MYSQL", "同名"), ("PGSQL", "同名")
     }
 
     service.add_group("另一组")
@@ -184,7 +237,7 @@ def test_saved_queries_follow_product_server_connection_directory(tmp_path):
     from magiccat.services.query_library import QueryLibrary
     from magiccat.storage.profile_store import JsonProfileStore
 
-    profile = ConnectionProfile(name="localhost_1433", provider_key="SQL Server",
+    profile = ConnectionProfile(name="localhost_1433", provider_key="MSSQL",
                                 id="sql-server-profile")
     JsonProfileStore(tmp_path).save_profile(profile)
 
@@ -203,7 +256,7 @@ def test_mysql_saved_query_omits_schema_directory(tmp_path):
     from magiccat.services.query_library import QueryLibrary
     from magiccat.storage.profile_store import JsonProfileStore
 
-    profile = ConnectionProfile(name="localhost_3306", provider_key="MySQL",
+    profile = ConnectionProfile(name="localhost_3306", provider_key="MYSQL",
                                 id="mysql-profile")
     JsonProfileStore(tmp_path).save_profile(profile)
     QueryLibrary(tmp_path).save(profile.id, "查询一", "SELECT 1", database="app")

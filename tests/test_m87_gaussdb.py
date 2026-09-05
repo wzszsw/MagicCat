@@ -6,7 +6,7 @@ from magiccat.models.profile import ConnectionProfile
 
 
 def test_gaussdb_profile_uses_postgres_compatible_semantics() -> None:
-    profile = ConnectionProfile(name="Gauss", provider_key="GaussDB")
+    profile = ConnectionProfile(name="Gauss", provider_key="GAUSSDB")
 
     assert profile.is_postgres
 
@@ -16,17 +16,17 @@ def test_pg_and_gaussdb_initial_database_is_required(qtbot) -> None:
 
     dialog = ConnectionEditDialog()
     qtbot.addWidget(dialog)
-    dialog._select_product("GaussDB")
+    dialog._select_product("GAUSSDB")
     dialog.name_edit.setText("Gauss")
     dialog.db_edit.clear()
-    assert dialog.type_combo.currentData() == "GaussDB"
+    assert dialog.type_combo.currentData() == "GAUSSDB"
     assert not dialog.db_edit.text()
 
 
 def test_pg_and_gaussdb_edit_default_initial_database(qtbot) -> None:
     from magiccat.ui.dialogs import ConnectionEditDialog
 
-    for provider in ("PostgreSQL", "GaussDB"):
+    for provider in ("PGSQL", "GAUSSDB"):
         dialog = ConnectionEditDialog(
             profile=ConnectionProfile(name="Existing", provider_key=provider))
         qtbot.addWidget(dialog)
@@ -37,7 +37,7 @@ def test_gaussdb_requires_environment_driver(monkeypatch, tmp_path) -> None:
     from magiccat.services.connection_service import ConnectionService
 
     monkeypatch.setenv("MAGICCAT_HOME", str(tmp_path))
-    profile = ConnectionProfile(name="Gauss", provider_key="GaussDB")
+    profile = ConnectionProfile(name="Gauss", provider_key="GAUSSDB")
 
     try:
         ConnectionService._driver_jar(profile)
@@ -65,7 +65,7 @@ def test_environment_dialog_persists_global_driver(qtbot, monkeypatch, tmp_path)
 def test_gaussdb_uses_github_huawei_icon(qtbot) -> None:
     from magiccat.ui.icons import icon
 
-    logo = icon("profile", "GaussDB")
+    logo = icon("profile", "GAUSSDB")
     assert not logo.isNull()
 
 
@@ -78,8 +78,8 @@ def test_connection_combo_items_include_product_icons(qtbot) -> None:
     combo = QComboBox()
     qtbot.addWidget(combo)
     profiles = [
-        ConnectionProfile(name="MySQL", provider_key="MySQL"),
-        ConnectionProfile(name="GaussDB", provider_key="GaussDB"),
+        ConnectionProfile(name="MySQL", provider_key="MYSQL"),
+        ConnectionProfile(name="GaussDB", provider_key="GAUSSDB"),
     ]
     populate_profile_combo(combo, profiles)
 

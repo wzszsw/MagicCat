@@ -42,7 +42,7 @@ def test_schema_level_new_query(qtbot, connection_service):
     from magiccat.ui import object_explorer as oe
 
     profile = ConnectionProfile(name="M77b", group=DEFAULT_GROUP, host="127.0.0.1",
-                                port=5432, provider_key="PostgreSQL")
+                                port=5432, provider_key="PGSQL")
     connection_service.add(profile)
     ex = _make_explorer(qtbot, connection_service)
     db, _pi = _db_node(ex, profile, "a")

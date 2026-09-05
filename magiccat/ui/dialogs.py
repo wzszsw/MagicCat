@@ -68,7 +68,7 @@ class ConnectionEditDialog(QDialog):
         self._editing = profile is not None
         self._profile_id = profile.id if profile is not None else None
         self._name_validator = name_validator
-        self._selected_key: str = profile.provider_key if profile is not None else "MySQL"
+        self._selected_key: str = profile.provider_key if profile is not None else "MYSQL"
 
         self.setWindowTitle("编辑连接" if profile else "新建连接")
         self.setMinimumWidth(560)
@@ -200,7 +200,7 @@ class ConnectionEditDialog(QDialog):
         self._apply_defaults()
 
     def _on_type_changed(self) -> None:
-        self._selected_key = self.type_combo.currentData() or "MySQL"
+        self._selected_key = self.type_combo.currentData() or "MYSQL"
         # 切换到新产品：采用该产品的默认 主机/端口/用户名
         self._apply_defaults(force_user=True)
         spec = self._product_form_spec(self._selected_key)
@@ -231,10 +231,10 @@ class ConnectionEditDialog(QDialog):
         """
         key = self._selected_key
         defaults = {
-            "MySQL": ("localhost", 3306, "root", ""),
-            "MariaDB": ("localhost", 3306, "root", ""),
-            "PostgreSQL": ("localhost", 5432, "postgres", "postgres"),
-            "GaussDB": ("localhost", 5432, "gaussdb", "postgres"),
+            "MYSQL": ("localhost", 3306, "root", ""),
+            "MARIADB": ("localhost", 3306, "root", ""),
+            "PGSQL": ("localhost", 5432, "postgres", "postgres"),
+            "GAUSSDB": ("localhost", 5432, "gaussdb", "postgres"),
         }.get(key)
         if defaults:
             host, port, user, database = defaults
@@ -252,25 +252,25 @@ class ConnectionEditDialog(QDialog):
     def _product_form_spec(key: str) -> dict[str, str]:
         """每种产品独立的常规表单文案与字段语义。"""
         return {
-            "MySQL": {
+            "MYSQL": {
                 "title": "MySQL 连接",
                 "database_label": "",
                 "database_placeholder": "",
                 "hint": "MySQL：连接后从服务器选择数据库。",
             },
-            "MariaDB": {
+            "MARIADB": {
                 "title": "MariaDB 连接",
                 "database_label": "",
                 "database_placeholder": "",
                 "hint": "MariaDB：连接后从服务器选择数据库。",
             },
-            "PostgreSQL": {
+            "PGSQL": {
                 "title": "PostgreSQL 连接",
                 "database_label": "初始化数据库 *",
                 "database_placeholder": "必填，默认 postgres",
                 "hint": "PostgreSQL：初始化数据库用于首次连接，连接后仍会列出其它数据库。",
             },
-            "GaussDB": {
+            "GAUSSDB": {
                 "title": "GaussDB 连接",
                 "database_label": "初始化数据库 *",
                 "database_placeholder": "必填，默认 postgres",
@@ -345,7 +345,7 @@ class ConnectionEditDialog(QDialog):
         base = ConnectionProfile(name=self.name_edit.text().strip())
         if self._profile_id is not None:
             base.id = self._profile_id
-        base.provider_key = self.type_combo.currentData() or self._selected_key or "MySQL"
+        base.provider_key = self.type_combo.currentData() or self._selected_key or "MYSQL"
         base.host = self.host_edit.text().strip() or "127.0.0.1"
         base.port = self.port_spin.value()
         base.username = self.user_edit.text().strip() or "root"

@@ -29,12 +29,12 @@ public final class Facade {
                 + "&connectTimeout=5000&socketTimeout=30000&serverTimezone=UTC";
     }
 
-    /** 按方言构造 JDBC URL（MySQL/MariaDB 含参数；PG 兼容产品走各自协议）。 */
+    /** 按大写 provider key 构造 JDBC URL（PG 兼容产品走各自协议）。 */
     public static String buildUrlByFlavor(String flavor, String host, int port,
                                           String database) {
         String db = (database == null || database.isBlank()) ? "" : database;
         String f = flavor == null ? "" : flavor.toLowerCase();
-        if ("postgresql".equals(f)) {
+        if ("pgsql".equals(f)) {
             // PostgreSQL 使用自身默认连接参数；不要注入项目约定的 MySQL 参数。
             return "jdbc:postgresql://" + host + ":" + port + "/" + db;
         }
