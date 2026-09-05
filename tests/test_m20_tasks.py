@@ -35,6 +35,39 @@ def test_task_lock():
     assert lock.try_acquire("a")
 
 
+def test_task_submit_error_is_reported_before_dialog_accepts(qtbot, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QMessageBox
+
+    from magiccat.services.connection_service import ConnectionService
+    from magiccat.services.profile_store import ProfileStore
+    from magiccat.ui.task_dialog import _TaskEditDialog
+
+    errors: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "critical",
+        staticmethod(lambda _parent, _title, text, *args: errors.append(text)),
+    )
+
+    class EmptyMetadata:
+        def databases(self, _profile):
+            return []
+
+    def submit(_task):
+        raise OSError("任务配置保存失败")
+
+    dialog = _TaskEditDialog(
+        ConnectionService(ProfileStore(tmp_path)),
+        EmptyMetadata(), submit_callback=submit)
+    qtbot.addWidget(dialog)
+    dialog.name_edit.setText("夜备")
+    dialog.dir_edit.setText("backups")
+    dialog._accept()
+
+    assert dialog.result() == 0
+    assert errors == ["任务配置保存失败"]
+
+
 def test_run_backup_task(mysql_env, connection_service, tmp_path):
     from magiccat.services.query_service import QueryService
 

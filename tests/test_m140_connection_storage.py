@@ -127,6 +127,31 @@ def test_duplicate_name_is_reported_before_dialog_accepts(qtbot, monkeypatch, tm
     assert warnings and "同一数据库产品内连接名称必须唯一" in warnings[0]
 
 
+def test_connection_submit_error_is_reported_before_dialog_accepts(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    errors: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "critical",
+        staticmethod(lambda _parent, _title, text, *args: errors.append(text)),
+    )
+
+    def submit(_profile):
+        raise OSError("连接配置目录不可写")
+
+    from magiccat.ui.dialogs import ConnectionEditDialog
+
+    dialog = ConnectionEditDialog(submit_callback=submit)
+    qtbot.addWidget(dialog)
+    dialog._select_product("PGSQL")
+    dialog.name_edit.setText("a")
+    dialog._validate_accept()
+
+    assert dialog.result() == 0
+    assert errors == ["连接配置目录不可写"]
+
+
 def test_connection_names_are_unique_per_product_and_renames_follow_filename(tmp_path):
     from magiccat.services.connection_service import ConnectionService
     from magiccat.services.profile_store import ProfileStore

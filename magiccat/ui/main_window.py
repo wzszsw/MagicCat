@@ -1534,13 +1534,11 @@ class MainWindow(QMainWindow):
 
     def _add_connection(self) -> None:
         dialog = ConnectionEditDialog(
-            self, name_validator=self._connections.validate_name)
+            self,
+            name_validator=self._connections.validate_name,
+            submit_callback=self._connections.add,
+        )
         if dialog.exec():
-            try:
-                self._connections.add(dialog.profile())
-            except ValueError as exc:
-                QMessageBox.critical(self, "新建连接", str(exc))
-                return
             self.explorer.load_profiles()
             self._reload_connection_combo()
             self._status("连接已保存", 3000)

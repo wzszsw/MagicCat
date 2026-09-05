@@ -63,11 +63,13 @@ class ConnectionEditDialog(QDialog):
     def __init__(self, parent: QWidget | None = None,
                  profile: ConnectionProfile | None = None,
                  groups: list[str] | None = None,
-                 name_validator: Callable[[str, str, str | None], str] | None = None) -> None:
+                 name_validator: Callable[[str, str, str | None], str] | None = None,
+                 submit_callback: Callable[[ConnectionProfile], None] | None = None) -> None:
         super().__init__(parent)
         self._editing = profile is not None
         self._profile_id = profile.id if profile is not None else None
         self._name_validator = name_validator
+        self._submit_callback = submit_callback
         self._selected_key: str = profile.provider_key if profile is not None else "MYSQL"
 
         self.setWindowTitle("编辑连接" if profile else "新建连接")
@@ -339,6 +341,13 @@ class ConnectionEditDialog(QDialog):
             QMessageBox.warning(self, "初始数据库", "PostgreSQL/GaussDB 连接必须指定初始数据库。")
             self.db_edit.setFocus()
             return
+        if self._submit_callback is not None:
+            try:
+                self._submit_callback(self.profile())
+            except Exception as exc:  # noqa: BLE001
+                action = "编辑连接" if self._editing else "新建连接"
+                QMessageBox.critical(self, action, clean_java_error(exc))
+                return
         self.accept()
 
     def profile(self) -> ConnectionProfile:

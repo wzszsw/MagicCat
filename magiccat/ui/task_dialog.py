@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -87,11 +89,15 @@ class TaskDialog(QDialog):
 
     # ---- 编辑 ----
     def _add(self) -> None:
-        dialog = _TaskEditDialog(self._connections, self._metadata, self)
+        dialog = _TaskEditDialog(self._connections, self._metadata, self,
+                                 submit_callback=self._save_new_task)
         if dialog.exec():
-            self._tasks.append(dialog.task())
-            self._store.save(self._tasks)
             self._refresh()
+
+    def _save_new_task(self, task: Task) -> None:
+        candidate = [*self._tasks, task]
+        self._store.save(candidate)
+        self._tasks = candidate
 
     def _delete(self) -> None:
         task = self._current()
@@ -147,10 +153,11 @@ class TaskDialog(QDialog):
 
 class _TaskEditDialog(QDialog):
     def __init__(self, connections: ConnectionService, metadata: MetadataService,
-                 parent=None) -> None:
+                 parent=None, submit_callback: Callable[[Task], None] | None = None) -> None:
         super().__init__(parent)
         self._connections = connections
         self._metadata = metadata
+        self._submit_callback = submit_callback
         self.setWindowTitle("新增计划任务")
         form = QFormLayout(self)
         self.name_edit = QLineEdit()
@@ -210,6 +217,14 @@ class _TaskEditDialog(QDialog):
         if not self.name_edit.text().strip() or not self.dir_edit.text().strip():
             QMessageBox.information(self, "新增任务", "请填写名称与备份目录。")
             return
+        if self._submit_callback is not None:
+            try:
+                self._submit_callback(self.task())
+            except Exception as exc:  # noqa: BLE001
+                from magiccat.utils.errors import clean_java_error
+
+                QMessageBox.critical(self, "新增任务", clean_java_error(exc))
+                return
         self.accept()
 
     def task(self) -> Task:

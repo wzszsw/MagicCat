@@ -470,8 +470,9 @@ MagicCat/
 | M147 | 连接名称唯一性收窄为同一 `provider_key` 内唯一，不同数据库产品允许使用相同连接名；连接表单即时校验与磁盘加载校验保持一致 | ✅ | 同产品重复名拦截、跨产品同名通过、重命名与目录隔离回归；Ruff |
 | M148 | 分组索引改为 Navicat 对齐的 `vgroup.json` 结构：`version: "1.1"`、`vgroups[].vgroup_name/items[]`、顶层 `connections`；分组项按连接名称和产品类型引用，不读取旧 `groups.json` | ✅ | Navicat 结构回归、名称/产品类型引用、重命名后分组引用刷新、旧文件隔离；Ruff |
 | M149 | 统一数据库产品 key 为大写（含 `PGSQL`、`MSSQL`），连接配置与查询目录改用方言 `display` 名称；分组文件固定为 `Premium/profiles/vgroup.json`，`server_type` 直接使用大写 key | ✅ | 大写 key 方言/图标/JDBC 回归、display 目录路径、Navicat 分组类型匹配；Ruff |
+| M150 | 对话框同步提交前置：连接配置及计划任务本地落盘在 `accept()` 前执行，保存/路径/名称错误保持当前对话框提示 | ✅ | 212 项回归（连接提交错误与任务提交）；Ruff |
 
-- 自动化测试：`uv run pytest`（210 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（212 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

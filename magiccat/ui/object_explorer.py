@@ -1258,20 +1258,15 @@ class ObjectExplorer(QTreeWidget):
 
     def _edit_profile(self, profile: ConnectionProfile) -> None:
         dialog = ConnectionEditDialog(
-            self, profile, name_validator=self._connections.validate_name)
+            self,
+            profile,
+            name_validator=self._connections.validate_name,
+            submit_callback=self._connections.update,
+        )
         if dialog.exec():
-            edited = dialog.profile()
-            edited.id = profile.id
-            try:
-                self._connections.update(edited)
-            except ValueError as exc:
-                from PySide6.QtWidgets import QMessageBox
-
-                QMessageBox.critical(self, "编辑连接", str(exc))
-                return
             self.load_profiles()
-            if self._connections.is_open(edited.id):
-                self._connections.close(edited.id)
+            if self._connections.is_open(profile.id):
+                self._connections.close(profile.id)
 
     def _delete_profile(self, profile: ConnectionProfile) -> None:
         from PySide6.QtWidgets import QMessageBox
