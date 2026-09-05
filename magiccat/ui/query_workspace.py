@@ -41,7 +41,7 @@ class QueryWorkspace(QWidget):
         self.editor = editor
         # 对象树新建查询时列表可能仍在异步加载，先暂存目标上下文。
         self._pending_database = ""
-        # None 表示没有指定目标（普通 PG 查询默认 public）；空字符串表示库级
+        # None 表示没有指定目标；空字符串表示库级
         # 右键新建查询明确要求模式保持空白。
         self._pending_schema: str | None = None
 

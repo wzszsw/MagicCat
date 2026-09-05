@@ -1,8 +1,8 @@
-"""结果面板（M3）：多结果标签 + 消息日志。
+"""结果面板（M3）：多结果标签 + Navicat 风格消息日志。
 
 执行一段 SQL（可能含多条语句）后 show_results(results) 会：
 - 每条查询 → 独立结果标签（表格 + 行数/耗时标注）
-- 更新/错误 → 追加到“消息”日志
+- 每条语句的 SQL、成功/错误状态、耗时 → 追加到“消息”日志
 """
 
 from __future__ import annotations
@@ -19,6 +19,26 @@ def _tab_title(result: dict) -> str:
     if result.get("kind") == "query":
         return f"结果 · {len(result.get('rows', []))} 行 · {sql}"
     return sql or "结果"
+
+
+def _message_block(result: dict) -> str:
+    """把一条执行结果渲染成消息日志块。"""
+    sql = str(result.get("sql") or "").strip()
+    lines = [sql] if sql else []
+    kind = result.get("kind")
+    if kind == "error":
+        message = str(result.get("message") or "未知错误")
+        lines.append(f"> ERROR: {message}")
+    else:
+        lines.append("> OK")
+        if kind == "update":
+            lines.append(f"> 影响行数: {result.get('affected', 0)}")
+    try:
+        elapsed = float(result.get("time_ms") or 0) / 1000
+    except (TypeError, ValueError):
+        elapsed = 0.0
+    lines.append(f"> 查询时间: {elapsed:.3f}s")
+    return "\n".join(lines)
 
 
 class ResultPanel(QTabWidget):
@@ -85,11 +105,10 @@ class ResultPanel(QTabWidget):
     def show_results(self, results: list[dict]) -> None:
         self.setVisible(True)
         self.clear_results()
-        query_count = 0
+        message_blocks: list[str] = []
         for result in results:
             kind = result.get("kind")
             if kind == "query":
-                query_count += 1
                 model = ResultTableModel(result.get("columns", []), result.get("rows", []))
                 view = ResultView()
                 view.setModel(model)
@@ -98,16 +117,9 @@ class ResultPanel(QTabWidget):
                     title += "（已截断）"
                 self.addTab(view, title)
                 self._result_tab_indexes.append(self.count() - 1)
-                self.append_message(
-                    f"[OK] {len(result['rows'])} 行 · {result['time_ms']} ms"
-                    + ("（截断）" if result.get("truncated") else "")
-                    + f"  <- {result['sql']}")
-            elif kind == "update":
-                self.append_message(
-                    f"[OK] 影响 {result['affected']} 行 · {result['time_ms']} ms"
-                    f"  <- {result['sql']}")
-            elif kind == "error":
-                self.append_message(
-                    f"[错误] {result.get('message')}  <- {result['sql']}")
+            if kind in ("query", "update", "error"):
+                message_blocks.append(_message_block(result))
+        if message_blocks:
+            self.append_message("\n\n".join(message_blocks))
         if self._result_tab_indexes:
             self.setCurrentIndex(self._result_tab_indexes[0])

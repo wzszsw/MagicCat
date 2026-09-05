@@ -449,6 +449,12 @@ MagicCat/
 | M126 | 兼容 MySQL 系统库表类型：标准 JDBC 表枚举纳入 `SYSTEM TABLE`，恢复 `mysql.user` 等系统表展示 | ✅ | 本地 MySQL 表/列元数据回归 15 项；Maven package + Ruff |
 | M127 | 关闭态连接仅允许定位和查看信息，不激活当前连接及“对象”工作区；打开态保持树跟手 | ✅ | 关闭/打开态对象树信号回归 8 项；Ruff |
 | M128 | 连接配置移除 Windows 注册表，改为用户数据目录下版本化 `connections.json`（密码明文；不兼容旧注册表/JSON，不迁移） | ✅ | JSON 明文回环、原子写入、跨平台目录解析；Ruff |
+| M129 | 修复 MySQL JDBC `NULLABLE=YES/NO` 解析导致的数据页加载异常，并将“对象”列表改为 Navicat 式无边框平面表格 | ✅ | Java bridge Maven package；MySQL 可空标志静态回归；对象表格 Qt 回归；Ruff |
+| M130 | 左侧对象树表节点暂不展开列明细，保留双击打开表数据及表操作菜单 | ✅ | 表节点无展开指示器/无列子项 Qt 回归；Ruff |
+| M131 | “消息”面板按语句记录 SQL、成功/错误状态、影响行数与查询耗时，贴近 Navicat 消息日志 | ✅ | 消息面板 Qt 回归；并发执行消息回归；Ruff |
+| M132 | 对象列表双击与左侧树统一走对象定义/数据编辑入口，补齐视图与触发器树侧双击 | ✅ | 对象树双击路由 Qt 回归；Ruff |
+| M133 | 引入窗口级不可变 UI 状态容器（typed action/reducer + Qt signal），保留查询工作区标签私有状态边界 | ✅ | 状态 reducer/store 回归；对象页 MySQL catalog 双击回归；Ruff |
+| M134 | 收掉 MySQL/MariaDB 连接表单数据库字段，取消对象页初始化库回退，并支持树节点双击直接展开 | ✅ | 对象上下文无默认库回归；连接表单/树双击 Qt 回归；Ruff |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

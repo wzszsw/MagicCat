@@ -47,8 +47,7 @@ class MetadataService:
         MySQL 专用 ``TABLE_ROWS AS `rows``` 语法，否则 openGauss 会在反引号处报错。
         """
         if profile.is_postgres:
-            return self.schema_tables_in_database(
-                profile, database or profile.database, schema)
+            return self.schema_tables_in_database(profile, database, schema)
         return self._meta(profile, "schemaTables", schema)
 
     def schema_tables_in_database(self, profile: ConnectionProfile, database: str,
@@ -94,8 +93,7 @@ class MetadataService:
     def schema_columns(self, profile: ConnectionProfile, schema: str,
                        database: str = "") -> list[dict]:
         if profile.is_postgres:
-            return self.schema_columns_in_database(
-                profile, database or profile.database, schema)
+            return self.schema_columns_in_database(profile, database, schema)
         return self._meta(profile, "schemaColumns", schema)
 
     def schema_columns_in_database(self, profile: ConnectionProfile, database: str,

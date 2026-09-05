@@ -133,13 +133,11 @@ public final class JdbcStandardMetadata {
                         continue;
                     }
                     String type = columnType(rs);
-                    String nullable = rs.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls
-                            ? "NO" : "YES";
+                    String nullable = nullableFlag(rs);
                     String def = rs.getString("COLUMN_DEF");
                     String extra = "";
                     try {
-                        if (rs.getInt("IS_AUTOINCREMENT") == 1
-                                || "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT"))) {
+                        if (autoIncrementFlag(rs)) {
                             extra = "auto_increment";
                         }
                     } catch (SQLException ignore) {
@@ -294,12 +292,10 @@ public final class JdbcStandardMetadata {
                     if (table == null || name == null) {
                         continue;
                     }
-                    String nullable = rs.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls
-                            ? "NO" : "YES";
+                    String nullable = nullableFlag(rs);
                     String extra = "";
                     try {
-                        if (rs.getInt("IS_AUTOINCREMENT") == 1
-                                || "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT"))) {
+                        if (autoIncrementFlag(rs)) {
                             extra = "auto_increment";
                         }
                     } catch (SQLException ignore) {
@@ -325,6 +321,46 @@ public final class JdbcStandardMetadata {
         } catch (SQLException e) {
             return "";
         }
+    }
+
+    /**
+     * 读取 JDBC 列可空标志。
+     *
+     * <p>标准 JDBC 将 NULLABLE 定义为数字枚举，但 MySQL/MariaDB 驱动在部分
+     * 版本中返回信息模式使用的 YES/NO 文本。先按文本读取，再解析数字，避免
+     * 对 YES 直接调用 ResultSet#getInt 导致 NumberFormatException。
+     */
+    private static String nullableFlag(ResultSet rs) throws SQLException {
+        String raw = rs.getString("NULLABLE");
+        if (raw == null || raw.isBlank()) {
+            return "YES";
+        }
+        String value = raw.trim();
+        if ("NO".equalsIgnoreCase(value) || "N".equalsIgnoreCase(value)) {
+            return "NO";
+        }
+        if ("YES".equalsIgnoreCase(value) || "Y".equalsIgnoreCase(value)) {
+            return "YES";
+        }
+        try {
+            return Integer.parseInt(value) == DatabaseMetaData.columnNoNulls
+                    ? "NO" : "YES";
+        } catch (NumberFormatException ignore) {
+            // 未知驱动值按可空处理，避免阻断整个表数据页加载。
+            return "YES";
+        }
+    }
+
+    private static boolean autoIncrementFlag(ResultSet rs) throws SQLException {
+        String raw = rs.getString("IS_AUTOINCREMENT");
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        String value = raw.trim();
+        return "YES".equalsIgnoreCase(value)
+                || "Y".equalsIgnoreCase(value)
+                || "TRUE".equalsIgnoreCase(value)
+                || "1".equals(value);
     }
 
     private static String columnType(ResultSet rs) throws SQLException {

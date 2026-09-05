@@ -1,4 +1,4 @@
-"""对象浏览器树（M2）：分组 → 连接 → 数据库 → [表/视图/例程/触发器] → 列。
+"""对象浏览器树（M2）：分组 → 连接 → 数据库 → [表/视图/例程/触发器]。
 
 懒加载策略：可展开节点只放一个占位子项；展开时在后台线程拉元数据
 （run_async），完成后在主线程替换为真实子项 —— 浏览不卡 UI。
@@ -62,6 +62,8 @@ class ObjectExplorer(QTreeWidget):
     """连接与数据库对象导航树。"""
 
     open_table_requested = Signal(str, str, str, str)  # profile_id, database, schema, table
+    open_view_requested = Signal(str, str, str)  # profile_id, schema, view
+    open_trigger_requested = Signal(str, str, str)  # profile_id, schema, trigger
     design_table_requested = Signal(str, str, str)  # profile_id, schema, table
     er_database_requested = Signal(str, str)  # profile_id, schema
     create_table_requested = Signal(str, str)  # profile_id, schema
@@ -118,7 +120,7 @@ class ObjectExplorer(QTreeWidget):
             if kind == "database":
                 desc = {"kind": "database", "profile_id": pid, "schema": data.get("schema")}
                 context = (pid, data.get("schema", ""),
-                           "public" if profile.is_postgres else data.get("schema", ""),
+                           "" if profile.is_postgres else data.get("schema", ""),
                            "tables")
             elif kind in ("table", "view"):
                 desc = {"kind": kind, "profile_id": pid, "schema": data.get("schema"),
@@ -227,7 +229,7 @@ class ObjectExplorer(QTreeWidget):
         elif kind == "category":
             # 逐层懒加载：展开分类才取该层数据
             self._load_category(item)
-        elif kind == "table" or kind == "view":
+        elif kind == "view":
             self._load_columns(item)
 
     def _load_profile(self, item: QTreeWidgetItem) -> None:
@@ -433,7 +435,8 @@ class ObjectExplorer(QTreeWidget):
             leaf = _make_item(obj["name"], kind,
                               schema=schema, table=obj["name"], name=obj["name"])
             if cat_type == "tables":
-                _placeholder(leaf)  # 表可继续展开列（列也是懒加载）
+                # 暂时只在对象页/双击中操作表，树中不展开列明细。
+                leaf.setChildIndicatorPolicy(QTreeWidgetItem.DontShowIndicator)
             return leaf
         if cat_type == "routines":
             return _make_item(obj["name"], "routine", schema=schema,
@@ -546,20 +549,30 @@ class ObjectExplorer(QTreeWidget):
     def _on_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         info = _info(item)
         kind = info.get(KIND_KEY)
-        if kind == "profile":
-            item.setExpanded(not item.isExpanded())
+        if kind in ("group", "profile", "database", "schema", "category"):
+            # 双击树节点即执行展开/收起，用户无需精准点击左侧小三角。
+            if item.childCount() > 0:
+                item.setExpanded(not item.isExpanded())
         elif kind == "saved_query":
             self._open_saved_query_item(item)
         elif kind == "routine":
             self._open_routine_sql(item)
-        elif kind in ("table", "view"):
+        elif kind == "table":
             profile = self._profile_of(item)
             if profile is not None:
                 self.open_table_requested.emit(
                     profile.id, self._database_of(item),
                     info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
-        elif kind == "database":
-            item.setExpanded(not item.isExpanded())
+        elif kind == "view":
+            profile = self._profile_of(item)
+            if profile is not None:
+                self.open_view_requested.emit(
+                    profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["table"])
+        elif kind == "trigger":
+            profile = self._profile_of(item)
+            if profile is not None:
+                self.open_trigger_requested.emit(
+                    profile.id, info[DATA_KEY]["schema"], info[DATA_KEY]["name"])
 
     def _show_menu(self, pos) -> None:
         item = self.itemAt(pos)
@@ -1080,8 +1093,13 @@ class ObjectExplorer(QTreeWidget):
             self._load_profile(item)
         elif kind == "database":
             self._load_database(item)
-        elif kind in ("table", "view"):
+        elif kind == "view":
             self._load_columns(item)
+        elif kind == "table":
+            # 表节点暂不展开列；刷新表节点时刷新所属分类列表。
+            parent = item.parent()
+            if parent is not None and _info(parent).get(KIND_KEY) == "category":
+                self._load_category(parent)
         elif kind == "category":
             parent = item.parent()
             if parent is not None:

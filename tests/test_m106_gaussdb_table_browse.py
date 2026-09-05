@@ -26,7 +26,7 @@ def test_gaussdb_schema_tables_uses_catalog_schema_path(monkeypatch):
         ),
     )
 
-    assert service.schema_tables(profile, "public") == [
+    assert service.schema_tables(profile, "public", "aps") == [
         {"name": "t_demo", "type": "BASE TABLE"}
     ]
     assert calls == [("aps", "public", "gaussdb")]

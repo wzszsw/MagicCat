@@ -198,6 +198,7 @@ class ConnectionEditDialog(QDialog):
 
         # 底部「测试连接」按钮在向导底栏，故这里仅放保存密码提示
         self._form_page = page
+        self._sync_database_field()
         # 应用产品默认值
         self._apply_defaults()
 
@@ -210,6 +211,19 @@ class ConnectionEditDialog(QDialog):
             self._database_label.setText(spec["database_label"])
             self.db_edit.setPlaceholderText(spec["database_placeholder"])
             self._product_hint.setText(spec["hint"])
+            self._sync_database_field()
+
+    def _sync_database_field(self) -> None:
+        """MySQL/MariaDB 不需要在连接配置中填写数据库。
+
+        保留 ``db_edit`` 属性供 PostgreSQL/GaussDB 的必填初始化数据库使用，
+        但 MySQL/MariaDB 的表单不展示该行，也不把历史值带回新的配置。
+        """
+        visible = self._selected_key in ("postgresql", "gaussdb")
+        self._database_label.setVisible(visible)
+        self.db_edit.setVisible(visible)
+        if not visible:
+            self.db_edit.clear()
 
     def _apply_defaults(self, force_user: bool = False) -> None:
         """按当前产品应用默认主机/端口/用户名。
@@ -242,15 +256,15 @@ class ConnectionEditDialog(QDialog):
         return {
             "mysql": {
                 "title": "MySQL 连接",
-                "database_label": "数据库（可选）",
-                "database_placeholder": "可选：默认连接到的数据库",
-                "hint": "MySQL：database 与 schema 等价，连接后将列出服务器上的全部数据库。",
+                "database_label": "",
+                "database_placeholder": "",
+                "hint": "MySQL：连接后从服务器选择数据库。",
             },
             "mariadb": {
                 "title": "MariaDB 连接",
-                "database_label": "数据库（可选）",
-                "database_placeholder": "可选：默认连接到的数据库",
-                "hint": "MariaDB：database 与 schema 等价，连接后将列出服务器上的全部数据库。",
+                "database_label": "",
+                "database_placeholder": "",
+                "hint": "MariaDB：连接后从服务器选择数据库。",
             },
             "postgresql": {
                 "title": "PostgreSQL 连接",
@@ -329,7 +343,8 @@ class ConnectionEditDialog(QDialog):
         base.port = self.port_spin.value()
         base.username = self.user_edit.text().strip() or "root"
         base.password = self.pass_edit.text()
-        base.database = self.db_edit.text().strip()
+        base.database = (self.db_edit.text().strip()
+                         if base.provider_key in ("postgresql", "gaussdb") else "")
         return base
 
 

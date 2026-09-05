@@ -41,7 +41,7 @@ def test_parallel_execution_qt(qtbot, mysql_env, connection_service):
             if lp is not None and hasattr(lp, "_log"):
                 texts.append(lp._log.toPlainText())
         joined = "\n".join(texts)
-        return "SELECT 1 AS a1" in joined and "SELECT 2 AS a2" in joined and joined.count("[OK]") >= 2
+        return "SELECT 1 AS a1" in joined and "SELECT 2 AS a2" in joined and joined.count("> OK") >= 2
 
     qtbot.waitUntil(both_done, timeout=30_000)
     connection_service.close(profile.id)

@@ -58,6 +58,10 @@
   - 启动**不**自动选中连接，直到用户在树中激活或在下拉选择；未激活连接时点功能区才提示"请先选择连接"。
   - 左侧树定位到**关闭态连接**时只更新选中项信息，不发出当前连接/对象上下文切换；只有打开态连接才能激活“对象”工作区。
 
+- 对象页没有“默认库”概念：`ConnectionProfile.database` 仅用于 PostgreSQL/GaussDB 协议要求的初始化建连参数，不能作为对象页或其它领域的隐式回退上下文。当前 database/schema 只能来自左树最近激活上下文、标签自身选择或调用方显式参数。
+- MySQL/MariaDB 连接编辑表单不展示数据库字段；其数据库列表在连接成功后枚举，用户在对象树或查询工作区中明确选择。PG/GaussDB 的“初始化数据库”字段保持必填，因为驱动协议需要连接目标。
+- 当业务路径确实拿不到 database/schema 时，不补选 profile 初始库、第一项库或 `public`；继续走既有 JDBC/SQL 路径，让真实错误通过统一错误处理暴露，避免保护性回退掩盖问题。
+
 ## 3.1 SQL 编辑器（monaco-editor）
 
 - **SQL/代码编辑器内核用 monaco-editor（VS Code 内核）**，替代自研 `QPlainTextEdit` 高亮/补全，降低语法提示与高亮成本。
@@ -88,6 +92,14 @@
 - 顶部“表/视图/函数/查询”功能域按钮为互斥选择态，由窗口级当前领域 flag 统一驱动中央工作区和按钮高亮。
 - 首屏对象工作区没有连接/库上下文时，新增/打开/设计/删除/刷新等操作按钮全部禁用；对象列表成功加载后才恢复可用。
 - 表数据页主键读取统一使用 JDBC `DatabaseMetaData.getPrimaryKeys` 和 `KEY_SEQ`，不得手写 `array_position`/`pg_index` 排序 SQL。
+
+## 3.2 UI 状态管理
+
+- 窗口级跨组件导航状态统一由 `magiccat/ui/state.py` 的 `UiStateStore` 持有，使用不可变 `UiState` 快照、typed action 与纯 `reduce_state`，通过 Qt `state_changed` 信号通知界面。
+- `MainWindow` 的当前领域、当前对象连接、对象树 database/schema 上下文、活动标签页和运行中查询计数必须通过 store/reducer 更新；保留的旧属性只能作为兼容访问器，不得绕过 reducer 直接修改状态。
+- `UiStateStore.dispatch()` 对等值 action 去重，不重复发出 `state_changed`；状态边界在 reducer 中归一化（活动索引和运行计数不得为负数）。
+- `QueryWorkspace` 的连接、Catalog、Schema、编辑器、结果区和状态行属于查询标签私有状态，不纳入窗口级 store，避免左树或其它标签的操作互相覆盖。
+- 状态 action 只在 Qt 主线程分发；后台 JDBC 任务通过已有 `run_async` 回调回到主线程后再更新 store。
 
 ## 4. 数据访问与方言
 

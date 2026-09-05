@@ -41,6 +41,18 @@ def test_jdbc_standard_layer_supports_tables_views_and_column_shapes() -> None:
     assert '"MATERIALIZED VIEW"' in source
 
 
+def test_jdbc_standard_layer_accepts_mysql_nullable_text_values() -> None:
+    source = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+              "magiccat" / "bridge" / "JdbcStandardMetadata.java").read_text(encoding="utf-8")
+
+    assert 'rs.getInt("NULLABLE")' not in source
+    assert 'rs.getInt("IS_AUTOINCREMENT")' not in source
+    assert source.count("nullableFlag(rs)") == 2
+    assert '"YES".equalsIgnoreCase(value)' in source
+    assert "Integer.parseInt(value)" in source
+    assert "autoIncrementFlag(rs)" in source
+
+
 def test_gaussdb_sequences_use_one_batch_sql_for_all_fields() -> None:
     api = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
            "magiccat" / "bridge" / "MetadataApi.java").read_text(encoding="utf-8")

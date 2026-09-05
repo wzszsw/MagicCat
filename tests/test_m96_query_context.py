@@ -118,7 +118,7 @@ def test_workspace_context_uses_catalog_and_schema_for_pg(qtbot):
     assert MainWindow._workspace_context(workspace, profile) == ("app_db", None)
 
     workspace.schema_combo.setEnabled(False)
-    assert MainWindow._workspace_context(workspace, profile) == ("app_db", "public")
+    assert MainWindow._workspace_context(workspace, profile) == ("app_db", None)
 
 
 def test_workspace_hides_schema_for_mysql(qtbot):

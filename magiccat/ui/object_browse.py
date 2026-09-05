@@ -12,6 +12,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -68,10 +69,26 @@ class ObjectBrowseView(QWidget):
         self.set_context_available(False)
 
         self.table = QTableWidget(0, 0)
+        self.table.setObjectName("objectBrowseTable")
+        self.table.setFrameShape(QFrame.NoFrame)
+        self.table.setFrameShadow(QFrame.Plain)
+        self.table.setLineWidth(0)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(False)
+        self.table.setStyleSheet(
+            "QTableWidget { border: none; gridline-color: transparent; }"
+            "QTableWidget::item { border: none; padding: 3px 8px; }"
+            "QTableWidget::item:selected { background-color: #cfe8ff; color: #1f2937; }"
+            "QHeaderView { border: none; }"
+            "QHeaderView::section { border: none; padding: 4px 8px; }"
+        )
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
+        vertical_header = self.table.verticalHeader()
+        vertical_header.setVisible(False)
+        vertical_header.setDefaultSectionSize(24)
+        self.table.horizontalHeader().setHighlightSections(False)
         self.table.doubleClicked.connect(self._emit_open)
         self.table.itemSelectionChanged.connect(self._on_selection)
         lay.addWidget(self.table, 1)

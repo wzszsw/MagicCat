@@ -29,10 +29,17 @@ class TableBrowseView(ObjectBrowseView):
         self.new_object.connect(self.new_table)
         self.delete_object.connect(self._on_delete)
         self._schema: str | None = None
+        self._database = ""
 
-    def load_tables(self, profile_id: str, schema: str, rows: list[dict]) -> None:
+    def load_tables(self, profile_id: str, schema: str, rows: list[dict],
+                    database: str = "") -> None:
+        self._database = database or ""
         self._schema = schema
         self.load(profile_id, rows)
+
+    def database_context(self) -> str:
+        """返回对象页加载时的 JDBC catalog/database。"""
+        return self._database
 
     def _selected(self) -> tuple[str, str, str] | None:
         if self._profile_id is None or not self._schema:
