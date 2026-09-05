@@ -18,3 +18,5 @@ def test_main_window_does_not_precreate_query_tab(qtbot, connection_service):
     workspace = window._new_editor()
     assert window.editor_tabs.count() == 2
     assert window.editor_tabs.currentWidget() is workspace
+    assert window.editor_tabs.tabText(window.editor_tabs.indexOf(workspace)) == "无标题"
+    assert workspace.tab_key.startswith("query:untitled:")

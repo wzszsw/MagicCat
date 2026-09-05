@@ -22,7 +22,8 @@ class ViewBrowseView(ObjectBrowseView):
         super().__init__(parent)
         self.configure(["名称", "类型", "引擎", "行数", "注释"], name_column=0,
                        new_text="新建视图", open_text="打开", delete_text="删除视图",
-                       keys=["name", "type", "engine", "rows", "comment"])
+                       keys=["name", "type", "engine", "rows", "comment"],
+                       icon_kind="view")
         self.new_object.connect(self.new_view)
         self.delete_object.connect(self._on_delete)
         self._schema: str | None = None

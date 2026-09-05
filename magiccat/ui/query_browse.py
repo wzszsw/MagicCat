@@ -23,7 +23,7 @@ class QueryBrowseView(ObjectBrowseView):
         super().__init__(parent)
         self.configure(["名称", "修改日期", "库"], name_column=0,
                        new_text="新建查询", open_text="打开", delete_text="删除查询",
-                       keys=["name", "updated_at", "schema"])
+                       keys=["name", "updated_at", "schema"], icon_kind="query")
         self.open_object.connect(self.open_query)
         self.new_object.connect(self.new_query)
         self.delete_object.connect(self.delete_query)

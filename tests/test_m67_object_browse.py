@@ -133,7 +133,8 @@ def test_mainwindow_domain_stack(qtbot, connection_service):
 
     pages = {"queries": win.browse_page, "tables": win.table_page,
              "views": win.view_page, "routines": win.routine_page,
-             "triggers": win.trigger_page, "sequences": win.sequence_page}
+             "triggers": win.trigger_page, "sequences": win.sequence_page,
+             "users": win.user_page}
     assert win._domain_pages == pages
     for cat, page in pages.items():
         win._show_domain(cat)

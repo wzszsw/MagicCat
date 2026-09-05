@@ -22,7 +22,7 @@ class RoutineBrowseView(ObjectBrowseView):
         super().__init__(parent)
         self.configure(["名称", "类型"], name_column=0,
                        new_text="新建函数", open_text="打开", delete_text="删除",
-                       keys=["name", "type"])
+                       keys=["name", "type"], icon_kind="routine")
         self.new_object.connect(self.new_routine)
         self.delete_object.connect(self._on_delete)
         self._schema: str | None = None

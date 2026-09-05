@@ -11,18 +11,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QSpinBox,
-    QTableView,
-    QVBoxLayout,
-    QWidget,
 )
 
 from magiccat.services import user_service
 from magiccat.services.connection_service import ConnectionService
 from magiccat.services.query_service import QueryService
-from magiccat.ui.grid import ResultTableModel
 from magiccat.ui.job import run_async
+from magiccat.ui.object_browse import ObjectBrowseView
 
 _COLUMNS = ["名称", "插件", "SSL 类型", "每小时查询", "每小时更新",
             "每小时连接", "最大连接数", "超级用户"]
@@ -130,7 +126,7 @@ class UserEditDialog(QDialog):
         return self._refreshed_members()
 
 
-class UserManagerWidget(QWidget):
+class UserManagerWidget(ObjectBrowseView):
     tab_key = "user-manager"
 
     def __init__(self, profile, connections: ConnectionService, parent=None) -> None:
@@ -139,48 +135,79 @@ class UserManagerWidget(QWidget):
         self._connections = connections
         self._query = QueryService(connections)
         self._users: list[dict] = []
-        root = QVBoxLayout(self)
-
-        bar = QHBoxLayout()
-        for text, handler in (("新建用户", self._new_user), ("编辑用户", self._edit_user),
-                              ("删除用户", self._delete_user), ("显示权限", self._show_grants),
-                              ("刷新", self._reload)):
-            btn = QPushButton(text)
-            btn.clicked.connect(handler)
-            bar.addWidget(btn)
-        bar.addStretch(1)
-        root.addLayout(bar)
-
-        self.table = QTableView()
-        self.table.setSelectionBehavior(QTableView.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        root.addWidget(self.table, 1)
-
+        self.configure(
+            _COLUMNS,
+            name_column=0,
+            new_text="新建用户",
+            open_text="编辑用户",
+            delete_text="删除用户",
+            keys=["name", "plugin", "ssl_type", "max_questions", "max_updates",
+                  "max_connections", "max_user_connections", "super_priv"],
+            icon_kind="user",
+        )
+        self.new_object.connect(self._new_user)
+        self.refresh_requested.connect(self._reload)
+        self.add_tool_button("显示权限", self._show_grants)
         self.status = QLabel("加载中…")
-        root.addWidget(self.status)
+        self.layout().addWidget(self.status)
+        self.set_profile(profile)
+
+    def set_profile(self, profile) -> None:
+        """切换对象页的当前连接；``None`` 表示尚未选择连接。"""
+        self.profile = profile
+        self._users = []
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        self.set_context_available(profile is not None)
+        if profile is None:
+            self.status.setText("请先选择连接")
+            return
+        self.status.setText("加载中…")
         self._reload()
 
-    def _reload(self) -> None:
-        run_async(lambda: user_service.list_users(self._query, self.profile),
-                  self._on_loaded, lambda err: self.status.setText(f"加载失败：{err}"))
+    def clear(self) -> None:
+        """清空当前用户领域，供对象页没有连接上下文时调用。"""
+        self.set_profile(None)
 
-    def _on_loaded(self, users: list[dict]) -> None:
+    def _reload(self) -> None:
+        if self.profile is None:
+            return
+        profile = self.profile
+        run_async(lambda: user_service.list_users(self._query, profile),
+                  lambda users: self._on_loaded(profile, users),
+                  lambda err: self._on_error(profile, err))
+
+    def _on_loaded(self, profile, users: list[dict]) -> None:
+        if self.profile is None or self.profile.id != profile.id:
+            return
         self._users = users
-        rows = []
-        for u in users:
-            rows.append([f"{u['user']}@{u['host']}", u.get("plugin") or "",
-                         u.get("ssl_type") or "", u.get("max_questions") or "",
-                         u.get("max_updates") or "", u.get("max_connections") or "",
-                         u.get("max_user_connections") or "", u.get("super_priv") or ""])
-        model = ResultTableModel(_COLUMNS, rows)
-        self.table.setModel(model)
+        rows = [{"name": f"{u['user']}@{u['host']}",
+                 "plugin": u.get("plugin") or "",
+                 "ssl_type": u.get("ssl_type") or "",
+                 "max_questions": u.get("max_questions") or "",
+                 "max_updates": u.get("max_updates") or "",
+                 "max_connections": u.get("max_connections") or "",
+                 "max_user_connections": u.get("max_user_connections") or "",
+                 "super_priv": u.get("super_priv") or ""}
+                for u in users]
+        self.load(profile.id, rows)
         self.status.setText(f"共 {len(users)} 个用户")
 
+    def _on_error(self, profile, err: str) -> None:
+        if self.profile is not None and self.profile.id == profile.id:
+            self.status.setText(f"加载失败：{err}")
+
     def _selected(self) -> dict | None:
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
+        row = self._selected_row()
+        if row < 0 or row >= len(self._users):
             return None
-        return self._users[rows[0].row()]
+        return self._users[row]
+
+    def _emit_open(self) -> None:
+        self._edit_user()
+
+    def _emit_delete(self) -> None:
+        self._delete_user()
 
     def _new_user(self) -> None:
         dlg = UserEditDialog("create", self)

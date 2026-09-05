@@ -21,7 +21,8 @@ class TriggerBrowseView(ObjectBrowseView):
         super().__init__(parent)
         self.configure(["名称", "事件", "表"], name_column=0,
                        new_text="新建", open_text="打开", delete_text="删除",
-                       keys=["name", "event", "table"], show_new=False)
+                       keys=["name", "event", "table"], show_new=False,
+                       icon_kind="trigger")
         self.delete_object.connect(self._on_delete)
         self._schema: str | None = None
 

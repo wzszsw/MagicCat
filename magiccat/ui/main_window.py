@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QIcon
@@ -69,7 +70,6 @@ class MainWindow(QMainWindow):
         self._query = QueryService(connections)
         self._history = HistoryStore.default()
         self._settings = AppSettings.default()
-        self._tab_seq = 0
         self.state_store = UiStateStore(parent=self)
         self._running = 0
         # 固定“对象”页最近一次从左树获得的连接/Catalog/Schema 上下文。
@@ -158,7 +158,8 @@ class MainWindow(QMainWindow):
         self.editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
         self.editor_tabs.currentChanged.connect(self._on_query_tab_changed)
 
-        # 「对象」页 = 领域浏览栈：查询、表、视图、函数、触发器五个领域子页
+        # 「对象」页 = 领域浏览栈：查询、表、视图、函数、触发器、序列、用户
+        # 等领域子页
         self.domain_stack = QStackedWidget()
         self._build_query_browse()
         self._build_table_browse()
@@ -166,21 +167,26 @@ class MainWindow(QMainWindow):
         self._build_routine_browse()
         self._build_trigger_browse()
         self._build_sequence_browse()
+        self._build_user_browse()
         self.domain_stack.addWidget(self.browse_page)
         self.domain_stack.addWidget(self.table_page)
         self.domain_stack.addWidget(self.view_page)
         self.domain_stack.addWidget(self.routine_page)
         self.domain_stack.addWidget(self.trigger_page)
         self.domain_stack.addWidget(self.sequence_page)
+        self.domain_stack.addWidget(self.user_page)
         self._domain_pages: dict[str, QWidget] = {
             "queries": self.browse_page, "tables": self.table_page,
             "views": self.view_page, "routines": self.routine_page,
-            "triggers": self.trigger_page, "sequences": self.sequence_page}
+            "triggers": self.trigger_page, "sequences": self.sequence_page,
+            "users": self.user_page}
         self._current_domain = "tables"
         # Navicat 首屏的“对象”工作区默认属于表功能域；查询标签只在用户
         # 点击新建/打开查询后出现，不能让查询域抢占首屏。
         self.domain_stack.setCurrentWidget(self.table_page)
-        self.editor_tabs.addTab(self.domain_stack, "对象")
+        from magiccat.ui.icons import icon
+
+        self.editor_tabs.addTab(self.domain_stack, icon("table"), "对象")
         # 「对象」为固定占位页，不显示关闭按钮
         from PySide6.QtWidgets import QTabBar
 
@@ -268,6 +274,12 @@ class MainWindow(QMainWindow):
         self.sequence_page.refresh_requested.connect(self._reload_sequence_browse)
         self.sequence_page.selection_object.connect(self._show_object_info)
 
+    def _build_user_browse(self) -> None:
+        """用户领域对象页：用户列表与账号操作均留在固定“对象”页。"""
+        from magiccat.ui.user_manager import UserManagerWidget
+
+        self.user_page = UserManagerWidget(None, self._connections)
+
     def _on_create_routine_entry(self, profile_id: str | None = None,
                                  schema: str | None = None) -> None:
         """新建函数（对象页动作）：需要连接/库上下文，复用打开向导。"""
@@ -340,6 +352,8 @@ class MainWindow(QMainWindow):
             self._reload_trigger_browse(schema=schema, database=database)
         elif page is self.sequence_page:
             self._reload_sequence_browse(database=database, schema=schema)
+        elif page is self.user_page:
+            self._reload_user_browse()
         else:
             page.clear() if hasattr(page, "clear") else None
 
@@ -461,6 +475,11 @@ class MainWindow(QMainWindow):
 
         run_async(fetch, done, lambda err: self.trigger_page.ctx_label.setText(
             f"读取触发器失败：{err}"))
+
+    def _reload_user_browse(self, profile=None, **_context) -> None:
+        """按当前连接刷新用户领域；用户不属于某个 database/schema。"""
+        profile = profile or self._current_profile()
+        self.user_page.set_profile(profile)
 
     # ---- 序列（PostgreSQL「其它」领域） ----
     def _reload_sequence_browse(self, profile=None, database: str = "",
@@ -683,7 +702,7 @@ class MainWindow(QMainWindow):
         quick_domain("视图", "view", "views")
         quick_domain("函数", "function", "routines")
         toolbar.addSeparator()
-        quick("用户", "user", self._quick_user)
+        quick_domain("用户", "user", "users")
         toolbar.addSeparator()
         quick_domain("查询", "query", "queries")
         self._add_other_button(toolbar)
@@ -703,6 +722,22 @@ class MainWindow(QMainWindow):
         other_button = getattr(self, "_other_domain_button", None)
         if other_button is not None:
             other_button.setChecked(domain == "sequences")
+        # 固定“对象”页也表达当前领域，标签图标随领域切换保持一致。
+        tabs = getattr(self, "editor_tabs", None)
+        if tabs is not None:
+            icon_kind = {
+                "queries": "query",
+                "tables": "table",
+                "views": "view",
+                "routines": "function",
+                "triggers": "trigger",
+                "sequences": "sequence",
+                "users": "user",
+            }.get(domain)
+            if icon_kind:
+                from magiccat.ui.icons import icon
+
+                tabs.setTabIcon(0, icon(icon_kind))
 
     def _add_other_button(self, toolbar) -> None:
         """「其它」领域（永驻）：下拉菜单按数据库类型增减。
@@ -745,22 +780,8 @@ class MainWindow(QMainWindow):
         self._show_domain("sequences", schema=schema, database=database)
 
     def _quick_user(self) -> None:
-        """用户：打开用户管理面板（对标 Navicat）。"""
-        profile = self._current_profile()
-        if profile is None:
-            QMessageBox.information(self, "用户", "请先选择连接。")
-            return
-        for i in range(self.editor_tabs.count()):
-            w = self.editor_tabs.widget(i)
-            if getattr(w, "tab_key", None) == "user-manager" and w.profile.id == profile.id:
-                self.editor_tabs.setCurrentIndex(i)
-                return
-        from magiccat.ui.user_manager import UserManagerWidget
-
-        widget = UserManagerWidget(profile, self._connections)
-        index = self.editor_tabs.addTab(widget, f"用户 · {profile.display_name}")
-        self.editor_tabs.setCurrentIndex(index)
-        self._status(f"已打开用户管理（{profile.display_name}）")
+        """用户领域入口，固定显示在“对象”页而不新增标签。"""
+        self._show_domain("users")
 
     def _resolve_current_schema(self) -> str | None:
         """取左树当前库；无则让用户从库列表明确选择。"""
@@ -802,6 +823,9 @@ class MainWindow(QMainWindow):
                     f"CREATE VIEW `{schema.replace('`', '``')}`.`{name.replace('`', '``')}` AS\n"
                     "SELECT ...  -- 填写查询")
                 index = self.editor_tabs.indexOf(editor)
+                from magiccat.ui.icons import icon
+
+                self.editor_tabs.setTabIcon(index, icon("view"))
                 self.editor_tabs.setTabText(index, name + "（视图）")
                 self._status("新建视图模板已生成：填写 SELECT 后「运行」创建", 8000)
         elif what == "routine":
@@ -1092,9 +1116,11 @@ class MainWindow(QMainWindow):
     ):
         from magiccat.ui.query_workspace import QueryWorkspace
 
-        self._tab_seq += 1
         editor = self._make_editor()
         ws = QueryWorkspace(editor)
+        # 显示标题与内部定位键分离：未保存查询始终显示“无标题”，键用 UUID
+        # 保证多个未保存工作区彼此独立，不依赖标题文本定位。
+        ws.tab_key = f"query:untitled:{uuid.uuid4().hex}"
         # 必须在异步下拉加载前写入 pending，避免回调先返回时丢失初始化定位。
         if profile_id:
             ws._pending_database = (catalog or "").strip()
@@ -1117,7 +1143,9 @@ class MainWindow(QMainWindow):
         ws.schema_combo.currentIndexChanged.connect(
             lambda _i: self._on_ws_schema_changed(ws))
         ws.editor.workspace = ws
-        index = self.editor_tabs.addTab(ws, f"查询 {self._tab_seq}")
+        from magiccat.ui.icons import icon
+
+        index = self.editor_tabs.addTab(ws, icon("query"), "无标题")
         self.editor_tabs.setCurrentIndex(index)
         ws.editor.setFocus()
         return ws
@@ -1294,18 +1322,31 @@ class MainWindow(QMainWindow):
         w = self.editor_tabs.currentWidget()
         return w if isinstance(w, QueryWorkspace) else None
 
-    def _open_object_tab(self, tab_key: str, title: str, content: str):
+    def _open_object_tab(self, tab_key: str, title: str, content: str,
+                         icon_kind: str | None = None):
         """打开一个对象标签并保证单例：同 tab_key 已开 → 定位到该标签；
         否则新建编辑器标签并写入内容。返回（可能已存在的）编辑器。"""
+        if icon_kind is None:
+            icon_kind = {
+                "query": "query",
+                "view": "view",
+                "routine": "function",
+                "trigger": "trigger",
+            }.get(tab_key.split(":", 1)[0], "query")
+        from magiccat.ui.icons import icon
+
         for i in range(self.editor_tabs.count()):
             w = self.editor_tabs.widget(i)
             if getattr(w, "tab_key", None) == tab_key:
                 self.editor_tabs.setCurrentIndex(i)
+                self.editor_tabs.setTabIcon(i, icon(icon_kind))
                 return w
         ws = self._new_editor()
         ws.tab_key = tab_key
         ws.setPlainText(content)
-        self.editor_tabs.setTabText(self.editor_tabs.indexOf(ws), title)
+        index = self.editor_tabs.indexOf(ws)
+        self.editor_tabs.setTabIcon(index, icon(icon_kind))
+        self.editor_tabs.setTabText(index, title)
         return ws
 
     def _active_editor(self):
@@ -1487,7 +1528,9 @@ class MainWindow(QMainWindow):
 
         widget = DataTableWidget(profile, database, schema, table,
                                  DataService(self._connections), self._metadata)
-        index = self.editor_tabs.addTab(widget, key)
+        from magiccat.ui.icons import icon
+
+        index = self.editor_tabs.addTab(widget, icon("table"), key)
         self.editor_tabs.setCurrentIndex(index)
         self._status(f"已打开表数据：{key}")
 
@@ -1812,6 +1855,10 @@ class MainWindow(QMainWindow):
         editor.setPlainText(body)
         index = self.editor_tabs.indexOf(editor)
         label = name + ("（函数）" if kind == "FUNCTION" else "（过程）")
+        from magiccat.ui.icons import icon
+
+        self.editor_tabs.setTabIcon(
+            index, icon("function" if kind == "FUNCTION" else "procedure"))
         self.editor_tabs.setTabText(index, label)
         self._set_current_profile(profile.id)
         verb = "函数" if kind == "FUNCTION" else "过程"
@@ -1819,12 +1866,16 @@ class MainWindow(QMainWindow):
             f"已生成「{verb} {schema}.{name}」模板：填写内容后「运行」即可创建"
             "（体含分号，编辑器支持 DELIMITER 语法）", 8000)
 
-    def _open_routine_sql(self, profile_id: str, name: str, sql_text: str) -> None:
+    def _open_routine_sql(self, profile_id: str, name: str, sql_text: str,
+                          kind: str = "") -> None:
         profile = self._connections.get(profile_id)
         if profile is None:
             return
+        icon_kind = {"FUNCTION": "function", "PROCEDURE": "procedure"}.get(
+            (kind or "").upper(), "function")
         self._open_object_tab(f"routine:{profile_id}:{name}",
-                              name + "（函数）", sql_text)
+                              name + ("（过程）" if icon_kind == "procedure" else "（函数）"),
+                              sql_text, icon_kind=icon_kind)
         self._set_current_profile(profile_id)
         self._status(
             f"已打开例程「{name}」定义：可查看/修改；改动后需先删除再执行创建"
@@ -1847,7 +1898,7 @@ class MainWindow(QMainWindow):
             return ddl.show_create_routine(profile, schema, name, kind)
 
         def done(sql_text: str) -> None:
-            self._open_routine_sql(profile_id, name, sql_text)
+            self._open_routine_sql(profile_id, name, sql_text, kind)
 
         run_async(fetch, done,
                   lambda err: QMessageBox.warning(self, "打开函数", f"失败：{err}"))

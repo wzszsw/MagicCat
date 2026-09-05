@@ -22,7 +22,8 @@ class SequenceBrowseView(ObjectBrowseView):
         super().__init__(parent)
         self.configure(["名称", "递增", "当前的值", "最小", "最大"], name_column=0,
                        new_text="新建序列", open_text="设计序列", delete_text="删除序列",
-                       keys=["name", "increment", "last_value", "min_value", "max_value"])
+                       keys=["name", "increment", "last_value", "min_value", "max_value"],
+                       icon_kind="sequence")
         self.new_object.connect(self.new_sequence)
         self.delete_object.connect(self._on_delete)
         self._database: str | None = None

@@ -39,6 +39,7 @@ class ObjectBrowseView(QWidget):
         self._profile_id: str | None = None
         self._context_available = False
         self._tool_buttons: list[QPushButton] = []
+        self._icon_kind: str | None = None
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
@@ -80,7 +81,8 @@ class ObjectBrowseView(QWidget):
             "QTableWidget::item { border: none; padding: 3px 8px; }"
             "QTableWidget::item:selected { background-color: #cfe8ff; color: #1f2937; }"
             "QHeaderView { border: none; }"
-            "QHeaderView::section { border: none; padding: 4px 8px; }"
+            "QHeaderView::section { border: none; border-right: 1px solid #d7dee7; "
+            "border-bottom: 1px solid #d7dee7; padding: 4px 8px; }"
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -97,7 +99,7 @@ class ObjectBrowseView(QWidget):
     def configure(self, columns: list[str], name_column: int = 0,
                   new_text: str = "新建", open_text: str = "打开",
                   delete_text: str = "删除", keys: list[str] | None = None,
-                  show_new: bool = True) -> None:
+                  show_new: bool = True, icon_kind: str | None = None) -> None:
         """由领域页设置：列标题、名称列下标、操作按钮文案、行键名。
 
         keys：每列对应的数据字典键（缺省与 columns 同值，即直接用列标题取键）。
@@ -106,6 +108,7 @@ class ObjectBrowseView(QWidget):
         self._name_column = name_column
         self._columns = list(columns)
         self._keys = list(keys) if keys is not None else list(columns)
+        self._icon_kind = icon_kind
         self.btn_new.setText(new_text)
         self.btn_new.setVisible(show_new)
         self.btn_open.setText(open_text)
@@ -117,9 +120,13 @@ class ObjectBrowseView(QWidget):
 
         header = self.table.horizontalHeader()
         for c in range(len(columns)):
-            mode = (QHeaderView.Stretch if c == name_column
+            mode = (QHeaderView.Interactive if c == name_column
                     else QHeaderView.ResizeToContents)
             header.setSectionResizeMode(c, mode)
+        if columns:
+            # 名称列保留可拖拽能力，但不再默认吞掉整个中央工作区。
+            header.resizeSection(name_column, 320)
+            header.setStretchLastSection(True)
 
     def add_tool_button(self, text: str, handler) -> QPushButton:
         """在操作行（“删除”与伸缩弹簧之间）追加一个领域专属按钮。"""
@@ -152,7 +159,14 @@ class ObjectBrowseView(QWidget):
         for r, row in enumerate(rows):
             for c, key in enumerate(self._keys):
                 val = row.get(key, "") or ""
-                self.table.setItem(r, c, QTableWidgetItem(format_datetime(str(val))))
+                item = QTableWidgetItem(format_datetime(str(val)))
+                if c == self._name_column and self._icon_kind:
+                    from magiccat.ui.icons import icon
+
+                    subtype = (str(row.get("type", ""))
+                               if self._icon_kind == "routine" else "")
+                    item.setIcon(icon(self._icon_kind, subtype))
+                self.table.setItem(r, c, item)
         self.table.clearSelection()
         self._on_selection()
 

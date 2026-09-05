@@ -455,6 +455,9 @@ MagicCat/
 | M132 | 对象列表双击与左侧树统一走对象定义/数据编辑入口，补齐视图与触发器树侧双击 | ✅ | 对象树双击路由 Qt 回归；Ruff |
 | M133 | 引入窗口级不可变 UI 状态容器（typed action/reducer + Qt signal），保留查询工作区标签私有状态边界 | ✅ | 状态 reducer/store 回归；对象页 MySQL catalog 双击回归；Ruff |
 | M134 | 收掉 MySQL/MariaDB 连接表单数据库字段，取消对象页初始化库回退，并支持树节点双击直接展开 | ✅ | 对象上下文无默认库回归；连接表单/树双击 Qt 回归；Ruff |
+| M135 | 对象页表头增加 Navicat 式字段分隔线，名称列补齐对象图标；用户纳入对象领域并由窗口状态驱动 | ✅ | 对象表头/图标与用户领域切换 Qt 回归；Ruff |
+| M136 | 未保存查询标签统一显示“无标题”，使用 UUID 内部 `tab_key` 与显示名解耦 | ✅ | 新查询标题/唯一键 Qt 回归；Ruff |
+| M137 | 编辑器标签按内容类型显示对象图标，固定“对象”页图标随当前领域切换 | ✅ | 固定页/查询/对象编辑/表数据标签图标 Qt 回归；Ruff |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
