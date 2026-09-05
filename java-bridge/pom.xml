@@ -10,7 +10,7 @@
   <packaging>jar</packaging>
 
   <name>MagicCat JDBC Bridge</name>
-  <description>MagicCat 的 JVM 内数据访问层（HikariCP + JDBC，首发 MySQL/MariaDB）。由 JPype 从 Python 侧调用。</description>
+  <description>MagicCat 的 JVM 内数据访问层（HikariCP 长期连接池 + JDBC 一次性连接）。由 JPype 从 Python 侧调用。</description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

@@ -410,6 +410,26 @@ def _conn_by_provider(provider_key: str) -> QImage | None:
 
 
 @cache
+def closed_profile_icon(provider_key: str) -> QIcon:
+    """返回对象树关闭连接使用的灰度产品图标。
+
+    连接选择下拉框始终使用 ``icon("profile", provider_key)`` 的彩色版本；
+    此函数只供左侧对象树表达 JDBC 连接打开/关闭状态。
+    """
+    source = _conn_by_provider(provider_key)
+    if source is None:
+        return QIcon()
+    image = QImage(source.size(), QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    for y in range(source.height()):
+        for x in range(source.width()):
+            color = source.pixelColor(x, y)
+            luminance = round(0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue())
+            image.setPixelColor(x, y, QColor(luminance, luminance, luminance, color.alpha()))
+    return QIcon(QPixmap.fromImage(image))
+
+
+@cache
 def _logo_image(provider_key: str) -> QImage | None:
     """从资源目录读取产品 logo PNG 或 SVG。
 

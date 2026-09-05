@@ -8,6 +8,8 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.Driver;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -15,6 +17,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -64,13 +67,29 @@ public final class ConnectionRegistry {
         PARAMS.put(configId, new ConnectParams(configId, flavor, host, port, database,
                 user, password, driverJar));
         POOLS.put(configId, newDataSource(flavor, host, port, database, user, password,
-                driverJar, 8, "mc-" + configId));
+                driverJar, 3, "mc-" + configId));
         return configId;
     }
 
     /** 连通性自检，返回数据库版本。 */
     public static String ping(String configId) {
         try (Connection conn = requirePool(configId).getConnection();
+             Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("SELECT VERSION()")) {
+            rs.next();
+            return rs.getString(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException("连接不可用: " + e.getMessage(), e);
+        }
+    }
+
+    /** 一次性连接测试，不创建或替换长期连接池。 */
+    public static String test(String configId, String flavor, String host, int port,
+                              String database, String user, String password,
+                              String driverJar) {
+        ConnectParams params = new ConnectParams(configId, flavor, host, port, database,
+                user, password, driverJar);
+        try (Connection conn = directConnection(params, database);
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery("SELECT VERSION()")) {
             rs.next();
@@ -378,17 +397,14 @@ public final class ConnectionRegistry {
 
     /** 在【目标 database】上临时建单连接执行查询并返回 JSON 表。
      * 用于跨库枚举：如 PG 需连到 database X 才能列其 schema/对象。
-     * 连接用完即关，不入池。 */
+     * 连接用完即关，不创建一次性连接池。 */
     public static String executeOnDatabase(String configId, String database,
                                           String sql, String[] params, int maxRows) {
         ConnectParams p = PARAMS.get(configId);
         if (p == null) {
             throw new IllegalStateException("连接参数缺失: " + configId);
         }
-        try (HikariDataSource ds = newDataSource(p.flavor(), p.host(), p.port(),
-                                                 database, p.user(), p.password(), p.driverJar(), 2,
-                                                 "mc-tmp-" + p.host() + ":" + p.port() + "/" + database);
-             Connection conn = ds.getConnection();
+        try (Connection conn = directConnection(p, database);
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (maxRows > 0) {
                 ps.setMaxRows(maxRows);
@@ -434,6 +450,8 @@ public final class ConnectionRegistry {
             cfg.setUsername(user);
             cfg.setPassword(password == null ? "" : password);
             cfg.setMaximumPoolSize(maxPoolSize);
+            // 桌面端按需持有连接：主池保留 1 条热连接，PG 跨库上下文池不预留空闲连接。
+            cfg.setMinimumIdle(maxPoolSize > 2 ? 1 : 0);
             cfg.setConnectionTimeout(10_000);
             cfg.setPoolName(poolName);
             if (!"gaussdb".equalsIgnoreCase(flavor)) {
@@ -441,6 +459,40 @@ public final class ConnectionRegistry {
             }
             cfg.setDriverClassName("com.huawei.gaussdb.jdbc.Driver");
             return new HikariDataSource(cfg);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previous);
+        }
+    }
+
+    /** 打开一次性 JDBC 连接；仅用于测试和跨库元数据，不进入连接池。 */
+    private static Connection directConnection(ConnectParams params, String database)
+            throws SQLException {
+        String url = Facade.buildUrlByFlavor(params.flavor(), params.host(), params.port(),
+                database);
+        ClassLoader previous = Thread.currentThread().getContextClassLoader();
+        try {
+            if ("gaussdb".equalsIgnoreCase(params.flavor())) {
+                URLClassLoader loader = externalDriverLoader(params.driverJar());
+                Thread.currentThread().setContextClassLoader(loader);
+                try {
+                    Class<?> driverType = Class.forName(
+                            "com.huawei.gaussdb.jdbc.Driver", true, loader);
+                    Driver driver = (Driver) driverType.getDeclaredConstructor().newInstance();
+                    Properties properties = new Properties();
+                    properties.setProperty("user", params.user() == null ? "" : params.user());
+                    properties.setProperty("password",
+                            params.password() == null ? "" : params.password());
+                    Connection conn = driver.connect(url, properties);
+                    if (conn == null) {
+                        throw new SQLException("GaussDB 驱动不接受 JDBC URL: " + url);
+                    }
+                    return conn;
+                } catch (ReflectiveOperationException e) {
+                    throw new SQLException("无法加载 GaussDB JDBC 驱动", e);
+                }
+            }
+            Thread.currentThread().setContextClassLoader(ConnectionRegistry.class.getClassLoader());
+            return DriverManager.getConnection(url, params.user(), params.password());
         } finally {
             Thread.currentThread().setContextClassLoader(previous);
         }

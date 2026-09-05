@@ -90,16 +90,12 @@ class ConnectionService:
             self.close(pid)
 
     def test(self, profile: ConnectionProfile) -> str:
-        """测试连接（临时打开并立即关闭，返回版本或抛异常）。"""
+        """测试连接（一次性 JDBC 连接，不影响已打开的长期连接池）。"""
         runtime = get_runtime()
         Registry = runtime.jclass("com.magiccat.bridge.ConnectionRegistry")
         driver_jar = self._driver_jar(profile)
-        Registry.open(profile.id, profile.provider_key, profile.host, profile.port,
-                      profile.database, profile.username, profile.password, driver_jar)
-        try:
-            return Registry.ping(profile.id)
-        finally:
-            Registry.close(profile.id)
+        return Registry.test(profile.id, profile.provider_key, profile.host, profile.port,
+                             profile.database, profile.username, profile.password, driver_jar)
 
     @staticmethod
     def _driver_jar(profile: ConnectionProfile) -> str:

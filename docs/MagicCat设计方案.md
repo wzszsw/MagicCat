@@ -442,6 +442,8 @@ MagicCat/
 | M119 | GaussDB 序列改为单条 `information_schema`/系统目录批量 SQL，一次返回列表所需字段，移除 JDBC 名称枚举与不兼容的 `LATERAL` 写法 | ✅ | 单 SQL 路由静态回归 + openGauss 7.0 JDBC 实测 |
 | M120 | 修复部分 GaussDB 不允许表函数横向引用前置别名：序列当前值/缓存改按 OID 行内读取，保持单条批量 SQL | ✅ | 远端报错定位 + openGauss JDBC 实测 |
 | M121 | 修复“设计序列”确定后未执行 SQL：沿用 database/schema 上下文执行 ALTER，写入开始值/当前值并反馈后刷新 | ✅ | 设计提交流程回归 + 序列 SQL 字段回归 |
+| M122 | 对齐 Navicat 连接树状态：关闭连接显示灰度产品图标，打开连接恢复彩色；连接右键菜单首项按状态显示「打开连接」/「关闭连接」，查询连接下拉保持彩色 | ✅ | 165 项收集；本次相关回归 7 项通过；Ruff 全绿 |
+| M123 | 收敛 JDBC 连接池：长期会话 Hikari 主池上限降为 3 并按需保留空闲连接；连接测试与跨库一次性元数据改用直连，兼容门面同步移除短命池 | ✅ | 169 项收集；池策略/一次性路径回归 4 项通过；Maven package + Ruff |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

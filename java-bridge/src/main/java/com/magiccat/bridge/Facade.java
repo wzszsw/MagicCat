@@ -1,8 +1,7 @@
 package com.magiccat.bridge;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -12,11 +11,11 @@ import java.util.HexFormat;
 import java.util.List;
 
 /**
- * M1 POC 门面：验证 JPype -> HikariCP -> mysql-connector-j -> MySQL 全链路。
+ * M1 兼容门面：验证 JPype -> JDBC 驱动 -> MySQL 全链路。
  *
  * <p>后续里程碑将演进为按连接配置 ID 管理的多会话门面（ConnectionRegistry /
  * MetadataEngine / QueryExecutor / Dialect SPI 等，见 docs/MagicCat设计方案.md §4）。
- * 当前方法均为静态、无状态、每次新建短命连接池，仅用于技术验证。
+ * 当前方法均为静态、无状态、每次建立一次性 JDBC 连接，仅用于兼容技术验证。
  */
 public final class Facade {
 
@@ -50,22 +49,10 @@ public final class Facade {
                 + "&connectTimeout=5000&socketTimeout=30000&serverTimezone=UTC";
     }
 
-    private static HikariDataSource newDataSource(String host, int port, String database,
-                                                  String user, String password) {
-        HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(buildUrl(host, port, database));
-        cfg.setUsername(user);
-        cfg.setPassword(password == null ? "" : password);
-        cfg.setMaximumPoolSize(4);
-        cfg.setConnectionTimeout(10_000);
-        cfg.setPoolName("mc-" + host + ":" + port + "/" + (database == null ? "" : database));
-        return new HikariDataSource(cfg);
-    }
-
     /** 连通性自检：SELECT VERSION()，返回数据库版本字符串。 */
     public static String ping(String host, int port, String user, String password) {
-        try (HikariDataSource ds = newDataSource(host, port, null, user, password);
-             Connection conn = ds.getConnection();
+        try (Connection conn = DriverManager.getConnection(buildUrl(host, port, null), user,
+                                                            password == null ? "" : password);
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery("SELECT VERSION()")) {
             rs.next();
@@ -82,8 +69,8 @@ public final class Facade {
     public static String[][] query(String host, int port, String database, String user,
                                    String password, String sql, int maxRows) {
         List<String[]> rows = new ArrayList<>();
-        try (HikariDataSource ds = newDataSource(host, port, database, user, password);
-             Connection conn = ds.getConnection();
+        try (Connection conn = DriverManager.getConnection(buildUrl(host, port, database), user,
+                                                            password == null ? "" : password);
              Statement st = conn.createStatement()) {
             if (maxRows > 0) {
                 st.setMaxRows(maxRows);

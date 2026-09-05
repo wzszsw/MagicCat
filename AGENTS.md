@@ -38,6 +38,7 @@
 - **当前连接 = 树跟手（重要，对标 Navicat）**：Navicat **全局无「当前连接选择控件」**（顶栏功能切换器不含连接下拉）。
   当前连接取决于**用户在左侧对象树最近激活的元素**（双击连接/库/表/对象等），该元素所属连接即当前连接，顶部工具栏作用于它。
   - MagicCat：**全局顶栏不放连接下拉**；当前连接由对象树激活（`profile_activated`）驱动。
+  - 左侧连接树的连接节点以 JDBC 打开状态区分图标：已打开连接保留彩色产品图标，关闭连接显示灰度图标；连接右键菜单第一项随状态切换为「关闭连接」或「打开连接」。此状态仅限对象树，查询等连接选择下拉始终显示彩色图标。
   - **「查询」领域工作区内部有「当前连接选择」下拉**（连接 + Catalog + Schema），用户可手动切换；
     左侧树的普通选中不改写已打开查询标签，只有“库/模式 → 新建查询”会把右键目标写入新标签。
   - `ObjectExplorer` 选中任意可归属连接的对象 → emit `profile_activated(profile_id)` → `MainWindow._set_current_profile`
@@ -96,6 +97,7 @@
   - **PostgreSQL JDBC**：有标准的 **database（catalog）** 和 **schema** 两个概念；
     `getXxx(catalog=database, schema=schema, ...)` **两者都传**。拼限定名用 `"db"` 只到 `"schema"."table"`（库在连接层，不在表限定名里）。
   - **跨库（PG）**：打开/枚举某库的对象时，需把目标库作为 catalog 传入，并在该库连接上执行（PG 表限定名 `"schema"."table"` 只含 schema，库由连接决定）。
+  - 长期查询会话保留 Hikari 连接池以支持并发和 Catalog/Schema 隔离；连接测试、跨库一次性元数据等短操作直接建立 JDBC 连接，不创建短命连接池。
 - **连接、database、schema、table、view、column 的基础元数据统一优先用 JDBC 标准 API**（`DatabaseMetaData`）；
   MySQL 只有 JDBC 不覆盖的引擎/估计行数/索引/触发器等富信息才走 `information_schema`，且不得让这些 SQL 路由到 PG/GaussDB。
   若 PG/GaussDB 驱动的 `getCatalogs()` 只返回当前库，数据库全量枚举允许定向使用 `pg_database` 兜底。
@@ -142,6 +144,7 @@
 
 - 类型注解全覆盖；`uv run ruff check .` 必须通过。
 - `uv run pytest` 全绿（含真实 MySQL/PostgreSQL 集成；JVM 相关测试避免 faulthandler 误报）。
+- 遇到明确的 `PermissionError` / “拒绝访问”时，先核对目标路径和操作范围，再优先申请该目标所需权限；不得将权限环境问题误判为功能失败。
 - **报错统一风格**：错误提示统一用 `QMessageBox` 弹出（`warning`/`critical`），并清理 Java 重复前缀
   （`clean_java_error`）；运行期错误不要只在状态栏/日志里静默带过。表数据/连接/对象加载失败均弹 MessageBox。
 - 改 Java 后需重新 `mvn package` 构建 jar（开发态走 `java-bridge/target/`）。

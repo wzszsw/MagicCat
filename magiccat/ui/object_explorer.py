@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem
 
 from magiccat.models.profile import ConnectionProfile
@@ -176,8 +177,20 @@ class ObjectExplorer(QTreeWidget):
         # type=provider_key → 连接图标按数据库产品区分（MySQL/PostgreSQL/…）
         item = _make_item(profile.display_name, "profile", profile_id=profile.id,
                           type=profile.provider_key)
+        self._set_profile_icon(item)
         _placeholder(item)
         parent.addChild(item)
+
+    def _set_profile_icon(self, item: QTreeWidgetItem) -> None:
+        """已打开连接用彩色产品图标，关闭连接用保留透明通道的灰度版本。"""
+        from magiccat.ui.icons import closed_profile_icon, icon
+
+        data = _info(item).get(DATA_KEY, {})
+        provider_key = data.get("type", "")
+        profile_icon = (icon("profile", provider_key)
+                        if self._connections.is_open(data.get("profile_id", ""))
+                        else closed_profile_icon(provider_key))
+        item.setIcon(0, profile_icon)
 
     def profile_item(self, profile_id: str) -> QTreeWidgetItem | None:
         for item in self._walk():
@@ -228,6 +241,7 @@ class ObjectExplorer(QTreeWidget):
             self._end_load(item)
             if item.treeWidget() is None:
                 return
+            self._set_profile_icon(item)
             _profile_id, dbs = payload
             children = [_make_item(db["name"], "database", schema=db["name"]) for db in dbs]
             for c in children:
@@ -475,6 +489,9 @@ class ObjectExplorer(QTreeWidget):
 
         # 折叠节点并移除占位内容，保持树整洁
         self._end_load(item)
+        if _info(item).get(KIND_KEY) == "profile":
+            # 连接可能已成功打开但元数据读取失败，图标仍应反映真实打开状态。
+            self._set_profile_icon(item)
         if item.treeWidget() is not None:
             item.setExpanded(False)
             item.takeChildren()
@@ -558,15 +575,8 @@ class ObjectExplorer(QTreeWidget):
         action_new_query = None
 
         if kind == "profile":
-            action_test = menu.addAction("测试连接")
-            if self._connections.is_open(profile.id):
-                action_close = menu.addAction("关闭连接")
-            else:
-                action_open = menu.addAction("打开连接")
-            action_refresh = menu.addAction("刷新")
-            menu.addSeparator()
-            action_edit = menu.addAction("编辑连接…")
-            action_delete = menu.addAction("删除连接…")
+            (action_test, action_open, action_close, action_refresh, action_edit,
+             action_delete) = self._add_profile_menu_items(menu, profile)
         elif kind in ("database", "table", "view", "routine", "trigger", "category"):
             action_refresh = menu.addAction("刷新")
         if kind in ("database", "schema"):
@@ -645,6 +655,21 @@ class ObjectExplorer(QTreeWidget):
             self._open_saved_query_item(item)
         elif chosen is action_del_query:
             self._delete_saved_query(item)
+
+    def _add_profile_menu_items(self, menu: QMenu, profile: ConnectionProfile) -> tuple[
+            QAction, QAction | None, QAction | None, QAction, QAction, QAction]:
+        """按连接打开状态组装菜单；打开/关闭动作始终排在第一项。"""
+        action_open = action_close = None
+        if self._connections.is_open(profile.id):
+            action_close = menu.addAction("关闭连接")
+        else:
+            action_open = menu.addAction("打开连接")
+        action_test = menu.addAction("测试连接")
+        action_refresh = menu.addAction("刷新")
+        menu.addSeparator()
+        action_edit = menu.addAction("编辑连接…")
+        action_delete = menu.addAction("删除连接…")
+        return action_test, action_open, action_close, action_refresh, action_edit, action_delete
 
     def _edit_database(self, item: QTreeWidgetItem) -> None:
         from magiccat.ui.database_dialog import EditDatabaseDialog
@@ -1028,6 +1053,7 @@ class ObjectExplorer(QTreeWidget):
             info["opened"] = True
             item.setData(0, Qt.UserRole, info)
             item.setText(0, f"{profile.display_name}  ●")
+            self._set_profile_icon(item)
             self._load_profile(item)
         item.setToolTip(0, message)
         logger.info("%s [%s] %s", profile.name, profile.host, message)
@@ -1038,6 +1064,7 @@ class ObjectExplorer(QTreeWidget):
         if item is not None:
             _replace_children(item, [_make_item("…", KIND_PLACEHOLDER)])
             item.setText(0, profile.display_name)
+            self._set_profile_icon(item)
             item.setToolTip(0, "")
 
     def _refresh_item(self, item: QTreeWidgetItem) -> None:
