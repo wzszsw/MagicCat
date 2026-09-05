@@ -447,6 +447,7 @@ MagicCat/
 | M124 | 修复 MySQL 空初始库连接：数据库枚举不再调用 `setCatalog(null)`；明确 database→catalog、schema 永远为 null 的 JDBC 路由约定 | ✅ | MySQL catalog/schema 静态契约 + 连接树聚焦回归；Maven package |
 | M125 | 修复 MySQL 标准元数据表列表为空：借出连接后按 database 设置 JDBC catalog，保持 schema 永远为 null | ✅ | 本地 MySQL root 空密码数据库/表元数据回归 + JDBC 路由契约 |
 | M126 | 兼容 MySQL 系统库表类型：标准 JDBC 表枚举纳入 `SYSTEM TABLE`，恢复 `mysql.user` 等系统表展示 | ✅ | 本地 MySQL 表/列元数据回归 15 项；Maven package + Ruff |
+| M127 | 关闭态连接仅允许定位和查看信息，不激活当前连接及“对象”工作区；打开态保持树跟手 | ✅ | 关闭/打开态对象树信号回归 8 项；Ruff |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

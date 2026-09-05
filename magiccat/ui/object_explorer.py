@@ -99,15 +99,21 @@ class ObjectExplorer(QTreeWidget):
         kind = info.get(KIND_KEY)
         data = info.get(DATA_KEY, {})
         context: tuple[str, str, str, str] | None = None
+        # 关闭态连接可以被定位和查看信息，但不能把尚未可用的连接
+        # 推成当前连接，也不能切入依赖数据库上下文的“对象”工作区。
+        connection_open = False
         if kind == "profile":
             act_pid = data.get("profile_id")
             desc = {"kind": "profile", "profile_id": act_pid}
-            context = (act_pid or "", "", "", "tables")
+            connection_open = bool(act_pid and self._connections.is_open(act_pid))
+            if connection_open:
+                context = (act_pid or "", "", "", "tables")
         else:
             profile = self._profile_of(current)
             if profile is None:
                 return
             act_pid = profile.id
+            connection_open = self._connections.is_open(act_pid)
             pid = profile.id
             if kind == "database":
                 desc = {"kind": "database", "profile_id": pid, "schema": data.get("schema")}
@@ -144,7 +150,7 @@ class ObjectExplorer(QTreeWidget):
             elif kind == "category":
                 desc = {"kind": "category", "name": current.text(0)}
                 cat_type = data.get("cat_type")
-                if cat_type:
+                if cat_type and connection_open:
                     self.domain_selected.emit(pid, data.get("schema", ""), cat_type)
                     context = (pid, data.get("database", ""), data.get("schema", ""), cat_type)
             elif kind == "saved_query":
@@ -153,9 +159,9 @@ class ObjectExplorer(QTreeWidget):
                 context = (pid, self._database_of(current), data.get("schema", ""), "queries")
             else:
                 return
-        if act_pid:
+        if act_pid and connection_open:
             self.profile_activated.emit(act_pid)
-        if context is not None:
+        if context is not None and connection_open:
             self.object_context_selected.emit(*context)
         self.selection_info_requested.emit(desc)
 
