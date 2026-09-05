@@ -111,8 +111,8 @@
   设置保存于 SQLite，连接打开时动态加载。
 - GaussDB 表对象页列表必须走目标 Catalog+Schema 的标准路径，不能复用包含反引号和
   `ENGINE`/`TABLE_ROWS` 等 MySQL 专用字段的批量查询。
-- GaussDB 序列名称枚举优先使用驱动 `DatabaseMetaData.getTables(..., {"SEQUENCE"})`；
-  当前值、步长、最小/最大值等富字段再用一次 openGauss 专用批量查询补齐，不做逐序列 I/O。
+- GaussDB 序列列表必须使用一条批量 SQL 一次返回名称、所有者、当前值、步长、最小/最大值、开始值、缓存和循环标志；
+  不再先用 JDBC `DatabaseMetaData.getTables(..., {"SEQUENCE"})` 枚举名称再补查，避免两阶段读取和 N+1 演进风险。
 - PostgreSQL / GaussDB 的连接配置中“初始化数据库”为必填项，默认值统一为 `postgres`；
   该值只决定首次连接目标，数据库树仍必须枚举服务器上的其它数据库。
 - GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；

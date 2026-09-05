@@ -439,6 +439,7 @@ MagicCat/
 | M116 | 修复 GaussDB 序列读取并清理 PG/GaussDB JDBC URL 中误加的 MySQL 超时参数：驱动 `DatabaseMetaData.getTables(..., SEQUENCE)` 枚举名称，openGauss 批量函数补齐富字段；读取失败统一 `QMessageBox.critical` | ✅ | 该驱动真实 JDBC 调用返回序列 + 158 项回归收集 |
 | M117 | 固定“对象”页跟随左树连接/库/模式/分类/对象上下文更新；查询标签上下文与当前页保持隔离 | ✅ | 对象页跟手上下文回归 + 查询标签不抢焦点回归 |
 | M118 | 修复“其它→序列”未沿用左树上下文：序列入口及刷新/DDL 后重载保持最近 database/schema | ✅ | 序列入口树上下文回归 |
+| M119 | GaussDB 序列改为单条 `information_schema`/系统目录批量 SQL，一次返回列表所需字段，移除 JDBC 名称枚举与不兼容的 `LATERAL` 写法 | ✅ | 单 SQL 路由静态回归 + openGauss 7.0 JDBC 实测 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

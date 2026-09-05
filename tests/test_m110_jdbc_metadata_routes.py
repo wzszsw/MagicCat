@@ -32,7 +32,7 @@ def test_jdbc_standard_layer_supports_tables_views_and_column_shapes() -> None:
     assert '"MATERIALIZED VIEW"' in source
 
 
-def test_gaussdb_sequences_use_jdbc_sequence_metadata_and_batch_details() -> None:
+def test_gaussdb_sequences_use_one_batch_sql_for_all_fields() -> None:
     api = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
            "magiccat" / "bridge" / "MetadataApi.java").read_text(encoding="utf-8")
     standard = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
@@ -41,7 +41,14 @@ def test_gaussdb_sequences_use_jdbc_sequence_metadata_and_batch_details() -> Non
                 )
 
     assert "return JdbcStandardMetadata.gaussSequences(configId, database, schema);" in api
-    assert "md.getTables(useCatalog, useSchema, \"%\",\n                                             new String[] {\"SEQUENCE\"})" in standard
+    start = standard.index("public static String gaussSequences")
+    end = standard.index("    private static void addTables", start)
+    body = standard[start:end]
+    assert "information_schema.sequences" in body
+    assert "CROSS JOIN pg_sequence_all_parameters" in body
+    assert "LATERAL" not in body
+    assert "md.getTables" not in body
+    assert body.count("prepareStatement(") == 1
     assert "pg_sequence_all_parameters" in standard
 
 

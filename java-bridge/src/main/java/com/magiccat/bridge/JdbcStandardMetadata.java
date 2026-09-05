@@ -190,55 +190,43 @@ public final class JdbcStandardMetadata {
     }
 
     /**
-     * GaussDB 序列：名称由 JDBC DatabaseMetaData.getTables(..., SEQUENCE) 提供，
-     * 当前值/步长等富字段由 openGauss 的序列参数函数一次批量补齐。
+     * GaussDB 序列：一次 SQL 返回列表页所需的全部字段。
+     *
+     * <p>不使用 JDBC 的 SEQUENCE 类型枚举：该接口只能提供名称，无法统一提供
+     * 当前值、缓存等属性，而且先枚举再补查会形成两阶段读取。GaussDB 的
+     * information_schema.sequences 提供标准字段，openGauss 序列参数函数作为
+     * 行内记录函数补充当前值和缓存；整个方法只执行一次 PreparedStatement。
      */
     public static String gaussSequences(String configId, String catalog, String schema) {
         String useCatalog = catalog(catalog);
         String useSchema = catalog(schema);
-        Set<String> names = new LinkedHashSet<>();
         List<String[]> rows = new ArrayList<>();
         try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
-            DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getTables(useCatalog, useSchema, "%",
-                                             new String[] {"SEQUENCE"})) {
-                while (rs.next()) {
-                    String name = rs.getString("TABLE_NAME");
-                    if (name != null && !name.isBlank()) {
-                        names.add(name);
-                    }
-                }
-            }
-            if (names.isEmpty()) {
-                return Json.table(new String[] {"name", "owner", "increment", "last_value",
-                        "min_value", "max_value", "start_value", "cache", "cycle"}, rows);
-            }
             String sql = "SELECT c.relname AS name, "
                     + "pg_get_userbyid(c.relowner) AS owner, "
                     + "p.increment AS increment, p.last_value AS last_value, "
                     + "p.minimum_value AS min_value, p.maximum_value AS max_value, "
                     + "p.start_value AS start_value, p.cache_size AS cache, "
-                    + "p.cycle_option AS cycle "
-                    + "FROM pg_catalog.pg_namespace n "
+                    + "CASE WHEN p.cycle_option THEN 'YES' ELSE 'NO' END AS cycle "
+                    + "FROM information_schema.sequences s "
+                    + "JOIN pg_catalog.pg_namespace n ON n.nspname = s.sequence_schema "
                     + "JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid "
-                    + "AND c.relkind = 'S' "
-                    // openGauss resolves this built-in function from pg_catalog;
-                    // its parser rejects the schema-qualified call form.
-                    + "LEFT JOIN LATERAL pg_sequence_all_parameters("
-                    + "format('%I.%I', n.nspname, c.relname)) p ON TRUE "
-                    + "WHERE n.nspname = ? ORDER BY c.relname";
+                    + "AND c.relname = s.sequence_name "
+                    + "AND c.relkind IN ('S', 'L') "
+                    // GaussDB supports the record function in a regular CROSS JOIN;
+                    // the PostgreSQL-only join spelling is not portable here.
+                    + "CROSS JOIN pg_sequence_all_parameters("
+                    + "format('%I.%I', n.nspname, c.relname)) p "
+                    + "WHERE s.sequence_schema = ? ORDER BY s.sequence_name";
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, useSchema);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        String name = rs.getString("name");
-                        if (names.contains(name)) {
-                            rows.add(new String[] {name, safeString(rs, "owner"),
-                                    safeString(rs, "increment"), safeString(rs, "last_value"),
-                                    safeString(rs, "min_value"), safeString(rs, "max_value"),
-                                    safeString(rs, "start_value"), safeString(rs, "cache"),
-                                    safeString(rs, "cycle")});
-                        }
+                        rows.add(new String[] {safeString(rs, "name"), safeString(rs, "owner"),
+                                safeString(rs, "increment"), safeString(rs, "last_value"),
+                                safeString(rs, "min_value"), safeString(rs, "max_value"),
+                                safeString(rs, "start_value"), safeString(rs, "cache"),
+                                safeString(rs, "cycle")});
                     }
                 }
             }
