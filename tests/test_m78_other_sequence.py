@@ -64,6 +64,26 @@ def test_show_sequence_domain(qtbot, connection_service):
     assert win.domain_stack.currentWidget() is win.sequence_page
 
 
+def test_other_sequence_uses_latest_tree_context(qtbot, connection_service, monkeypatch):
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui.main_window import MainWindow
+
+    win = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(win)
+    win._object_context = ("profile-1", "target_db", "target_schema")
+    monkeypatch.setattr(win, "_current_profile", lambda: None)
+    captured: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        win, "_show_domain",
+        lambda domain, schema="", database="", activate=True:
+            captured.append((domain, database, schema)),
+    )
+
+    win._show_other_sequence()
+
+    assert captured == [("sequences", "target_db", "target_schema")]
+
+
 def test_sequence_load_error_uses_messagebox_not_context_label(
     qtbot, monkeypatch, connection_service
 ):

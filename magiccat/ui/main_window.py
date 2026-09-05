@@ -62,6 +62,8 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings.default()
         self._tab_seq = 0
         self._running = 0
+        # 固定“对象”页最近一次从左树获得的连接/Catalog/Schema 上下文。
+        self._object_context: tuple[str, str, str] | None = None
 
         self.setWindowTitle("MagicCat")
         self.setWindowIcon(QIcon(app_icon_png()))
@@ -440,6 +442,12 @@ class MainWindow(QMainWindow):
             self.sequence_page.clear()
             self.sequence_page.ctx_label.setText("")
             return
+        # 刷新/DDL 完成后的重载必须保持序列页当前库/模式，不能退回连接初始库。
+        database = database or getattr(self.sequence_page, "_database", None) or ""
+        schema = schema or getattr(self.sequence_page, "_schema", None) or ""
+        if self._object_context and self._object_context[0] == profile.id:
+            database = database or self._object_context[1]
+            schema = schema or self._object_context[2]
         database = database or profile.database or self.schema_combo.currentText() or ""
         schema = schema or self.schema_combo.currentText() or profile.database or ""
         self.sequence_page.ctx_label.setText(
@@ -692,7 +700,11 @@ class MainWindow(QMainWindow):
 
     def _show_other_sequence(self) -> None:
         """「其它」→ 序列：切到序列对象页并展示当前库序列。"""
-        self._show_domain("sequences")
+        database = schema = ""
+        profile = self._current_profile()
+        if self._object_context and (profile is None or self._object_context[0] == profile.id):
+            _profile_id, database, schema = self._object_context
+        self._show_domain("sequences", schema=schema, database=database)
 
     def _quick_user(self) -> None:
         """用户：打开用户管理面板（对标 Navicat）。"""
@@ -1897,6 +1909,7 @@ class MainWindow(QMainWindow):
     def _on_object_context_selected(self, profile_id: str, database: str,
                                     schema: str, cat_type: str) -> None:
         """左树跟手只更新固定「对象」页，不改写已打开查询工作区。"""
+        self._object_context = (profile_id, database, schema)
         if profile_id:
             self._set_current_profile(profile_id)
         self._show_domain(cat_type, schema=schema, database=database, activate=False)
