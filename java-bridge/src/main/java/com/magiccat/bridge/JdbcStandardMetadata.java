@@ -25,6 +25,10 @@ import java.util.TreeMap;
  */
 public final class JdbcStandardMetadata {
 
+    /** JDBC 驱动可能将系统库中的真实表报告为 SYSTEM TABLE。 */
+    private static final String[] TABLE_TYPES = {"TABLE", "VIEW", "SYSTEM TABLE",
+            "MATERIALIZED VIEW"};
+
     private JdbcStandardMetadata() {}
 
     private static String catalog(String value) {
@@ -35,9 +39,9 @@ public final class JdbcStandardMetadata {
     public static String databases(String configId) {
         List<String[]> rows = new ArrayList<>();
         try (Connection conn = ConnectionRegistry.requirePool(configId).getConnection()) {
-            // 某些 JDBC 驱动会把 getCatalogs() 限制在当前 Catalog；清空会话
-            // Catalog 后再枚举，才能得到服务器上的完整 database 列表。
-            conn.setCatalog(null);
+            // MySQL/MariaDB：database 只映射到 catalog，schema 永远为 null。
+            // 不向驱动传入空 catalog：mysql-connector-j 在未选择 database 的连接上
+            // 会直接抛出 “Database can not be null”，而 getCatalogs() 本身即可枚举库。
             DatabaseMetaData md = conn.getMetaData();
             Set<String> names = new LinkedHashSet<>();
             try (ResultSet rs = md.getCatalogs()) {
@@ -171,11 +175,6 @@ public final class JdbcStandardMetadata {
         try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
             addTables(md, useCatalog, useSchema, byName);
-            // 某些 MySQL 驱动配置把 database 暴露为 schema；仍优先走 JDBC，
-            // 仅在标准 catalog 过滤没有返回时尝试另一组标准参数。
-            if (byName.isEmpty() && useCatalog != null && useSchema == null) {
-                addTables(md, null, useCatalog, byName);
-            }
         } catch (SQLException e) {
             throw new IllegalStateException("读取表列表失败: " + e.getMessage(), e);
         }
@@ -237,8 +236,7 @@ public final class JdbcStandardMetadata {
 
     private static void addTables(DatabaseMetaData md, String catalog, String schema,
                                    TreeMap<String, String> byName) throws SQLException {
-        try (ResultSet rs = md.getTables(catalog, schema, "%",
-                                         new String[] {"TABLE", "VIEW", "MATERIALIZED VIEW"})) {
+        try (ResultSet rs = md.getTables(catalog, schema, "%", TABLE_TYPES)) {
             while (rs.next()) {
                 String name = rs.getString("TABLE_NAME");
                 String type = rs.getString("TABLE_TYPE");
@@ -259,8 +257,7 @@ public final class JdbcStandardMetadata {
         TreeMap<String, String[]> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
             DatabaseMetaData md = conn.getMetaData();
-            try (ResultSet rs = md.getTables(useCatalog, useSchema, "%",
-                                             new String[] {"TABLE", "VIEW", "MATERIALIZED VIEW"})) {
+            try (ResultSet rs = md.getTables(useCatalog, useSchema, "%", TABLE_TYPES)) {
                 while (rs.next()) {
                     String name = rs.getString("TABLE_NAME");
                     if (name == null) {

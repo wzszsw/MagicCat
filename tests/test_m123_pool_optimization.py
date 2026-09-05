@@ -49,3 +49,34 @@ def test_legacy_facade_uses_direct_jdbc_for_one_shot_calls() -> None:
     assert "import java.sql.DriverManager;" in source
     assert "HikariDataSource" not in source
     assert "DriverManager.getConnection" in source
+
+
+def test_mysql_catalog_schema_mapping_does_not_clear_catalog_with_null() -> None:
+    source = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+              "magiccat" / "bridge" / "JdbcStandardMetadata.java").read_text(
+                  encoding="utf-8"
+              )
+
+    start = source.index("public static String databases")
+    end = source.index("    // ---- 模式列表", start)
+    databases_body = source[start:end]
+    assert "getCatalogs()" in databases_body
+    assert "conn.setCatalog(null)" not in databases_body
+
+    tables_start = source.index("public static String tables(String configId, String schema)")
+    tables_end = source.index("     * GaussDB 序列", tables_start)
+    tables_body = source[tables_start:tables_end]
+    assert "return tables(configId, schema, \"\");" in tables_body
+    assert "return tables(configId, \"\", schema);" in tables_body
+    assert "addTables(md, null, useCatalog, byName)" not in tables_body
+
+
+def test_mysql_metadata_context_sets_catalog_but_never_schema() -> None:
+    source = REGISTRY.read_text(encoding="utf-8")
+    start = source.index("static Connection connectionTo")
+    end = source.index("    /** 当前打开的配置", start)
+    body = source[start:end]
+
+    assert "!isPostgres(configId)" in body
+    assert "conn.setCatalog(database.trim())" in body
+    assert "conn.setSchema" not in body

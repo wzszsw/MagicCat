@@ -329,7 +329,23 @@ public final class ConnectionRegistry {
                             "mc-ctx-" + configId + "/" + db));
             return ds.getConnection();
         }
-        return requirePool(configId).getConnection();
+        Connection conn = requirePool(configId).getConnection();
+        // MySQL/MariaDB：database 只作为 JDBC catalog，schema 永远为 null。
+        // 标准 DatabaseMetaData 的 catalog 过滤依赖当前连接已切到目标库；
+        // Hikari 归还连接时会恢复池默认上下文。
+        if (!isPostgres(configId) && database != null && !database.isBlank()) {
+            try {
+                conn.setCatalog(database.trim());
+            } catch (SQLException | RuntimeException e) {
+                try {
+                    conn.close();
+                } catch (SQLException ignored) {
+                    // 保留应用原始异常
+                }
+                throw e;
+            }
+        }
+        return conn;
     }
 
     /** 当前打开的配置 ID 集合（调试/状态显示用）。 */

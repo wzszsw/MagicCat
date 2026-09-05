@@ -25,10 +25,19 @@ def test_jdbc_standard_layer_supports_tables_views_and_column_shapes() -> None:
               "magiccat" / "bridge" / "JdbcStandardMetadata.java").read_text(encoding="utf-8")
 
     assert "md.getCatalogs()" in source
-    assert "conn.setCatalog(null);" in source
+    assert "conn.setCatalog(null);" not in source
+    assert "schema 永远为 null" in source
+    registry = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+                "magiccat" / "bridge" / "ConnectionRegistry.java").read_text(encoding="utf-8")
+    assert "conn.setCatalog(database.trim())" in registry
+    start = registry.index("static Connection connectionTo")
+    end = registry.index("    /** 当前打开的配置", start)
+    assert "conn.setSchema" not in registry[start:end]
     assert "md.getSchemas(useCatalog, \"%\")" in source
     assert "md.getTables(useCatalog, useSchema, \"%\"" in source
+    assert '"SYSTEM TABLE"' in source
     assert "md.getColumns(useCatalog, useSchema, \"%\", \"%\")" in source
+    assert "addTables(md, null, useCatalog, byName)" not in source
     assert '"MATERIALIZED VIEW"' in source
 
 

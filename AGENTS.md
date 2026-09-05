@@ -94,6 +94,7 @@
 - **JDBC catalog / schema 语义（重要，用户强调）**：
   - **MySQL JDBC**：只有 **catalog（= database）**，**无 schema**（`getXxx(schema=null, catalog=database, ...)`）。
     元数据查询时把数据库名放 **catalog** 参数；schema 传 `null`。拼限定名时用 `database.table`（反引号）。
+    未指定初始 database 时也不得调用 `setCatalog(null)`；数据库枚举直接使用 `getCatalogs()`。
   - **PostgreSQL JDBC**：有标准的 **database（catalog）** 和 **schema** 两个概念；
     `getXxx(catalog=database, schema=schema, ...)` **两者都传**。拼限定名用 `"db"` 只到 `"schema"."table"`（库在连接层，不在表限定名里）。
   - **跨库（PG）**：打开/枚举某库的对象时，需把目标库作为 catalog 传入，并在该库连接上执行（PG 表限定名 `"schema"."table"` 只含 schema，库由连接决定）。
