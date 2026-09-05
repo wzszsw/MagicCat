@@ -180,9 +180,9 @@
 - 结论：Navicat 对"简单数据/缓存/历史"确实用 **SQLite**；配置多为注册表/JSON；SQL 文件用文件系统。
 - **MagicCat 已按此重构本地存储**（三合一，对标 Navicat；不兼容旧 profiles.json/query.json/history.json，
   旧数据弃用、不迁移、不留兼容代码）：
-  - 连接配置 → **注册表** `HKCU\Software\MagicCat\Servers\<conn_id>`（密码 DPAPI）。
+  - 连接配置 → **用户数据目录下的版本化 JSON** `connections.json`（密码明文，原子写入；不依赖注册表）。
   - 查询 SQL 内容 → **.sql 文件** `<MAGICCAT_HOME>/queries/<profile_id>/<schema>/<name>.sql`。
   - 元数据缓存/历史/收藏/设置/片段/任务/窗口状态 → **SQLite** `metacache.db`（kv / metadata_cache / history / favorites 表）。
-  - 统一入口：`magiccat/storage/{__init__,registry_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`。
+  - 统一入口：`magiccat/storage/{__init__,profile_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`；未设置 `MAGICCAT_HOME` 时按 Windows `%APPDATA%`、macOS `~/Library/Application Support`、Linux `$XDG_CONFIG_HOME` 选择目录。
   - 相关服务（ProfileStore/QueryLibrary/HistoryStore/AppSettings/SnippetStore/TaskStore）接口保持，
     内部实现改为上述新存储。

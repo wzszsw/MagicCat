@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+.tmp-pytest/
 .ruff_cache/
 .mypy_cache/
 

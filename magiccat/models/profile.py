@@ -1,7 +1,7 @@
 """连接配置模型。
 
 约定：password 在内存对象里是明文（仅在打开连接时使用一次）；
-持久化时由 ProfileStore 加密（Windows DPAPI），文件里永不明文。
+持久化时由 ProfileStore 直接写入配置文件（用户明确选择明文存储）。
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class ConnectionProfile:
         return self.provider_key in ("postgresql", "gaussdb")
 
     def to_dict(self) -> dict:
-        """序列化（不含明文密码；密码由 ProfileStore 加密后单独落盘）。"""
+        """序列化不含密码的连接字段，密码由存储层按配置写入。"""
         return {
             "id": self.id,
             "name": self.name,

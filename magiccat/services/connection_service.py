@@ -26,6 +26,11 @@ class ConnectionService:
         return list(self._profiles)
 
     @property
+    def config_path(self) -> Path:
+        """连接配置实际落盘位置。"""
+        return self._store.config_path
+
+    @property
     def groups(self) -> list[str]:
         seen: list[str] = []
         for p in self._profiles:

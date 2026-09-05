@@ -1,31 +1,33 @@
-"""本地存储根目录与注册表根键的统一定位（对标 Navicat，三合一存储）。
+"""MagicCat 跨平台本地数据目录。
 
-- 根目录：`$MAGICCAT_HOME`（未设置则 `%APPDATA%\\MagicCat`）。
-- 注册表根：`HKCU\\Software\\MagicCat`（连接配置，含 DPAPI 密码）。
-- SQLite 库：`<root>/metacache.db`（元数据缓存/历史/收藏/窗口状态）。
-- 查询 SQL：文件系统 `.sql`（`<root>/<conn>/<schema>/<name>.sql`）。
+目录布局遵循桌面客户端的用户数据约定：
+
+* ``MAGICCAT_HOME`` 可显式指定数据根目录，主要用于便携模式和测试；
+* Windows 使用 ``%APPDATA%/MagicCat``；
+* macOS 使用 ``~/Library/Application Support/MagicCat``；
+* Linux/Unix 使用 ``$XDG_CONFIG_HOME/MagicCat``，缺省为 ``~/.config/MagicCat``。
+
+连接配置、SQLite 缓存和 SQL 文件都位于这个根目录下，不依赖平台专有的注册表。
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 
 def home_dir() -> Path:
-    """MagicCat 数据根目录。优先 $MAGICCAT_HOME，否则 %APPDATA%\\MagicCat。"""
+    """返回 MagicCat 的用户数据根目录（目录按需创建）。"""
     override = os.environ.get("MAGICCAT_HOME")
     if override:
         return Path(override)
-    base = os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "MagicCat"
 
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA")
+        return Path(base) / "MagicCat" if base else Path.home() / "AppData" / "Roaming" / "MagicCat"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "MagicCat"
 
-def registry_root() -> str:
-    """Windows 注册表根键路径（HKCU 下）。"""
-    return r"Software\MagicCat"
-
-
-def registry_servers_key() -> str:
-    """连接配置注册表子键（HKCU\\Software\\MagicCat\\Servers）。"""
-    return registry_root() + r"\Servers"
+    base = os.environ.get("XDG_CONFIG_HOME")
+    return Path(base) / "MagicCat" if base else Path.home() / ".config" / "MagicCat"

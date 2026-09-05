@@ -17,7 +17,7 @@ MagicCat 是一款**跨数据库的桌面级数据库管理与开发工具**，�
 
 | Navicat 能力 | MagicCat 处理 | 阶段 |
 |---|---|---|
-| 连接管理（多库、分组、加密保存、测试连接） | 支持（分组树 + 主密码/DPAPI 加密） | M2 |
+| 连接管理（多库、分组、密码保存、测试连接） | 支持（分组树 + 跨平台 JSON 存储） | M2 |
 | 对象浏览器（库/表/视图/函数/存储过程/触发器/用户…） | 支持，MySQL 全对象类型 | M2 |
 | SQL 编辑器（高亮/自动补全/多标签/美化/参数/历史） | 支持（自研编辑器组件） | M3 |
 | 结果网格（编辑/筛选/排序/分页/大结果集） | 支持（虚拟滚动 + 服务端分页） | M3~M4 |
@@ -170,7 +170,7 @@ Server
 
 | 模块 | 关键实现 | 说明 |
 |---|---|---|
-| ConnectionManager | `ConnectionService` + 注册表存储（`HKCU\Software\MagicCat\Servers\<conn_id>`，口令 DPAPI） | 分组树、复制连接、测试连接、批量导入连接配置 |
+| ConnectionManager | `ConnectionService` + `JsonProfileStore`（用户数据目录 `connections.json`，版本化 JSON + 明文口令） | 分组树、复制连接、测试连接、批量导入连接配置 |
 | ObjectExplorer | `ObjectTreeModel` + 右键菜单 | 按 4.2 对象树展示；双击表 → 表设计/数据页 |
 | SqlEditor | `SqlEditorWidget`（自研） | 多标签；语法高亮（QSyntaxHighlighter，MySQL 关键字/字符串/注释/变量）；**自动补全**：关键字 + 已连库的表/列（元数据缓存驱动 QCompleter）；语句级执行/选中执行/全部执行；sqlparse 美化；查询历史落盘 |
 | ResultGrid | `ResultTableModel` + `ResultTableView` | 虚拟滚动（单次最多取页大小，滚动到底自动取下一页）；类型化渲染与编辑；右键：复制行/复制带表头/导出当前结果/筛选排序追加 SQL |
@@ -222,7 +222,7 @@ JPype 下不需要序列化，但仍需**稳定的跨语言类型映射**（避�
 
 | 项 | 方案 |
 |---|---|
-| 连接口令存储 | 注册表 `HKCU\Software\MagicCat\Servers\<conn_id>`（含连接配置、分组、口令密文）；密文 = Windows DPAPI（`CryptProtectData`，绑定当前用户） |
+| 连接口令存储 | 用户数据目录 `connections.json`（版本化 JSON，连接配置、分组和 `password` 明文）；文件采用原子替换，Unix 权限为 `0600` |
 | 内存中的口令 | 连接建立后即从内存配置中清除明文引用；日志一律脱敏（`****`） |
 | 传输 | 直连 JDBC，无自建网络层；无中间人面 |
 | SQL 安全 | 编辑类 SQL 只允许主键定位的 UPDATE/DELETE 由程序生成；用户自定义 SQL 属用户行为，提供"事务提交前确认"开关 |
@@ -324,7 +324,7 @@ MagicCat/
 |---|---|---|---|
 | M0 | 方案评审 | ✅ | 本文档 |
 | M1 | JPype→HikariCP→MySQL 全链路 POC | ✅ | `scripts/poc_m1.py` 一次通过（MySQL 8.4.7） |
-| M2 | 连接管理（DPAPI 加密）+ 对象浏览 | ✅ | pytest：加密回环 / 元数据 / Qt 对象树异步加载 |
+| M2 | 连接管理（密码存储）+ 对象浏览 | ✅ | pytest：配置回环 / 元数据 / Qt 对象树异步加载（历史记录） |
 | M3 | SQL 编辑器（高亮/补全/多标签/历史/美化）+ 多结果集 | ✅ | 真实建表-插入-查询-错误不中断 |
 | M4 | 数据页（分页/主键编辑/增删行/筛选/排序）+ 表设计器（ALTER 预览/应用） | ✅ | CRUD / 无主键只读 / DDL 片段生成 |
 | M5 | 导入导出 CSV/Excel/JSON/SQL | ✅ | 四格式回读 + CSV 导入 + SQL 回灌 |
@@ -405,7 +405,7 @@ MagicCat/
 | M82 | Bugfix：PG 表数据全闭环——TableDataApi 标识符/分页/主键按方言（双引号+LIMIT n OFFSET m+pg_index 主键），列元数据走标准 JDBC getColumns，data_table 排序/筛选按方言转义 | ✅ | 116 回归 + 真实 PG 表 CRUD |
 | M83 | 日期时间统一显示为 `YYYY-MM-DD HH:MM:SS`（本地时区）：新增 format_datetime，对象页「修改日期」列与结果网格统一接入 | ✅ | 121 回归 + 格式断言 |
 | M84 | 数据页加载失败改用 MessageBox 统一报错（清理 Java 前缀）；AGENTS.md 沉淀限定名分隔引号与报错统一约定 | ✅ | 121 回归 |
-| M85 | 本地存储重构为三合一（对标 Navicat，不兼容旧结构、不留包袱）：连接→注册表、查询内容→.sql 文件、元数据/历史/收藏/设置/片段/任务/窗口状态→SQLite | ✅ | 121 回归 |
+| M85 | 初版本地存储三合一（历史实现）：连接→注册表、查询内容→.sql 文件、元数据/历史/收藏/设置/片段/任务/窗口状态→SQLite | ✅ | 121 回归（历史记录） |
 | M86 | 修复 PG 打开表数据报错：thread 目录级 database(catalog) 到 page/columns/primaryKey/executeScript，PG 下临时连目标库；报错对话框改 error(critical) | ✅ | 121 回归 + 真实 PG 跨库 db3.cicsdev 表 |
 | M87 | GaussDB 扩展：PG 兼容对象树/数据页、`jdbc:gaussdb://` 与华为 JDBC 驱动动态加载；「工具 → 环境」指定本机 JAR，驱动不进入发行包 | ✅ | 方言/向导/环境设置/外置 classloader 回归 + openGauss 容器冒烟 |
 | M88 | 所有连接选择下拉框统一显示数据库产品图标（主查询栏、备份、任务、导入、传输），共享 profile 填充辅助 | ✅ | 11 项 UI/图标/向导回归 |
@@ -448,6 +448,7 @@ MagicCat/
 | M125 | 修复 MySQL 标准元数据表列表为空：借出连接后按 database 设置 JDBC catalog，保持 schema 永远为 null | ✅ | 本地 MySQL root 空密码数据库/表元数据回归 + JDBC 路由契约 |
 | M126 | 兼容 MySQL 系统库表类型：标准 JDBC 表枚举纳入 `SYSTEM TABLE`，恢复 `mysql.user` 等系统表展示 | ✅ | 本地 MySQL 表/列元数据回归 15 项；Maven package + Ruff |
 | M127 | 关闭态连接仅允许定位和查看信息，不激活当前连接及“对象”工作区；打开态保持树跟手 | ✅ | 关闭/打开态对象树信号回归 8 项；Ruff |
+| M128 | 连接配置移除 Windows 注册表，改为用户数据目录下版本化 `connections.json`（密码明文；不兼容旧注册表/JSON，不迁移） | ✅ | JSON 明文回环、原子写入、跨平台目录解析；Ruff |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

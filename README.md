@@ -1,6 +1,6 @@
 # MagicCat
 
-对标 Navicat 的跨数据库桌面管理工具。技术栈：**PySide6（界面） + JPype（内嵌 JVM） + JDBC（数据访问）**，首发支持 MySQL / MariaDB，目标平台 Windows。
+对标 Navicat 的跨数据库桌面管理工具。技术栈：**PySide6（界面） + JPype（内嵌 JVM） + JDBC（数据访问）**，首发支持 MySQL / MariaDB，配置存储遵循 Windows/macOS/Linux 用户数据目录约定。
 
 详细设计见 [docs/MagicCat设计方案.md](docs/MagicCat设计方案.md)。
 
@@ -69,7 +69,7 @@ uv run python -m magiccat
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M1 | 技术验证：PySide6→JPype→HikariCP→MySQL 全链路 POC | ✅ |
-| M2 | 连接管理（DPAPI 加密）+ 对象浏览 | ✅ |
+| M2 | 连接管理（跨平台 JSON 明文配置）+ 对象浏览 | ✅ |
 | M3 | SQL 编辑器（高亮/补全/多标签/历史/美化）+ 多结果集 | ✅ |
 | M4 | 数据页（分页/主键编辑/增删行）+ 表设计器（ALTER 预览） | ✅ |
 | M5 | 导入导出 CSV/Excel/JSON/SQL | ✅ |
