@@ -43,6 +43,8 @@
   - `ObjectExplorer` 选中任意可归属连接的对象 → emit `profile_activated(profile_id)` → `MainWindow._set_current_profile`
     只更新对象浏览领域的当前连接（profile_combo 下拉）+ 库下拉 + 查询列表；已打开的查询标签不随树选中变化。
   - 对象页不显示全局连接下拉；内部树跟手状态仅用于对象列表和新建查询初始化。
+    固定“对象”页跟随左树当前连接、database/schema、分类及对象节点更新列表域与上下文；
+    跟手同步不得改写或强制切走已打开的查询标签。
     查询标签的 `profile_combo` 是其自身连接锚点，`_current_profile` 在查询标签激活时从它读取。
   - **每查询标签一套完整工作区（`QueryWorkspace`，影响不扩散）**：每个查询标签独立持有
     「连接下拉 + 库下拉 + 保存/运行/停止/解释/美化/代码段/询问AI + 编辑器 + 每标签结果区 + 状态行」，
@@ -108,6 +110,8 @@
   设置保存于 SQLite，连接打开时动态加载。
 - GaussDB 表对象页列表必须走目标 Catalog+Schema 的标准路径，不能复用包含反引号和
   `ENGINE`/`TABLE_ROWS` 等 MySQL 专用字段的批量查询。
+- GaussDB 序列名称枚举优先使用驱动 `DatabaseMetaData.getTables(..., {"SEQUENCE"})`；
+  当前值、步长、最小/最大值等富字段再用一次 openGauss 专用批量查询补齐，不做逐序列 I/O。
 - PostgreSQL / GaussDB 的连接配置中“初始化数据库”为必填项，默认值统一为 `postgres`；
   该值只决定首次连接目标，数据库树仍必须枚举服务器上的其它数据库。
 - GaussDB 与 PostgreSQL 同源，使用 `jdbc:gaussdb://`、双引号和 PG 兼容对象树；

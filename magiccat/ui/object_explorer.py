@@ -70,6 +70,7 @@ class ObjectExplorer(QTreeWidget):
     open_routine_sql = Signal(str, str, str)  # profile_id, name, sql_text
     selection_info_requested = Signal(object)  # 当前选中项描述 dict
     domain_selected = Signal(str, str, str)  # profile_id, schema, cat_type（`对象`页联动）
+    object_context_selected = Signal(str, str, str, str)  # profile_id, database, schema, cat_type
     new_query_requested = Signal(str, str, str)  # profile_id, database, schema（database 级或 schema 级新建查询）
     profile_activated = Signal(str)  # profile_id（树激活某连接或其下对象 → 当前连接跟手）
 
@@ -96,9 +97,11 @@ class ObjectExplorer(QTreeWidget):
         info = _info(current)
         kind = info.get(KIND_KEY)
         data = info.get(DATA_KEY, {})
+        context: tuple[str, str, str, str] | None = None
         if kind == "profile":
             act_pid = data.get("profile_id")
             desc = {"kind": "profile", "profile_id": act_pid}
+            context = (act_pid or "", "", "", "tables")
         else:
             profile = self._profile_of(current)
             if profile is None:
@@ -107,15 +110,22 @@ class ObjectExplorer(QTreeWidget):
             pid = profile.id
             if kind == "database":
                 desc = {"kind": "database", "profile_id": pid, "schema": data.get("schema")}
+                context = (pid, data.get("schema", ""),
+                           "public" if profile.is_postgres else data.get("schema", ""),
+                           "tables")
             elif kind in ("table", "view"):
                 desc = {"kind": kind, "profile_id": pid, "schema": data.get("schema"),
                         "table": data.get("table"), "name": data.get("name")}
+                context = (pid, self._database_of(current), data.get("schema", ""),
+                           "views" if kind == "view" else "tables")
             elif kind == "routine":
                 desc = {"kind": "routine", "profile_id": pid, "schema": data.get("schema"),
                         "name": data.get("name"), "type": data.get("type", "")}
+                context = (pid, self._database_of(current), data.get("schema", ""), "routines")
             elif kind == "trigger":
                 desc = {"kind": "trigger", "profile_id": pid, "schema": data.get("schema"),
                         "name": data.get("name")}
+                context = (pid, self._database_of(current), data.get("schema", ""), "triggers")
             elif kind == "column":
                 desc = {"kind": "column", "profile_id": pid, "schema": data.get("schema"),
                         "name": data.get("name"),
@@ -123,23 +133,29 @@ class ObjectExplorer(QTreeWidget):
                         "nullable": data.get("nullable", ""),
                         "default": data.get("default_value", ""),
                         "comment": data.get("comment", "")}
+                context = (pid, self._database_of(current), data.get("schema", ""), "tables")
             elif kind == "group":
                 desc = {"kind": "group", "name": current.text(0)}
             elif kind == "schema":
                 desc = {"kind": "schema", "profile_id": pid,
                         "schema": data.get("schema"), "database": data.get("database", "")}
+                context = (pid, data.get("database", ""), data.get("schema", ""), "tables")
             elif kind == "category":
                 desc = {"kind": "category", "name": current.text(0)}
                 cat_type = data.get("cat_type")
                 if cat_type:
                     self.domain_selected.emit(pid, data.get("schema", ""), cat_type)
+                    context = (pid, data.get("database", ""), data.get("schema", ""), cat_type)
             elif kind == "saved_query":
                 desc = {"kind": "saved_query", "profile_id": pid,
                         "schema": data.get("schema"), "name": data.get("name")}
+                context = (pid, self._database_of(current), data.get("schema", ""), "queries")
             else:
                 return
         if act_pid:
             self.profile_activated.emit(act_pid)
+        if context is not None:
+            self.object_context_selected.emit(*context)
         self.selection_info_requested.emit(desc)
 
     # ---- 装载 ----

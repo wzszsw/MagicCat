@@ -36,4 +36,4 @@ def test_pg_provider_supported():
     assert dialects.provider("postgresql").state == "supported"
     assert dialects.build_jdbc_url(
         "postgresql", "127.0.0.1", 5432, "app"
-    ) == "jdbc:postgresql://127.0.0.1:5432/app?connectTimeout=5&socketTimeout=30"
+    ) == "jdbc:postgresql://127.0.0.1:5432/app"

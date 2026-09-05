@@ -30,3 +30,24 @@ def test_jdbc_standard_layer_supports_tables_views_and_column_shapes() -> None:
     assert "md.getTables(useCatalog, useSchema, \"%\"" in source
     assert "md.getColumns(useCatalog, useSchema, \"%\", \"%\")" in source
     assert '"MATERIALIZED VIEW"' in source
+
+
+def test_gaussdb_sequences_use_jdbc_sequence_metadata_and_batch_details() -> None:
+    api = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+           "magiccat" / "bridge" / "MetadataApi.java").read_text(encoding="utf-8")
+    standard = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+                "magiccat" / "bridge" / "JdbcStandardMetadata.java").read_text(
+                    encoding="utf-8"
+                )
+
+    assert "return JdbcStandardMetadata.gaussSequences(configId, database, schema);" in api
+    assert "md.getTables(useCatalog, useSchema, \"%\",\n                                             new String[] {\"SEQUENCE\"})" in standard
+    assert "pg_sequence_all_parameters" in standard
+
+
+def test_pg_and_gaussdb_urls_do_not_receive_mysql_timeout_parameters() -> None:
+    facade = (ROOT / "java-bridge" / "src" / "main" / "java" / "com" /
+              "magiccat" / "bridge" / "Facade.java").read_text(encoding="utf-8")
+
+    assert 'return "jdbc:postgresql://" + host + ":" + port + "/" + db;' in facade
+    assert 'return "jdbc:gaussdb://" + host + ":" + port + "/" + db;' in facade

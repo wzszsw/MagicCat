@@ -36,13 +36,12 @@ public final class Facade {
         String db = (database == null || database.isBlank()) ? "" : database;
         String f = flavor == null ? "" : flavor.toLowerCase();
         if ("postgresql".equals(f)) {
-            // 连接库可空（默认连 postgres），驱动自动带 connect/socket 超时
-            return "jdbc:postgresql://" + host + ":" + port + "/" + db
-                    + "?connectTimeout=5&socketTimeout=30";
+            // PostgreSQL 使用自身默认连接参数；不要注入项目约定的 MySQL 参数。
+            return "jdbc:postgresql://" + host + ":" + port + "/" + db;
         }
         if ("gaussdb".equals(f)) {
-            return "jdbc:gaussdb://" + host + ":" + port + "/" + db
-                    + "?connectTimeout=5&socketTimeout=30";
+            // GaussDB URL 不注入项目约定的 MySQL connect/socket 参数。
+            return "jdbc:gaussdb://" + host + ":" + port + "/" + db;
         }
         // 默认按 MySQL/MariaDB 处理
         return "jdbc:mysql://" + host + ":" + port + "/" + db

@@ -256,43 +256,52 @@ class MainWindow(QMainWindow):
         self.editor_tabs.setCurrentIndex(0)
         self._reload_query_browse()
 
-    def _show_domain(self, cat_type: str, schema: str = "") -> None:
+    def _show_domain(self, cat_type: str, schema: str = "", database: str = "",
+                     activate: bool = True) -> None:
         """对象树选中某分类 → 对象页切到对应领域子页并展示列表。"""
         page = self._domain_pages.get(cat_type)
         if page is None:
             return
         self._set_domain_action(cat_type)
         self.domain_stack.setCurrentWidget(page)
-        self.editor_tabs.setCurrentIndex(0)
-        self._reload_current_domain(schema=schema)
+        if activate:
+            self.editor_tabs.setCurrentIndex(0)
+        self._reload_current_domain(schema=schema, database=database)
 
-    def _reload_current_domain(self, schema: str = "") -> None:
+    def _reload_current_domain(self, schema: str = "", database: str = "") -> None:
         page = self.domain_stack.currentWidget()
         if page is self.browse_page:
-            self._reload_query_browse()
+            self._reload_query_browse(schema=schema, database=database)
         elif page is self.table_page:
-            self._reload_table_browse(schema=schema)
+            self._reload_table_browse(schema=schema, database=database)
         elif page is self.view_page:
-            self._reload_view_browse(schema=schema)
+            self._reload_view_browse(schema=schema, database=database)
         elif page is self.routine_page:
-            self._reload_routine_browse(schema=schema)
+            self._reload_routine_browse(schema=schema, database=database)
         elif page is self.trigger_page:
-            self._reload_trigger_browse()
+            self._reload_trigger_browse(schema=schema, database=database)
         elif page is self.sequence_page:
-            self._reload_sequence_browse()
+            self._reload_sequence_browse(database=database, schema=schema)
         else:
             page.clear() if hasattr(page, "clear") else None
 
-    def _reload_query_browse(self) -> None:
+    def _reload_query_browse(self, profile=None, schema: str = "",
+                             database: str = "") -> None:
         """按当前连接/库刷新「查询」对象页列表。"""
-        profile = self._current_profile()
+        profile = profile or self._current_profile()
         if profile is None:
             self.browse_page.clear()
             self.browse_page.ctx_label.setText("")
             return
-        schema = self.schema_combo.currentText() or profile.database or ""
+        if profile.is_postgres:
+            schema = schema or "public"
+            database = database or profile.database or ""
+        else:
+            schema = schema or self.schema_combo.currentText() or profile.database or ""
         self.browse_page.load_queries(profile.id, schema)
         self.browse_page.ctx_label.setText(
+            f"{profile.display_name} · {database} · {schema or '默认'}"
+            if profile.is_postgres else
             f"{profile.display_name} · {schema or '默认'}")
 
     def _reload_table_browse(self, profile=None, schema: str = "",
@@ -316,7 +325,9 @@ class MainWindow(QMainWindow):
                 database = self.explorer._database_of(item)
             database = database or profile.database or ""
         self.table_page.ctx_label.setText(
-            f"{profile.display_name} · {schema or '默认'}")
+            f"{profile.display_name} · {database} · {schema or '默认'}"
+             if profile.is_postgres else
+             f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
             return self._metadata.schema_tables(profile, schema, database)
@@ -327,7 +338,9 @@ class MainWindow(QMainWindow):
         def error(err: str) -> None:
             # 错误不占用表页操作栏，保留当前上下文并用统一错误框提示。
             self.table_page.ctx_label.setText(
-                f"{profile.display_name} · {schema or '默认'}")
+                f"{profile.display_name} · {database} · {schema or '默认'}"
+                 if profile.is_postgres else
+                 f"{profile.display_name} · {schema or '默认'}")
             from magiccat.utils.errors import clean_java_error
 
             QMessageBox.critical(self, "读取表失败", clean_java_error(err))
@@ -352,7 +365,9 @@ class MainWindow(QMainWindow):
         else:
             schema = schema or self.schema_combo.currentText() or profile.database or ""
         self.view_page.ctx_label.setText(
-            f"{profile.display_name} · {schema or '默认'}")
+            f"{profile.display_name} · {database} · {schema or '默认'}"
+             if profile.is_postgres else
+             f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
             return [v for v in self._metadata.schema_tables(profile, schema, database)
@@ -364,18 +379,27 @@ class MainWindow(QMainWindow):
         run_async(fetch, done, lambda err: self.view_page.ctx_label.setText(
             f"读取视图失败：{err}"))
 
-    def _reload_routine_browse(self, profile=None, schema: str = "") -> None:
+    def _reload_routine_browse(self, profile=None, schema: str = "",
+                               database: str = "") -> None:
         """按当前连接/库刷新「函数」对象页列表（一次批查，无 N+1）。"""
         profile = profile or self._current_profile()
         if profile is None:
             self.routine_page.clear()
             self.routine_page.ctx_label.setText("")
             return
-        schema = schema or self.schema_combo.currentText() or profile.database or ""
+        if profile.is_postgres:
+            schema = schema or "public"
+            database = database or profile.database or ""
+        else:
+            schema = schema or self.schema_combo.currentText() or profile.database or ""
         self.routine_page.ctx_label.setText(
-            f"{profile.display_name} · {schema or '默认'}")
+            f"{profile.display_name} · {database} · {schema or '默认'}"
+             if profile.is_postgres else
+             f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
+            if profile.is_postgres:
+                return self._metadata.routines_in_database(profile, database, schema)
             return self._metadata.routines(profile, schema)
 
         def done(rows: list[dict]) -> None:
@@ -384,7 +408,8 @@ class MainWindow(QMainWindow):
         run_async(fetch, done, lambda err: self.routine_page.ctx_label.setText(
             f"读取函数失败：{err}"))
 
-    def _reload_trigger_browse(self, profile=None, schema: str = "") -> None:
+    def _reload_trigger_browse(self, profile=None, schema: str = "",
+                               database: str = "") -> None:
         """按当前连接/库刷新「触发器」对象页列表（一次批查，无 N+1）。"""
         profile = profile or self._current_profile()
         if profile is None:
@@ -393,7 +418,9 @@ class MainWindow(QMainWindow):
             return
         schema = schema or self.schema_combo.currentText() or profile.database or ""
         self.trigger_page.ctx_label.setText(
-            f"{profile.display_name} · {schema or '默认'}")
+            f"{profile.display_name} · {database} · {schema or '默认'}"
+             if profile.is_postgres else
+             f"{profile.display_name} · {schema or '默认'}")
 
         def fetch():
             return self._metadata.triggers(profile, schema)
@@ -429,8 +456,15 @@ class MainWindow(QMainWindow):
             else:
                 self.sequence_page.clear()
 
-        run_async(fetch, done, lambda err: self.sequence_page.ctx_label.setText(
-            f"读取序列失败：{err}"))
+        def error(err: str) -> None:
+            # 错误不占用序列页操作栏，保留当前上下文并用统一错误框提示。
+            self.sequence_page.ctx_label.setText(
+                f"{profile.display_name} · {database} · {schema or '默认'}")
+            from magiccat.utils.errors import clean_java_error
+
+            QMessageBox.critical(self, "读取序列失败", clean_java_error(err))
+
+        run_async(fetch, done, error)
 
     def _resolve_pg_database_schema(self) -> tuple[str, str] | None:
         """取当前连接/库的 (database, schema)。PG 下二者来自下拉；非 PG 返回 None。"""
@@ -531,7 +565,7 @@ class MainWindow(QMainWindow):
         self.explorer.create_routine_entry.connect(self._on_create_routine)
         self.explorer.open_routine_sql.connect(self._open_routine_sql)
         self.explorer.selection_info_requested.connect(self._on_selection_info)
-        self.explorer.domain_selected.connect(self._on_domain_selected)
+        self.explorer.object_context_selected.connect(self._on_object_context_selected)
         self.explorer.new_query_requested.connect(self._on_new_query_from_explorer)
         self.explorer.profile_activated.connect(self._set_current_profile)
         dock = QDockWidget("对象浏览器", self)
@@ -1859,6 +1893,13 @@ class MainWindow(QMainWindow):
         """对象树选中某分类 → 「对象」页切到该领域子页并按选中库展示列表。"""
         self._set_current_profile(profile_id)
         self._show_domain(cat_type, schema=schema)
+
+    def _on_object_context_selected(self, profile_id: str, database: str,
+                                    schema: str, cat_type: str) -> None:
+        """左树跟手只更新固定「对象」页，不改写已打开查询工作区。"""
+        if profile_id:
+            self._set_current_profile(profile_id)
+        self._show_domain(cat_type, schema=schema, database=database, activate=False)
 
     def _on_new_query_from_explorer(self, profile_id: str, database: str,
                                     schema: str) -> None:

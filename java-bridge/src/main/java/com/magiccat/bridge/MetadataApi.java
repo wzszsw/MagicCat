@@ -104,6 +104,12 @@ public final class MetadataApi {
     /** PostgreSQL：某 database.schema 下的序列列表（列表页用）。
      *  name, owner, increment, last_value, min_value, max_value, start_value, cache, cycle */
     public static String sequencesInDatabase(String configId, String database, String schema) {
+        // openGauss does not expose PostgreSQL's pg_sequences view. Its
+        // JDBC metadata exposes sequences as a SEQUENCE table type, while
+        // the lateral helper supplies runtime values and cache settings.
+        if (isGaussDb(configId)) {
+            return JdbcStandardMetadata.gaussSequences(configId, database, schema);
+        }
         return ConnectionRegistry.executeOnDatabase(
                 configId, database,
                 "SELECT sequencename AS name, sequenceowner AS owner, "
@@ -112,6 +118,11 @@ public final class MetadataApi {
                         + "start_value AS start_value, cache_size AS cache, cycle AS cycle "
                         + "FROM pg_sequences WHERE schemaname = ? ORDER BY sequencename",
                 new String[] {schema}, 0);
+    }
+
+    private static boolean isGaussDb(String configId) {
+        ConnectionRegistry.ConnectParams params = ConnectionRegistry.params(configId);
+        return params != null && "gaussdb".equalsIgnoreCase(params.flavor());
     }
 
     /** 表/视图列表：name, type(BASE TABLE|VIEW)。 */

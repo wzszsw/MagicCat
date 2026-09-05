@@ -62,3 +62,48 @@ def test_show_sequence_domain(qtbot, connection_service):
     win.show()
     win._show_domain("sequences")
     assert win.domain_stack.currentWidget() is win.sequence_page
+
+
+def test_sequence_load_error_uses_messagebox_not_context_label(
+    qtbot, monkeypatch, connection_service
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui import main_window as main_window_module
+    from magiccat.ui.main_window import MainWindow
+
+    profile = ConnectionProfile(name="序列错误", provider_key="postgresql",
+                                database="postgres")
+    connection_service.add(profile)
+    window = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(window)
+
+    captured: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox, "critical",
+        staticmethod(lambda _parent, title, text, *args, **kwargs:
+                     captured.append((title, text))),
+    )
+
+    def immediate(work, done, error):
+        try:
+            done(work())
+        except Exception as exc:  # noqa: BLE001
+            error(str(exc))
+
+    monkeypatch.setattr(main_window_module, "run_async", immediate)
+    monkeypatch.setattr(
+        window._metadata,
+        "sequences_in_database",
+        lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("java.lang.IllegalStateException: 读取序列失败")
+        ),
+    )
+
+    window._reload_sequence_browse(profile, "postgres", "public")
+
+    assert captured == [("读取序列失败", "读取序列失败")]
+    assert window.sequence_page.ctx_label.text() == (
+        f"{profile.display_name} · postgres · public"
+    )

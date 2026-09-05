@@ -2,6 +2,7 @@ package com.magiccat.bridge;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -186,6 +187,66 @@ public final class JdbcStandardMetadata {
                 .comparing((String[] r) -> r[1])
                 .thenComparing(r -> r[0], String.CASE_INSENSITIVE_ORDER));
         return Json.table(new String[] {"name", "type"}, rows);
+    }
+
+    /**
+     * GaussDB 序列：名称由 JDBC DatabaseMetaData.getTables(..., SEQUENCE) 提供，
+     * 当前值/步长等富字段由 openGauss 的序列参数函数一次批量补齐。
+     */
+    public static String gaussSequences(String configId, String catalog, String schema) {
+        String useCatalog = catalog(catalog);
+        String useSchema = catalog(schema);
+        Set<String> names = new LinkedHashSet<>();
+        List<String[]> rows = new ArrayList<>();
+        try (Connection conn = ConnectionRegistry.connectionTo(configId, useCatalog)) {
+            DatabaseMetaData md = conn.getMetaData();
+            try (ResultSet rs = md.getTables(useCatalog, useSchema, "%",
+                                             new String[] {"SEQUENCE"})) {
+                while (rs.next()) {
+                    String name = rs.getString("TABLE_NAME");
+                    if (name != null && !name.isBlank()) {
+                        names.add(name);
+                    }
+                }
+            }
+            if (names.isEmpty()) {
+                return Json.table(new String[] {"name", "owner", "increment", "last_value",
+                        "min_value", "max_value", "start_value", "cache", "cycle"}, rows);
+            }
+            String sql = "SELECT c.relname AS name, "
+                    + "pg_get_userbyid(c.relowner) AS owner, "
+                    + "p.increment AS increment, p.last_value AS last_value, "
+                    + "p.minimum_value AS min_value, p.maximum_value AS max_value, "
+                    + "p.start_value AS start_value, p.cache_size AS cache, "
+                    + "p.cycle_option AS cycle "
+                    + "FROM pg_catalog.pg_namespace n "
+                    + "JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid "
+                    + "AND c.relkind = 'S' "
+                    // openGauss resolves this built-in function from pg_catalog;
+                    // its parser rejects the schema-qualified call form.
+                    + "LEFT JOIN LATERAL pg_sequence_all_parameters("
+                    + "format('%I.%I', n.nspname, c.relname)) p ON TRUE "
+                    + "WHERE n.nspname = ? ORDER BY c.relname";
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, useSchema);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String name = rs.getString("name");
+                        if (names.contains(name)) {
+                            rows.add(new String[] {name, safeString(rs, "owner"),
+                                    safeString(rs, "increment"), safeString(rs, "last_value"),
+                                    safeString(rs, "min_value"), safeString(rs, "max_value"),
+                                    safeString(rs, "start_value"), safeString(rs, "cache"),
+                                    safeString(rs, "cycle")});
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取序列列表失败: " + e.getMessage(), e);
+        }
+        return Json.table(new String[] {"name", "owner", "increment", "last_value",
+                "min_value", "max_value", "start_value", "cache", "cycle"}, rows);
     }
 
     private static void addTables(DatabaseMetaData md, String catalog, String schema,

@@ -72,8 +72,6 @@ def planned_keys() -> list[str]:
 def build_jdbc_url(key: str, host: str, port: int, database: str = "") -> str:
     p = provider(key)
     base = p.url_template.format(host=host, port=port, database=database)
-    if key in ("postgresql", "gaussdb"):
-        return base + "?connectTimeout=5&socketTimeout=30"
     return base
 
 

@@ -436,6 +436,8 @@ MagicCat/
 | M113 | 对象工作区无连接上下文时禁用新建/打开/设计/删除/刷新，列表加载成功后恢复操作 | ✅ | 对象按钮上下文状态回归 |
 | M114 | 顶部表/视图/函数/查询功能域动作改为互斥选择态，由窗口级当前领域 flag 统一驱动 | ✅ | 功能域动作与当前领域回归 |
 | M115 | 表数据页主键读取改用 JDBC `DatabaseMetaData.getPrimaryKeys`，移除 GaussDB 不支持的 `array_position` | ✅ | JDBC 主键路由静态回归 + openGauss 表数据实测 |
+| M116 | 修复 GaussDB 序列读取并清理 PG/GaussDB JDBC URL 中误加的 MySQL 超时参数：驱动 `DatabaseMetaData.getTables(..., SEQUENCE)` 枚举名称，openGauss 批量函数补齐富字段；读取失败统一 `QMessageBox.critical` | ✅ | 该驱动真实 JDBC 调用返回序列 + 158 项回归收集 |
+| M117 | 固定“对象”页跟随左树连接/库/模式/分类/对象上下文更新；查询标签上下文与当前页保持隔离 | ✅ | 对象页跟手上下文回归 + 查询标签不抢焦点回归 |
 
 - 自动化测试：`uv run pytest`（121 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

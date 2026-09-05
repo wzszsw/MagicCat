@@ -20,9 +20,9 @@ def test_jdbc_url_shapes():
     assert dialects.build_jdbc_url("mysql", "127.0.0.1", 3306,
                                    "test") == "jdbc:mysql://127.0.0.1:3306/test"
     assert dialects.build_jdbc_url("postgresql", "10.0.0.1", 5432,
-                                   "app") == "jdbc:postgresql://10.0.0.1:5432/app?connectTimeout=5&socketTimeout=30"
+                                   "app") == "jdbc:postgresql://10.0.0.1:5432/app"
     assert dialects.build_jdbc_url("gaussdb", "10.0.0.1", 5432,
-                                   "app") == "jdbc:gaussdb://10.0.0.1:5432/app?connectTimeout=5&socketTimeout=30"
+                                   "app") == "jdbc:gaussdb://10.0.0.1:5432/app"
     assert dialects.build_jdbc_url("sqlserver", "srv", 1433,
                                    "db") == "jdbc:sqlserver://srv:1433;databaseName=db"
 
