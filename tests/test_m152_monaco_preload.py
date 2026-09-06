@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 
 
@@ -41,3 +42,36 @@ def test_preloaded_monaco_workspace_is_not_a_tab_and_is_reused(
     assert workspace is preloaded
     assert window.editor_tabs.currentWidget() is preloaded
     assert window.editor_tabs.count() == 2
+
+
+def test_main_window_waits_for_monaco_before_showing(
+    qtbot, connection_service, monkeypatch
+) -> None:
+    from magiccat.ui import main_window as main_window_module
+    from magiccat.ui.main_window import MainWindow
+
+    class FakeMonacoEditor(QWidget):
+        readyChanged = Signal(bool)
+
+        def load(self) -> None:
+            pass
+
+        def has_selection(self) -> bool:
+            return False
+
+        def setFocus(self) -> None:
+            pass
+
+    monkeypatch.setattr(main_window_module, "MonacoEditorWidget", FakeMonacoEditor)
+    monkeypatch.delenv("MAGICCAT_EDITOR", raising=False)
+    window = MainWindow(connection_service)
+    qtbot.addWidget(window)
+    shown: list[bool] = []
+
+    window.prepare_for_show(lambda: shown.append(True))
+
+    assert shown == []
+    preloaded = window._preloaded_query_workspace
+    assert preloaded is not None
+    preloaded.editor.readyChanged.emit(True)
+    assert shown == [True]

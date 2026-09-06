@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
+from collections.abc import Callable
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QIcon
@@ -79,6 +81,10 @@ class MainWindow(QMainWindow):
         # 仅供首次“新建查询”复用的隐藏 Monaco 工作区；它不属于任何标签页，
         # 因而不会改变启动时只有固定“对象”页的行为。
         self._preloaded_query_workspace = None
+        self._startup_prepared = False
+        self._startup_finished = False
+        self._startup_show_callback: Callable[[], None] | None = None
+        self._startup_timeout: QTimer | None = None
         # 固定“对象”页最近一次从左树获得的连接/Catalog/Schema 上下文。
         self._object_context: tuple[str, str, str] | None = None
 
@@ -110,12 +116,6 @@ class MainWindow(QMainWindow):
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._scan_due_tasks)
         self._task_timer.start(60_000)
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        # Monaco 是唯一需要 WebEngine 页面加载的编辑器。窗口已显示后再预热，
-        # 避免用户第一次点击“新建查询”时先看到一个空白标签页。
-        QTimer.singleShot(0, self._preload_monaco_workspace)
 
     @property
     def _current_domain(self) -> str:
@@ -1092,8 +1092,56 @@ class MainWindow(QMainWindow):
             return SqlEditorWidget()
         return MonacoEditorWidget()
 
-    def _preload_monaco_workspace(self) -> None:
-        """在主窗口显示后预热一个不在标签栏中的 Monaco 查询工作区。"""
+    def prepare_for_show(self, show_callback: Callable[[], None]) -> None:
+        """等待首个 Monaco 页面就绪后再显示主窗口。
+
+        QWebEngine 的首个页面会初始化 Chromium 合成环境；如果先显示主窗口，
+        Windows 上会把这次初始化的白色首帧暴露出来。预热工作区始终是隐藏子
+        控件，只有 ready（或超时/加载失败）后才调用应用层的 ``show``。
+        """
+        self._startup_show_callback = show_callback
+        if self._startup_finished:
+            show_callback()
+            return
+        if self._startup_prepared:
+            return
+        self._startup_prepared = True
+
+        editor_mode = os.environ.get("MAGICCAT_EDITOR")
+        if editor_mode == "plain":
+            QTimer.singleShot(0, self._finish_startup_show)
+            return
+
+        self._preload_monaco_workspace(start=False)
+        workspace = self._preloaded_query_workspace
+        editor = workspace.editor if workspace is not None else None
+        ready_signal = getattr(editor, "readyChanged", None)
+        if editor is None or ready_signal is None:
+            # 仅供测试/替代编辑器使用；真实 Monaco 一定提供 readyChanged。
+            if editor is not None:
+                editor.load()
+            QTimer.singleShot(0, self._finish_startup_show)
+            return
+        ready_signal.connect(lambda _ready: self._finish_startup_show())
+        editor.load()
+        self._startup_timeout = QTimer(self)
+        self._startup_timeout.setSingleShot(True)
+        self._startup_timeout.timeout.connect(self._finish_startup_show)
+        self._startup_timeout.start(8_000)
+
+    def _finish_startup_show(self) -> None:
+        if self._startup_finished:
+            return
+        self._startup_finished = True
+        if self._startup_timeout is not None:
+            self._startup_timeout.stop()
+        callback = self._startup_show_callback
+        self._startup_show_callback = None
+        if callback is not None:
+            callback()
+
+    def _preload_monaco_workspace(self, *, start: bool = True) -> None:
+        """创建一个不在标签栏中的 Monaco 查询工作区。"""
         if self._preloaded_query_workspace is not None:
             return
         editor = self._make_editor()
@@ -1102,16 +1150,16 @@ class MainWindow(QMainWindow):
         from magiccat.ui.query_workspace import QueryWorkspace
 
         workspace = QueryWorkspace(editor, self)
+        workspace.hide()
         editor.workspace = workspace
-        editor.load()
+        if start:
+            editor.load()
         self._preloaded_query_workspace = workspace
 
     def _take_preloaded_query_workspace(self):
-        """取走已开始加载的 Monaco 工作区，并为下一次创建补充预热。"""
+        """取走已开始加载的 Monaco 工作区，作为首个查询标签使用。"""
         workspace = self._preloaded_query_workspace
         self._preloaded_query_workspace = None
-        if workspace is not None:
-            QTimer.singleShot(0, self._preload_monaco_workspace)
         return workspace
 
     def _capture_new_query_context(self) -> tuple[str | None, str, str | None, bool]:

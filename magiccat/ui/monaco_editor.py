@@ -184,6 +184,8 @@ class MonacoEditorWidget(QWidget):
 
     textChanged = Signal()
     selectionChanged = Signal(bool)
+    # 首个 WebEngine 页面完成 Monaco 初始化（或明确加载失败）时通知宿主。
+    readyChanged = Signal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -221,6 +223,11 @@ class MonacoEditorWidget(QWidget):
     def _on_loaded(self, ok: bool) -> None:
         if ok:
             self._poll_editor_ready(0)
+            return
+        # 启动门闩不能因为本地资源加载失败而永久阻塞；失败状态仍交给
+        # MainWindow 统一决定何时显示窗口并把后续错误暴露给用户。
+        self._ready_flag = False
+        self.readyChanged.emit(False)
 
     def _poll_editor_ready(self, attempt: int) -> None:
         """等待 Monaco 的 AMD 异步初始化完成，避免首次检查过早永久判定未就绪。"""
@@ -234,7 +241,11 @@ class MonacoEditorWidget(QWidget):
 
             QTimer.singleShot(50, lambda: self._poll_editor_ready(attempt + 1))
             return
-        self._ready_flag = bool(has_editor)
+        ready = bool(has_editor)
+        changed = ready != self._ready_flag
+        self._ready_flag = ready
+        if changed or not ready:
+            self.readyChanged.emit(ready)
         self._sync_words()
 
 
