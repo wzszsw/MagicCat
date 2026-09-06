@@ -84,7 +84,7 @@
 - 查询标签页的数据库上下文必须独立持有 JDBC `Catalog` 与 `Schema`：MySQL/MariaDB 的 `Schema` 永远为
   `null`，仅设置 `Catalog`；PostgreSQL/GaussDB 两者都设置。切换上下文不得注入或显示 `USE`。
 - 查询/结果消息区跟随应用主题，不得固定深色；从隐藏状态首次展开时应保持紧凑的底部比例，不能占满编辑区。
-- 查询工作区上下文选择器对齐 Navicat：不显示“连接 / 库 / 模式”文字标签，直接在下拉框中使用连接产品、数据库、模式图标；
+- 查询工作区上下文选择器：不显示“连接 / 库 / 模式”文字标签，直接在下拉框中使用连接产品、数据库、模式图标；
   MySQL/MariaDB 没有独立 Schema 时连同模式选择器一起隐藏。
 - 查询工作区无选区时，“运行”执行编辑器中的全部 SQL（由服务层逐条切分并返回多个结果集）；有选区时按钮改为“运行已选择的”，只执行选中 SQL。
 - 新建查询标签显示名统一为“无标题”；显示名不得承担对象定位职责，查询工作区必须持有独立唯一的内部 `tab_key`。
@@ -195,7 +195,7 @@
 
 ## 附录 A：Navicat 本地存储探测笔记（参考）
 
-> 本机装有 Navicat Premium 17，以下为实际探测结论，仅作对齐参考，**不必照搬**内部实现。
+> 本机装有 Navicat Premium 17，以下为实际探测结论，仅用于记录外部软件的本地存储行为，**不作为 MagicCat 的实现要求**。
 
 - **用 SQLite 做本地缓存/历史/索引**：`Documents\Navicat\Premium\profiles\ai_assistant_history.db`
   （完整 SQLite 库，含多表 + FTS 全文搜索 + `utc_time` 字段）；每个连接目录有 `id_cache.db`(-wal/-shm)。
@@ -208,7 +208,7 @@
 - **MagicCat 已按此重构本地存储**（不兼容旧 profiles.json/query.json/history.json/connections.json，
   旧数据弃用、不迁移、不留兼容代码）：
   - 连接配置 → **用户文档目录下按产品 display/连接名称逐目录保存的版本化 JSON** `<MAGICCAT_HOME>/<display>/Servers/<连接名称>/connection.json`（密码明文，原子写入；同一大写 `provider_key` 内连接名称唯一，不同产品可同名；绝不使用 Windows 注册表）。
-  - 连接分组 → 独立的 `Premium/profiles/vgroup.json`，结构对齐 Navicat：`version: "1.1"`、`vgroups[].vgroup_name`、`vgroups[].items[]`（`name`、`type: "CONNECTION"`、`server_type`）；未分组连接不写入分组项，直接显示在连接树根部。文件只保存名称和大写产品 key 引用，不保存连接配置。
+  - 连接分组 → 独立的 `Premium/profiles/vgroup.json`，采用版本化分组索引：`version: "1.1"`、`vgroups[].vgroup_name`、`vgroups[].items[]`（`name`、`type: "CONNECTION"`、`server_type`）；未分组连接不写入分组项，直接显示在连接树根部。文件只保存名称和大写产品 key 引用，不保存连接配置。
   - 查询 SQL 内容 → **连接目录下的 .sql 文件**；PG 为 `<MAGICCAT_HOME>/<display>/Servers/<连接名称>/<database>/<schema>/<name>.sql`，MySQL/MariaDB 省略独立 schema 层。
   - 元数据缓存/历史/收藏/设置/片段/任务/窗口状态 → **SQLite** `metacache.db`（kv / metadata_cache / history / favorites 表）。
   - 统一入口：`magiccat/storage/{__init__,profile_store,sqlite_store,query_store}.py`，根目录 `storage.home_dir()`；未设置 `MAGICCAT_HOME` 时使用各平台用户文档目录下的 `MagicCat`（Windows/macOS 为 `~/Documents/MagicCat`，Linux/Unix 优先解析 XDG 用户文档目录，回退到 `~/Documents/MagicCat`）。
@@ -220,4 +220,4 @@
   `HKCU\Software\PremiumSoft\Navicat*\Servers\<connection>`，对象缓存写在
   `Documents\Navicat\<Product>\Servers\<connection>\id_cache.db`，查询 SQL 为同目录下的 `.sql` 文件；
   组关系单独位于 `Documents\Navicat\Premium\profiles\vgroup.json`，格式为 `vgroups[].items[]`
-  引用连接名，未分组连接不出现在任何 item 中。该探测仅用于行为对齐，MagicCat 不读取注册表、不读取 Navicat 文件。
+  引用连接名，未分组连接不出现在任何 item 中。该探测仅用于记录外部软件行为，MagicCat 不读取注册表、不读取 Navicat 文件。

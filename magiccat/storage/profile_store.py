@@ -1,7 +1,7 @@
 """按连接拆分的跨平台配置存储。
 
 每个连接使用独立的 ``<display>/Servers/<连接名称>/connection.json`` 文件，
-组关系使用 ``Premium/profiles/vgroup.json``，结构对齐 Navicat 的 ``version`` /
+组关系使用 ``Premium/profiles/vgroup.json``，采用版本化分组索引，记录 ``version`` /
 ``vgroups`` / ``connections``。写入采用临时文件 + 原子替换；密码
 按用户要求直接保存为 ``password`` 字段。这里不读取 Windows 注册表或任何旧版
 聚合 JSON。

@@ -1,6 +1,6 @@
 """DDL 生成与变更对比（纯 Python，无 DB 依赖）。
 
-列定义 dict 约定（与 MetadataService.columns 对齐）：
+列定义 dict 约定（与 MetadataService.columns 保持一致）：
     name, data_type(完整类型如 varchar(50)), nullable("NO"/"YES"),
     default_value(str|None), extra(含 "auto_increment"), comment, key("PRI"/...)
 """
