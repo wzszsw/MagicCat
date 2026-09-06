@@ -4,6 +4,16 @@
 
 详细设计见 [docs/MagicCat设计方案.md](docs/MagicCat设计方案.md)。
 
+## 第三方素材与商标说明
+
+项目使用的外部图标来源、版本和许可记录见 [引用素材清单](docs/引用素材.md)。项目自有代码的开源许可不替代第三方素材各自适用的许可条款。
+
+- GaussDB 连接图标使用 [Simple Icons 的 Huawei SVG](https://github.com/simple-icons/simple-icons/blob/develop/icons/huawei.svg)，本地资产为 [huawei.svg](magiccat/resources/logos/huawei.svg)，许可文本见 [SIMPLE_ICONS_LICENSE.md](magiccat/resources/logos/SIMPLE_ICONS_LICENSE.md)。该许可仅涉及版权及相关权利，不代表取得 Huawei 商标授权。
+- MySQL、PostgreSQL、MariaDB 连接图标来自 [Devicon](https://github.com/devicons/devicon)，许可文本见 [LICENSE.txt](magiccat/resources/logos/LICENSE.txt)。
+- database 图标来自 [Tabler Icons](https://github.com/tabler/tabler-icons)，许可文本见 [TABLER_LICENSE](magiccat/resources/icons/TABLER_LICENSE)；schema/table 图标来自 [Ant Design Icons](https://github.com/ant-design/ant-design-icons)，许可文本见 [ANT_DESIGN_LICENSE](magiccat/resources/icons/ANT_DESIGN_LICENSE)。
+
+Huawei、GaussDB、MySQL、PostgreSQL、MariaDB 及上述图标库名称和标识归各自权利人所有。MagicCat 是独立开源项目，与相关厂商或图标库不存在隶属、授权、赞助或官方背书关系；这些名称和图标仅用于标识连接类型或兼容对象。
+
 ## 工程体系（Python 主流方案）
 
 | 文件/目录 | 作用 |
