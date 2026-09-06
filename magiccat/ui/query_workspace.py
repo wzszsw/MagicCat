@@ -39,6 +39,10 @@ class QueryWorkspace(QWidget):
     def __init__(self, editor, parent=None) -> None:
         super().__init__(parent)
         self.editor = editor
+        # 已打开的具名查询保存时直接回写原记录；未命名查询保持 None，
+        # 保存时才要求用户输入名称。
+        self.saved_query_profile_id: str | None = None
+        self.saved_query_name: str | None = None
         # 对象树新建查询时列表可能仍在异步加载，先暂存目标上下文。
         self._pending_database = ""
         # None 表示没有指定目标；空字符串表示库级

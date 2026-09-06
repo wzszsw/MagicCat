@@ -84,3 +84,62 @@ def test_open_saved_query_in_editor(qtbot, mysql_env, connection_service):
     assert editor.toPlainText().strip() == "SELECT 42 AS answer;"
     assert win.editor_tabs.tabText(win.editor_tabs.indexOf(editor)) == "q_开库"
     connection_service.close(profile.id)
+
+
+def test_open_saved_query_save_updates_without_name_dialog(qtbot, connection_service,
+                                                            monkeypatch):
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui.main_window import MainWindow
+
+    profile = ConnectionProfile(name="M32save", group=DEFAULT_GROUP,
+                                host="127.0.0.1", port=3306, username="root")
+    connection_service.add(profile)
+    library = QueryLibrary.default()
+    library.save(profile.id, "已有查询", "SELECT 1;", database="test")
+
+    win = MainWindow(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(win)
+    win.show()
+    win._open_saved_query(profile.id, "已有查询")
+    editor = win._active_editor()
+    editor.setPlainText("SELECT 2;")
+
+    def fail_dialog(*_args, **_kwargs):
+        raise AssertionError("编辑已有查询不应再次要求输入名称")
+
+    monkeypatch.setattr("magiccat.ui.main_window.QInputDialog.getText", fail_dialog)
+    win._save_query_dialog()
+
+    assert library.get(profile.id, "已有查询")["content"] == "SELECT 2;"
+    connection_service.close(profile.id)
+
+
+def test_query_tree_keeps_saved_queries_when_category_expands(qtbot, connection_service):
+    from PySide6.QtWidgets import QTreeWidgetItem
+
+    from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui import object_explorer as oe
+    from magiccat.ui.object_explorer import ObjectExplorer
+
+    profile = ConnectionProfile(name="M32tree", group=DEFAULT_GROUP,
+                                host="127.0.0.1", port=3306, username="root")
+    connection_service.add(profile)
+    QueryLibrary.default().save(profile.id, "树中查询", "SELECT 1", database="test")
+
+    explorer = ObjectExplorer(connection_service, MetadataService(connection_service))
+    qtbot.addWidget(explorer)
+    profile_item = QTreeWidgetItem([profile.name])
+    profile_item.setData(0, oe.Qt.UserRole, {oe.KIND_KEY: "profile",
+                                             oe.DATA_KEY: {"profile_id": profile.id}})
+    explorer.addTopLevelItem(profile_item)
+    database = oe._make_item("test", "database", schema="test")
+    profile_item.addChild(database)
+    category = oe._make_item("查询", "category", database="test", schema="test",
+                             cat_type="queries")
+    database.addChild(category)
+
+    explorer._load_category(category)
+
+    assert category.childCount() == 1
+    assert category.child(0).text(0) == "树中查询"
+    connection_service.close(profile.id)

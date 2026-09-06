@@ -1244,6 +1244,8 @@ class MainWindow(QMainWindow):
             ws = QueryWorkspace(editor)
         else:
             editor = ws.editor
+        ws.saved_query_profile_id = None
+        ws.saved_query_name = None
         # 显示标题与内部定位键分离：未保存查询始终显示“无标题”，键用 UUID
         # 保证多个未保存工作区彼此独立，不依赖标题文本定位。
         ws.tab_key = f"query:untitled:{uuid.uuid4().hex}"
@@ -1878,10 +1880,13 @@ class MainWindow(QMainWindow):
         self._status(f"执行计划完成（{rows} 行步骤）", 5000)
 
     def _save_query_dialog(self) -> None:
-        """把当前编辑器另存为“具名查询”（对标 Navicat 查询库）。"""
+        """保存当前查询；已打开具名查询直接回写，否则另存为新查询。"""
         from magiccat.services.query_library import QueryLibrary
 
-        profile = self._current_profile()
+        ws = self._current_query_ws()
+        saved_profile_id = getattr(ws, "saved_query_profile_id", None)
+        profile = (self._connections.get(saved_profile_id)
+                   if saved_profile_id else self._current_profile())
         if profile is None:
             QMessageBox.information(self, "保存查询", "请先在工具栏选择要保存到的连接。")
             return
@@ -1889,12 +1894,15 @@ class MainWindow(QMainWindow):
         if editor is None or not editor.toPlainText().strip():
             QMessageBox.information(self, "保存查询", "编辑器没有可保存的内容。")
             return
-        name, ok = QInputDialog.getText(
-            self, "保存查询", f"查询名称：保存位置：{profile.display_name}")
-        name = (name or "").strip()
-        if not ok or not name:
-            return
-        ws = self._current_query_ws()
+        saved_name = (getattr(ws, "saved_query_name", None) or "").strip()
+        if saved_name:
+            name = saved_name
+        else:
+            name, ok = QInputDialog.getText(
+                self, "保存查询", f"查询名称：保存位置：{profile.display_name}")
+            name = (name or "").strip()
+            if not ok or not name:
+                return
         if ws is not None:
             catalog, current_schema = self._workspace_context(ws, profile)
             database = catalog
@@ -1904,6 +1912,9 @@ class MainWindow(QMainWindow):
             schema = ""
         lib = QueryLibrary.default()
         lib.save(profile.id, name, editor.toPlainText(), schema=schema, database=database)
+        if ws is not None:
+            ws.saved_query_profile_id = profile.id
+            ws.saved_query_name = name
         if database or schema:
             self.explorer.refresh_schema_queries(profile.id, database, schema)
         self._reload_query_browse()
@@ -1921,6 +1932,9 @@ class MainWindow(QMainWindow):
             return
         tab_key = f"query:{profile_id}:{name}"
         ws = self._open_object_tab(tab_key, name, record["content"])
+        ws.saved_query_profile_id = profile_id
+        ws.saved_query_name = name
+        ws.set_profile(profile_id)
         self._set_current_profile(profile_id)
         # 具名查询的上下文随标签打开：数据库和模式分别来自保存记录。
         saved_database = (record.get("database") or "").strip()

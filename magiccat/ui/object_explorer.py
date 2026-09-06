@@ -413,7 +413,22 @@ class ObjectExplorer(QTreeWidget):
         schema = self._schema_of(item)
         database = self._database_of(item)
         profile = self._profile_of(item)
-        if profile is None or not schema:
+        if profile is None:
+            return
+        if cat_type == "queries":
+            # 具名查询存于本地文件/SQLite，不经过 JDBC 元数据加载。
+            query_schema = schema if supports_schema(profile.provider_key) else ""
+            children = [
+                _make_item(q["name"], "saved_query", profile_id=profile.id,
+                           name=q["name"], database=q.get("database", ""),
+                           schema=q.get("schema", ""))
+                for q in self._queries.list(profile.id)
+                if (q.get("database") or "") == (database or "")
+                and (q.get("schema") or "") == query_schema
+            ]
+            _replace_children(item, children)
+            return
+        if not schema:
             return
         pg = profile.is_postgres
         self._begin_load(item)
