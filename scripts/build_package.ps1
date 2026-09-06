@@ -7,13 +7,31 @@
 # 产出验证：.\dist\MagicCat\MagicCat.exe --selftest
 param(
     [switch]$SkipJlink,
-    [switch]$Windowed
+    [switch]$Windowed,
+    [switch]$Clean
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $bridge = Join-Path $root "java-bridge\target"
 $stage = Join-Path $root "packaging\stage\jvm"
 $pyi = Join-Path $root ".venv\Scripts\pyinstaller.exe"
+$distDir = Join-Path $root "dist"
+$workDir = Join-Path $root "build\MagicCat"
+
+if ($Clean) {
+    Write-Host "==> 清理旧的 bridge stage、PyInstaller 输出和工作目录"
+    if (-not $SkipJlink -and (Test-Path -LiteralPath $stage)) {
+        Remove-Item -LiteralPath $stage -Recurse -Force
+    }
+    foreach ($path in @(
+        (Join-Path $distDir "MagicCat"),
+        $workDir
+    )) {
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Recurse -Force
+        }
+    }
+}
 
 Write-Host "==> 1) 确保 java-bridge 已构建"
 if (-not (Get-ChildItem $bridge -Filter "magiccat-bridge-*.jar" -ErrorAction SilentlyContinue)) {
@@ -49,6 +67,9 @@ Write-Host "    模式：$pyiMode"
 & $pyi --noconfirm --clean `
     --name MagicCat `
     $pyiMode `
+    --distpath $distDir `
+    --workpath $workDir `
+    --specpath $workDir `
     --paths $root `
     --icon (Join-Path $root "magiccat\resources\app_icon.ico") `
     --collect-all jpype `

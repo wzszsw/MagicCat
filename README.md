@@ -87,6 +87,7 @@ uv run python -m magiccat
 | M7a | Windows 打包：PyInstaller + jlink 内嵌 JRE（`--selftest` 通过，免装 Java） | ✅ |
 | M151 | Windows 完整发行构建：强制重建 bridge/应用，正式版 `--windowed`，自检后编译 Inno 安装器 | ✅ |
 | M153 | GitHub Actions 构建 Apple Silicon macOS arm64 DMG（重建 bridge/jlink/PyInstaller，正式版 `--windowed`） | ✅ |
+| M154 | Windows 总构建固定仓库路径并清理旧 stage/dist/build，执行 `mvn clean package`，避免安装器复用旧内容 | ✅ |
 | 剩余 | 计划任务/i18n、更多细节 | 后续 |
 
 ## 打包
@@ -100,7 +101,7 @@ uv run python -m magiccat
 .\dist\MagicCat\MagicCat.exe --selftest  # 打包自检（无需系统 Java）
 ```
 
-完整发行构建会先重建 Java bridge，再以无控制台模式生成应用本体，最后编译 `dist\installer\MagicCat-Setup-<版本>.exe`；不要直接对旧的 `dist\MagicCat` 目录运行 Inno Setup。
+完整发行构建会先清理旧的 stage、PyInstaller 输出和工作目录，再执行 `mvn clean package`，以无控制台模式生成应用本体，最后编译 `dist\installer\MagicCat-Setup-<版本>.exe`；脚本从任意当前目录启动都使用仓库根目录，不要直接对旧的 `dist\MagicCat` 目录运行 Inno Setup。
 
 macOS DMG 当前优先支持 Apple Silicon arm64，在 macOS arm64 主机或 GitHub Actions 的 `macos-14` runner 上执行：
 

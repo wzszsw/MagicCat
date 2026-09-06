@@ -481,6 +481,7 @@ MagicCat/
 | M151 | Windows 完整发行构建：强制重建 Java bridge 与 PyInstaller 应用，正式发行使用 `--windowed`，自检后生成便携 ZIP 与 Inno Setup 安装器 | ✅ | `build_windows.ps1 -SkipJlink` 闭环通过；`--selftest` 返回 `jre_bundled:true`；PE 子系统为 Windows GUI；Inno Setup 7.1 编译成功 |
 | M152 | 主窗口显示后局部预热一个隐藏 Monaco 查询工作区，首次新建查询直接复用，消除 WebEngine 首次加载导致的标签页闪烁 | ✅ | Monaco 预热/复用 Qt 回归；Ruff |
 | M153 | GitHub Actions 构建 Apple Silicon macOS arm64 DMG；按平台定位 JVM 动态库并强制重建 bridge/jlink/PyInstaller | ✅ | macOS 构建脚本静态检查；JVM 路径跨平台回归；Ruff |
+| M154 | Windows 总构建固定仓库路径并清理旧 stage/dist/build，执行 `mvn clean package`，避免安装器复用旧内容 | ✅ | 从仓库外启动脚本；clean 后重新生成 exe/ZIP/安装器；自检通过 |
 
 - 自动化测试：`uv run pytest`（215 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

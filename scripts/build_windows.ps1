@@ -14,6 +14,7 @@ $buildPackage = Join-Path $root "scripts\build_package.ps1"
 $buildRelease = Join-Path $root "scripts\build_release.ps1"
 $iss = Join-Path $root "packaging\MagicCat.iss"
 $exe = Join-Path $root "dist\MagicCat\MagicCat.exe"
+$stage = Join-Path $root "packaging\stage\jvm"
 
 function Invoke-Step {
     param(
@@ -27,11 +28,25 @@ function Invoke-Step {
     }
 }
 
-Write-Host "==> 1) 强制重建 java-bridge"
-Invoke-Step -FilePath $buildJava -Arguments @()
+Write-Host "==> 1) 清理旧的正式发行产物"
+if (-not $SkipJlink -and (Test-Path -LiteralPath $stage)) {
+    Remove-Item -LiteralPath $stage -Recurse -Force
+}
+foreach ($path in @(
+    (Join-Path $root "dist\MagicCat"),
+    (Join-Path $root "dist\installer"),
+    (Join-Path $root "build\MagicCat")
+)) {
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Recurse -Force
+    }
+}
 
-Write-Host "==> 2) 重建 PyInstaller 应用"
-$packageParameters = @{ Windowed = $true }
+Write-Host "==> 2) 强制重建 java-bridge（mvn clean package）"
+Invoke-Step -FilePath $buildJava -Arguments @("-Clean")
+
+Write-Host "==> 3) 重建 PyInstaller 应用"
+$packageParameters = @{ Windowed = $true; Clean = $true }
 if ($SkipJlink) { $packageParameters.SkipJlink = $true }
 & $buildPackage @packageParameters
 if ($LASTEXITCODE -ne 0) {
@@ -42,7 +57,7 @@ if (-not (Test-Path -LiteralPath $exe)) {
     throw "PyInstaller 产物不存在：$exe"
 }
 
-Write-Host "==> 3) 执行打包自检"
+Write-Host "==> 4) 执行打包自检"
 $selftestOutput = Join-Path ([System.IO.Path]::GetTempPath()) "magiccat-selftest-$PID.json"
 $previousSelftestOutput = $env:MAGICCAT_SELFTEST_OUTPUT
 try {
@@ -69,10 +84,10 @@ finally {
     }
 }
 
-Write-Host "==> 4) 生成便携版 ZIP"
+Write-Host "==> 5) 生成便携版 ZIP"
 Invoke-Step -FilePath $buildRelease -Arguments @()
 
-Write-Host "==> 5) 查找 Inno Setup 编译器"
+Write-Host "==> 6) 查找 Inno Setup 编译器"
 $isccCandidates = @(
     (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source,
     (Join-Path ${env:ProgramFiles} "Inno Setup 7\ISCC.exe"),
