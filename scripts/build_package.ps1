@@ -1,10 +1,13 @@
 # 打包 MagicCat（M7）：
 #   java-bridge jar -> jlink 内嵌 JRE + 驱动/桥 jar -> PyInstaller(JPype) -> dist\MagicCat\
-# 用法：.\scripts\build_package.ps1          # 全量
-#       .\scripts\build_package.ps1 -SkipJlink  # 跳过 jlink（复用已有 runtime）
+# 用法：.\scripts\build_package.ps1                    # 调试版（带控制台）
+#       .\scripts\build_package.ps1 -Windowed          # 发布版（无控制台）
+#       .\scripts\build_package.ps1 -SkipJlink         # 跳过 jlink（复用已有 runtime）
+#       .\scripts\build_package.ps1 -Windowed -SkipJlink
 # 产出验证：.\dist\MagicCat\MagicCat.exe --selftest
 param(
-    [switch]$SkipJlink
+    [switch]$SkipJlink,
+    [switch]$Windowed
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -41,9 +44,11 @@ if (-not $SkipJlink -and -not $runtimeOk) {
 }
 
 Write-Host "==> 4) PyInstaller 打包"
+$pyiMode = if ($Windowed) { "--windowed" } else { "--console" }
+Write-Host "    模式：$pyiMode"
 & $pyi --noconfirm --clean `
     --name MagicCat `
-    --console `
+    $pyiMode `
     --paths $root `
     --icon (Join-Path $root "magiccat\resources\app_icon.ico") `
     --collect-all jpype `

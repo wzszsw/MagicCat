@@ -178,6 +178,7 @@
   对话框再由外层补救弹错。数据库 DDL、查询、导入导出等真正执行期错误按异步执行结果提示。
 - 改 Java 后需重新 `mvn package` 构建 jar（开发态走 `java-bridge/target/`）。
 - **打包**（exe + 便携 zip + `--selftest`）：仅在用户**明确要求**时执行；否则只 commit，不打包。
+- 调试构建可使用 PyInstaller `--console` 以便查看异常栈；正式发行构建必须使用 `--windowed`，统一通过 `scripts/build_windows.ps1` 重建 bridge/应用、自检、便携包和 Inno 安装器，避免复用旧 `dist` 产物。
 - 提交信息用中文、单引号包裹、避免 PowerShell 花括号/括号被吞的写法；每次改动一个里程碑语义，附修订记录（M编号）。
 - 里程碑进度记录在 `docs/MagicCat设计方案.md` 附录 B（持续更新，含回归数）。
 

@@ -7,14 +7,16 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $pkgDir = Join-Path $root "dist\MagicCat"
 $stage = Join-Path $root "packaging\stage\jvm"
+$buildPackage = Join-Path $root "scripts\build_package.ps1"
 
 if ($Rebuild -or -not (Test-Path (Join-Path $pkgDir "MagicCat.exe"))) {
     Write-Host "==> 先打包（dist\MagicCat）"
+    $buildParameters = @{ Windowed = $true }
     if (Test-Path (Join-Path $stage "runtime\bin\server\jvm.dll")) {
-        & (Join-Path $root "scripts\build_package.ps1") -SkipJlink
-    } else {
-        & (Join-Path $root "scripts\build_package.ps1")
+        $buildParameters.SkipJlink = $true
     }
+    & $buildPackage @buildParameters
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller 打包失败 (exit $LASTEXITCODE)" }
 }
 
 $ver = (Select-String -Path (Join-Path $root "magiccat\__init__.py") -Pattern '__version__\s*=\s*"([^"]+)"').Matches.Groups[1].Value

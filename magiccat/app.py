@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -69,10 +70,19 @@ def _selftest() -> int:
         row = json.loads(raw)["rows"][0][0]
         Registry.close("__selftest__")
         bridge.shutdown()
-        print(json.dumps({"ok": True, "mysql": version, "select": row,
-                          "jre_bundled": bundled_jre() is not None}, ensure_ascii=False))
+        _emit_selftest_result({"ok": True, "mysql": version, "select": row,
+                               "jre_bundled": bundled_jre() is not None})
         return 0
     except Exception as exc:  # noqa: BLE001 —— 自检需汇报任意失败
-        print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"},
-                         ensure_ascii=False))
+        _emit_selftest_result({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
         return 1
+
+
+def _emit_selftest_result(result: dict[str, object]) -> None:
+    """输出自检结果；windowed 冻结程序没有 stdout 时改写入指定文件。"""
+    text = json.dumps(result, ensure_ascii=False)
+    output_path = os.environ.get("MAGICCAT_SELFTEST_OUTPUT")
+    if output_path:
+        Path(output_path).write_text(text + "\n", encoding="utf-8")
+    if sys.stdout is not None:
+        print(text)

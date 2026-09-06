@@ -85,12 +85,18 @@ uv run python -m magiccat
 | M5 | 导入导出 CSV/Excel/JSON/SQL | ✅ |
 | M6a | 主题、ER 图、SQL 备份/恢复、收藏/复制打磨 | ✅ |
 | M7a | Windows 打包：PyInstaller + jlink 内嵌 JRE（`--selftest` 通过，免装 Java） | ✅ |
-| 剩余 | Inno 安装器实编、计划任务/i18n、更多细节 | 后续 |
+| M151 | Windows 完整发行构建：强制重建 bridge/应用，正式版 `--windowed`，自检后编译 Inno 安装器 | ✅ |
+| 剩余 | 计划任务/i18n、更多细节 | 后续 |
 
 ## 打包
 
 ```powershell
-.\scripts\build_package.ps1              # 全量（jar + jlink JRE + PyInstaller）
+.\scripts\build_windows.ps1            # 完整发行构建：重建 bridge/应用、自检、便携 ZIP、Inno 安装器
+.\scripts\build_windows.ps1 -SkipJlink # 完整构建，但复用已有内嵌 JRE
+.\scripts\build_package.ps1              # 调试构建（带控制台，便于查看异常栈）
+.\scripts\build_package.ps1 -Windowed   # 发布构建（无控制台窗口）
 .\scripts\build_package.ps1 -SkipJlink   # 复用已有内嵌 JRE 快速重打
 .\dist\MagicCat\MagicCat.exe --selftest  # 打包自检（无需系统 Java）
 ```
+
+完整发行构建会先重建 Java bridge，再以无控制台模式生成应用本体，最后编译 `dist\installer\MagicCat-Setup-<版本>.exe`；不要直接对旧的 `dist\MagicCat` 目录运行 Inno Setup。
