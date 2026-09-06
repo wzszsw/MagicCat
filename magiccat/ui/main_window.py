@@ -76,6 +76,9 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings.default()
         self.state_store = UiStateStore(parent=self)
         self._running = 0
+        # 仅供首次“新建查询”复用的隐藏 Monaco 工作区；它不属于任何标签页，
+        # 因而不会改变启动时只有固定“对象”页的行为。
+        self._preloaded_query_workspace = None
         # 固定“对象”页最近一次从左树获得的连接/Catalog/Schema 上下文。
         self._object_context: tuple[str, str, str] | None = None
 
@@ -107,6 +110,12 @@ class MainWindow(QMainWindow):
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._scan_due_tasks)
         self._task_timer.start(60_000)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Monaco 是唯一需要 WebEngine 页面加载的编辑器。窗口已显示后再预热，
+        # 避免用户第一次点击“新建查询”时先看到一个空白标签页。
+        QTimer.singleShot(0, self._preload_monaco_workspace)
 
     @property
     def _current_domain(self) -> str:
@@ -1083,6 +1092,28 @@ class MainWindow(QMainWindow):
             return SqlEditorWidget()
         return MonacoEditorWidget()
 
+    def _preload_monaco_workspace(self) -> None:
+        """在主窗口显示后预热一个不在标签栏中的 Monaco 查询工作区。"""
+        if self._preloaded_query_workspace is not None:
+            return
+        editor = self._make_editor()
+        if not isinstance(editor, MonacoEditorWidget):
+            return
+        from magiccat.ui.query_workspace import QueryWorkspace
+
+        workspace = QueryWorkspace(editor, self)
+        editor.workspace = workspace
+        editor.load()
+        self._preloaded_query_workspace = workspace
+
+    def _take_preloaded_query_workspace(self):
+        """取走已开始加载的 Monaco 工作区，并为下一次创建补充预热。"""
+        workspace = self._preloaded_query_workspace
+        self._preloaded_query_workspace = None
+        if workspace is not None:
+            QTimer.singleShot(0, self._preload_monaco_workspace)
+        return workspace
+
     def _capture_new_query_context(self) -> tuple[str | None, str, str | None, bool]:
         """拍摄新查询的初始化上下文；创建后不再随树选中变化。"""
         # 普通“新建查询”优先继承左侧树最近激活的元素；这是一次性初始化，
@@ -1159,8 +1190,12 @@ class MainWindow(QMainWindow):
     ):
         from magiccat.ui.query_workspace import QueryWorkspace
 
-        editor = self._make_editor()
-        ws = QueryWorkspace(editor)
+        ws = self._take_preloaded_query_workspace()
+        if ws is None:
+            editor = self._make_editor()
+            ws = QueryWorkspace(editor)
+        else:
+            editor = ws.editor
         # 显示标题与内部定位键分离：未保存查询始终显示“无标题”，键用 UUID
         # 保证多个未保存工作区彼此独立，不依赖标题文本定位。
         ws.tab_key = f"query:untitled:{uuid.uuid4().hex}"

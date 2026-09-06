@@ -472,8 +472,9 @@ MagicCat/
 | M149 | 统一数据库产品 key 为大写（含 `PGSQL`、`MSSQL`），连接配置与查询目录改用方言 `display` 名称；分组文件固定为 `Premium/profiles/vgroup.json`，`server_type` 直接使用大写 key | ✅ | 大写 key 方言/图标/JDBC 回归、display 目录路径、Navicat 分组类型匹配；Ruff |
 | M150 | 对话框同步提交前置：连接配置及计划任务本地落盘在 `accept()` 前执行，保存/路径/名称错误保持当前对话框提示 | ✅ | 212 项回归（连接提交错误与任务提交）；Ruff |
 | M151 | Windows 完整发行构建：强制重建 Java bridge 与 PyInstaller 应用，正式发行使用 `--windowed`，自检后生成便携 ZIP 与 Inno Setup 安装器 | ✅ | `build_windows.ps1 -SkipJlink` 闭环通过；`--selftest` 返回 `jre_bundled:true`；PE 子系统为 Windows GUI；Inno Setup 7.1 编译成功 |
+| M152 | 主窗口显示后局部预热一个隐藏 Monaco 查询工作区，首次新建查询直接复用，消除 WebEngine 首次加载导致的标签页闪烁 | ✅ | Monaco 预热/复用 Qt 回归；Ruff |
 
-- 自动化测试：`uv run pytest`（212 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（213 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

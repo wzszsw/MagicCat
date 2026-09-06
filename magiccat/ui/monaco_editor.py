@@ -190,6 +190,7 @@ class MonacoEditorWidget(QWidget):
         self._completion_data: dict = {"keywords": [], "tables": [], "columns": {}}
         self._cached_text = ""
         self._ready_flag = False
+        self._load_started = False
         self._selection_state = False
         self._selected_text = ""
         self._bridge = _Bridge()
@@ -210,7 +211,10 @@ class MonacoEditorWidget(QWidget):
                       .replace("__VS__", _url("monaco/vs")))
 
     def load(self) -> None:
-        """加载页面（必须在 show 之后调用，交给上层）。"""
+        """加载页面；同一编辑器只允许发起一次 WebEngine 加载。"""
+        if self._load_started:
+            return
+        self._load_started = True
         self._view.loadFinished.connect(self._on_loaded)
         self._view.setHtml(self._html, baseUrl=QUrl("file://"))
 

@@ -68,6 +68,9 @@
 - **SQL/代码编辑器内核用 monaco-editor（VS Code 内核）**，替代自研 `QPlainTextEdit` 高亮/补全，降低语法提示与高亮成本。
 - `MonacoEditorWidget`（`magiccat/ui/monaco_editor.py`）用 QWebEngineView 加载**本地 monaco 资源**
   （`magiccat/resources/monaco/vs`，离线，PyInstaller 随 `resources` 打包）。
+- 主窗口显示后只预热一个**不加入标签栏**的 Monaco `QueryWorkspace`；首次“新建查询”直接复用该
+  已开始加载的实例，并补充下一实例。`MonacoEditorWidget.load()` 必须幂等，不能因 `showEvent`
+  重复发起 WebEngine 加载；启动时中央仍只显示固定“对象”页。
 - **对外接口与旧 `SqlEditorWidget` 兼容**：`text()`/`all_text()`/`toPlainText()`/`current_sql()`/
   `statements()`/`set_completion_words()`；上层（MainWindow）经这些接口拿文本与补全，逻辑不变。
 - 补全词表：Python 传 `set_completion_words` → JS 注册 monaco completion provider（含已连库表/列）。
