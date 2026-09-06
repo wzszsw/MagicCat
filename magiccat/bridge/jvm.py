@@ -31,14 +31,35 @@ def _resolve_bridge_dir() -> Path:
     if env_dir:
         return Path(env_dir)
     if getattr(sys, "frozen", False):
-        return _frozen_base() / "jvm"
+        base = _frozen_base()
+        # PyInstaller's macOS .app layout can place collected data below
+        # Contents/Resources while Windows/Linux use the _MEIPASS root.
+        candidates = (
+            base / "jvm",
+            base / "_internal" / "jvm",
+            base.parent / "Resources" / "jvm",
+            base.parent / "Resources" / "_internal" / "jvm",
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return base / "jvm"
     return _DEV_BRIDGE_DIR
+
+
+def _jvm_library_relative_path() -> Path:
+    """返回当前平台的 HotSpot JVM 动态库相对路径。"""
+    if sys.platform == "win32":
+        return Path("bin") / "server" / "jvm.dll"
+    if sys.platform == "darwin":
+        return Path("lib") / "server" / "libjvm.dylib"
+    return Path("lib") / "server" / "libjvm.so"
 
 
 def bundled_jre() -> Path | None:
     """打包内嵌 JRE（jlink 产物）路径；未打包/未找到返回 None。"""
     candidate = _resolve_bridge_dir() / "runtime"
-    if (candidate / "bin" / "server" / "jvm.dll").exists():
+    if (candidate / _jvm_library_relative_path()).exists():
         return candidate
     return None
 
@@ -81,10 +102,10 @@ class BridgeRuntime:
         jvm_path = None
         jre = bundled_jre()
         if jre is not None:
-            jvm_path = str(jre / "bin" / "server" / "jvm.dll")
+            jvm_path = str(jre / _jvm_library_relative_path())
         elif os.environ.get("MAGICCAT_JAVA_HOME"):
             jvm_path = str(Path(os.environ["MAGICCAT_JAVA_HOME"])
-                           / "bin" / "server" / "jvm.dll")
+                           / _jvm_library_relative_path())
         if jvm_path is None:
             jvm_path = jpype.getDefaultJVMPath()
         # JPype 从调用 Java 时释放 GIL；JVM 崩溃无法热重启 —— 由调用方兜底提示

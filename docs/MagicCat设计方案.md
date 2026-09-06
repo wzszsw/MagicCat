@@ -283,13 +283,20 @@ MagicCat/
 
 ---
 
-## 11. 打包与发布（Windows）
+## 11. 打包与发布（Windows / macOS）
 
 1. Java 侧：Maven `package` 产出 `magiccat-bridge.jar` + 复制 `mysql-connector-j*.jar` → `magiccat/jvm/`。
 2. JVM 运行时：用 `jlink --add-modules java.sql,java.naming,java.management,jdk.unsupported …` 裁剪出 `runtime/jre`（目标体积 ~40–60MB）。
 3. Python 侧：PyInstaller（`--windowed`，收集 JPype 原生库与上述 jvm 资源），已知坑位统一处理：JPype 动态库 hidden import、`java.home` 探测、资源路径在 `sys._MEIPASS` 下解包。
 4. 安装器：Inno Setup —— 装到 `%LocalAppData%\Programs\MagicCat`，写开始菜单/桌面快捷方式，卸载不删除用户文档目录下的 `MagicCat` 数据。
 5. 体积预估：Python+Qt ≈ 150–250MB + JRE ≈ 60MB + 驱动 ≈ 5MB；如需瘦身可对 Qt 模块裁剪。
+
+### 11.1 macOS arm64 DMG
+
+1. GitHub Actions 使用 `macos-14` Apple Silicon runner；本地 macOS arm64 可运行 `bash scripts/build_macos.sh --arch arm64`。
+2. 脚本每次清理 `packaging/stage/jvm`、PyInstaller work/dist 目标后，重新执行 Maven、jlink 和 PyInstaller `--windowed`，再用 `hdiutil` 生成 `MagicCat-<版本>-macos-arm64.dmg`。
+3. macOS jlink runtime 的 JVM 动态库位于 `runtime/lib/server/libjvm.dylib`；Windows 与 Linux 路径分别为 `jvm.dll` 和 `libjvm.so`。
+4. 当前 DMG 未签名、未 notarize。正式对外发布需要 Apple 开发者证书、`codesign`/`notarytool` 和 GitHub Actions secrets。
 
 ---
 
@@ -473,8 +480,9 @@ MagicCat/
 | M150 | 对话框同步提交前置：连接配置及计划任务本地落盘在 `accept()` 前执行，保存/路径/名称错误保持当前对话框提示 | ✅ | 212 项回归（连接提交错误与任务提交）；Ruff |
 | M151 | Windows 完整发行构建：强制重建 Java bridge 与 PyInstaller 应用，正式发行使用 `--windowed`，自检后生成便携 ZIP 与 Inno Setup 安装器 | ✅ | `build_windows.ps1 -SkipJlink` 闭环通过；`--selftest` 返回 `jre_bundled:true`；PE 子系统为 Windows GUI；Inno Setup 7.1 编译成功 |
 | M152 | 主窗口显示后局部预热一个隐藏 Monaco 查询工作区，首次新建查询直接复用，消除 WebEngine 首次加载导致的标签页闪烁 | ✅ | Monaco 预热/复用 Qt 回归；Ruff |
+| M153 | GitHub Actions 构建 Apple Silicon macOS arm64 DMG；按平台定位 JVM 动态库并强制重建 bridge/jlink/PyInstaller | ✅ | macOS 构建脚本静态检查；JVM 路径跨平台回归；Ruff |
 
-- 自动化测试：`uv run pytest`（213 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（215 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）
