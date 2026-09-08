@@ -7,6 +7,7 @@ layout experience while using the system Evergreen WebView2 runtime.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import queue
@@ -16,7 +17,7 @@ from importlib import import_module
 
 from PySide6.QtCore import QEventLoop, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFocusEvent
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from magiccat.resources import resource_dir
 from magiccat.services.sql_text import split_sql_statements, statement_at_cursor
@@ -24,6 +25,17 @@ from magiccat.storage import home_dir
 from magiccat.ui.monaco_editor_shared import _HTML_SOURCE, _Bridge
 
 _DLL_DIR_HANDLE = None
+_WS_CHILD = 0x40000000
+_WS_CAPTION_FRAME = 0x00C00000
+_SWP_NOZORDER_NOACTIVATE = 0x0014
+_GWL_STYLE = -16
+_SW_HIDE = 0
+_SW_SHOW = 5
+
+
+class _Win32Rect(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
 
 def _prepare_frozen_dll_search_path() -> None:
@@ -31,8 +43,6 @@ def _prepare_frozen_dll_search_path() -> None:
     global _DLL_DIR_HANDLE
     if not getattr(sys, "frozen", False) or os.name != "nt":
         return
-    import ctypes
-
     root = str(sys._MEIPASS)
     if hasattr(os, "add_dll_directory") and _DLL_DIR_HANDLE is None:
         _DLL_DIR_HANDLE = os.add_dll_directory(root)
@@ -55,33 +65,31 @@ class _NativeWebView2(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumSize(0, 0)
         self._relay = _Relay()
         self._control = None
         self._hwnd = 0
-        self._thread = None
         self._created = queue.Queue()
         self._stopping = False
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._resize_native_window)
         self._start_thread()
 
     def _start_thread(self) -> None:
-
         # pywebview loads its bundled WebView2 .NET interop DLLs before the
         # generated Microsoft.Web namespaces are imported.
         _prepare_frozen_dll_search_path()
-        edgechromium = import_module("webview.platforms.edgechromium")
+        import_module("webview.platforms.edgechromium")
         from Microsoft.Web.WebView2.WinForms import CoreWebView2CreationProperties, WebView2
         from System import Action
         from System.Threading import ApartmentState, Thread, ThreadStart
         from System.Windows.Forms import Application as WinFormsApplication
-        self._edgechromium = edgechromium
         self._Action = Action
         self._WinFormsApplication = WinFormsApplication
-        self._WebView2 = WebView2
-        self._CoreWebView2CreationProperties = CoreWebView2CreationProperties
 
         def create() -> None:
-            import ctypes
-
             # WebView2 requires an STA.  Qt owns the main GUI loop, therefore
             # the WinForms control gets its own message-pump thread.
             ctypes.windll.ole32.CoInitializeEx(None, 2)
@@ -117,7 +125,6 @@ class _NativeWebView2(QWidget):
         thread = Thread(ThreadStart(create))
         thread.SetApartmentState(ApartmentState.STA)
         thread.IsBackground = True
-        self._thread = thread
         thread.Start()
         QTimer.singleShot(0, self._poll_created)
 
@@ -131,32 +138,61 @@ class _NativeWebView2(QWidget):
                     QTimer.singleShot(10, self._poll_created)
 
     def _attach_native_window(self) -> None:
-        import ctypes
-
         parent_hwnd = int(self.winId())
-        style = ctypes.windll.user32.GetWindowLongW(self._hwnd, -16)
-        style = (style | 0x40000000) & ~0x00C00000  # WS_CHILD; remove caption/frame
-        ctypes.windll.user32.SetWindowLongW(self._hwnd, -16, style)
+        style = ctypes.windll.user32.GetWindowLongW(self._hwnd, _GWL_STYLE)
+        style = (style | _WS_CHILD) & ~_WS_CAPTION_FRAME
+        ctypes.windll.user32.SetWindowLongW(self._hwnd, _GWL_STYLE, style)
         ctypes.windll.user32.SetParent(self._hwnd, parent_hwnd)
         self._resize_native_window()
-        ctypes.windll.user32.ShowWindow(self._hwnd, 5)
+        self._set_native_visible(self.isVisible())
+        self._schedule_resize()
 
     def _resize_native_window(self) -> None:
         if not self._hwnd:
             return
-        import ctypes
 
-        ctypes.windll.user32.SetWindowPos(self._hwnd, 0, 0, 0, max(1, self.width()), max(1, self.height()), 0x0040)
+        # QWidget dimensions are logical pixels under Windows DPI scaling,
+        # while the Win32 child window uses physical client pixels.  Reading
+        # the host HWND avoids a 125%/150% DPI gap on the right and bottom.
+        rect = _Win32Rect()
+        parent_hwnd = ctypes.c_void_p(int(self.winId()))
+        if not ctypes.windll.user32.GetClientRect(parent_hwnd, ctypes.byref(rect)):
+            return
+        width = max(1, rect.right - rect.left)
+        height = max(1, rect.bottom - rect.top)
+        ctypes.windll.user32.SetWindowPos(
+            ctypes.c_void_p(self._hwnd),
+            ctypes.c_void_p(0),
+            0,
+            0,
+            width,
+            height,
+            _SWP_NOZORDER_NOACTIVATE,
+        )
+
+    def _set_native_visible(self, visible: bool) -> None:
+        if self._hwnd:
+            ctypes.windll.user32.ShowWindow(self._hwnd, _SW_SHOW if visible else _SW_HIDE)
+
+    def _schedule_resize(self) -> None:
+        self._resize_timer.start(0)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._resize_native_window()
+        self._schedule_resize()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._set_native_visible(True)
+        self._schedule_resize()
+
+    def hideEvent(self, event) -> None:
+        self._set_native_visible(False)
+        super().hideEvent(event)
 
     def focusInEvent(self, event: QFocusEvent) -> None:
         super().focusInEvent(event)
         if self._hwnd:
-            import ctypes
-
             ctypes.windll.user32.SetFocus(self._hwnd)
 
     def invoke(self, function) -> None:
@@ -173,6 +209,8 @@ class _NativeWebView2(QWidget):
         if self._stopping:
             return
         self._stopping = True
+        if self._control is None:
+            return
 
         def close() -> None:
             try:
@@ -180,7 +218,12 @@ class _NativeWebView2(QWidget):
             finally:
                 self._WinFormsApplication.ExitThread()
 
-        self.invoke(close)
+        try:
+            # ``invoke`` intentionally rejects new work after stopping starts;
+            # teardown is the one operation that must still cross to the STA.
+            self._control.BeginInvoke(self._Action(close))
+        except (AttributeError, RuntimeError, TypeError):
+            return
 
     def closeEvent(self, event) -> None:
         self.stop()
@@ -199,7 +242,6 @@ class WebView2MonacoEditorWidget(QWidget):
         self._completion_data: dict = {"keywords": [], "tables": [], "columns": {}}
         self._cached_text = ""
         self._ready_flag = False
-        self._load_started = False
         self._core_ready = False
         self._selection_state = False
         self._selected_text = ""
@@ -221,9 +263,7 @@ class WebView2MonacoEditorWidget(QWidget):
         )
 
     def load(self) -> None:
-        if self._load_started:
-            return
-        self._load_started = True
+        """Retain the editor API; WebView2 starts while the widget is built."""
 
     def _on_webview_initialized(self, ok: bool, _error: str) -> None:
         if not ok:

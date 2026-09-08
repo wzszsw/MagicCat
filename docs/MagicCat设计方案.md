@@ -486,6 +486,7 @@ MagicCat/
 | M156 | 增加独立启动 loading 画面：WebEngine 初始化期间显示产品标识和动态进度指示，完成后切换到主窗口 | ✅ | 启动画面 Qt 回归；全量 pytest；Ruff |
 | M157 | 正式包运行时日志保留 JPype Java 原生堆栈、Python 调用栈和未捕获线程异常，并启用日志滚动 | ✅ | Java-like `stacktrace()`/Caused by 日志回归；Ruff |
 | M158 | Windows Monaco 改用 pywebview + 系统 Evergreen WebView2 原生子控件，保留 Qt WebEngine 显式回退；安装包移除 Qt WebEngine Chromium 运行时 | ✅ | WebView2 嵌入 Qt 主窗口/本地 Monaco/选区事件实测；PyInstaller 181.6 MB（较原 468 MB 减少约 286 MB）；224 项回归 + Ruff |
+| M159 | 收束 WebView2 适配层：共享 Monaco 页面与桥接实现，修正高 DPI 原生子窗口尺寸及隐藏标签可见性 | ✅ | 本机 125% DPI 与正式 Windows exe 截图验证；224 项回归 + Ruff；`--selftest` 返回 0 |
 
 - 自动化测试：`uv run pytest`（217 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。
