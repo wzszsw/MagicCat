@@ -111,6 +111,7 @@ echo "==> 4) PyInstaller 构建 windowed .app"
     --paths "$ROOT" \
     --icon "$ICON_TMP/MagicCat.icns" \
     --collect-all jpype \
+    --hidden-import magiccat.ui.monaco_editor_qt \
     --add-data "$STAGE:jvm" \
     --add-data "$ROOT/magiccat/resources:magiccat/resources" \
     "$ROOT/packaging/magiccat_main.py"

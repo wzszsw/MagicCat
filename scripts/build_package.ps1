@@ -15,6 +15,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $bridge = Join-Path $root "java-bridge\target"
 $stage = Join-Path $root "packaging\stage\jvm"
 $pyi = Join-Path $root ".venv\Scripts\pyinstaller.exe"
+$python = Join-Path $root ".venv\Scripts\python.exe"
 $distDir = Join-Path $root "dist"
 $workDir = Join-Path $root "build\MagicCat"
 
@@ -64,6 +65,18 @@ if (-not $SkipJlink -and -not $runtimeOk) {
 Write-Host "==> 4) PyInstaller 打包"
 $pyiMode = if ($Windowed) { "--windowed" } else { "--console" }
 Write-Host "    模式：$pyiMode"
+$pythonDllDir = (& $python -c "import sys; print(sys.base_prefix + r'\DLLs')" | Select-Object -First 1).Trim()
+$pythonSsl = Join-Path $pythonDllDir "libssl-3-x64.dll"
+$pythonCrypto = Join-Path $pythonDllDir "libcrypto-3-x64.dll"
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $pythonDllDir "_ssl.pyd")) -or
+    -not (Test-Path -LiteralPath $pythonSsl) -or -not (Test-Path -LiteralPath $pythonCrypto)) {
+    throw "无法定位 uv Python 的 DLL 目录：$pythonDllDir"
+}
+$pythonSslBinary = "$pythonSsl;."
+$pythonCryptoBinary = "$pythonCrypto;."
+Write-Host "    Python DLL：$pythonDllDir"
+# PyInstaller may otherwise resolve these names from PostgreSQL on PATH.
+# Python's _ssl.pyd must use the matching OpenSSL build from this interpreter.
 & $pyi --noconfirm --clean `
     --name MagicCat `
     $pyiMode `
@@ -73,6 +86,10 @@ Write-Host "    模式：$pyiMode"
     --paths $root `
     --icon (Join-Path $root "magiccat\resources\app_icon.ico") `
     --collect-all jpype `
+    --collect-all webview `
+    --hidden-import webview.platforms.edgechromium `
+    --add-binary $pythonCryptoBinary `
+    --add-binary $pythonSslBinary `
     --add-data "$stage;jvm" `
     --add-data (Join-Path $root "magiccat\resources;magiccat\resources") `
     (Join-Path $root "packaging\magiccat_main.py")

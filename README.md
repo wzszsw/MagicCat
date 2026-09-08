@@ -31,6 +31,7 @@ Huawei、GaussDB、MySQL、PostgreSQL、MariaDB 及上述图标库名称和标�
 - Java 17（本机：Temurin 17，`JAVA_HOME` 已设置）
 - Maven 3.6+
 - uv（依赖/虚拟环境管理）
+- Windows 正式版需要 Microsoft Edge WebView2 Evergreen Runtime（通常已随 Windows 10/11 或 Edge 安装）
 
 ## 快速开始
 
@@ -105,6 +106,8 @@ uv run python -m magiccat
 完整发行构建会先清理旧的 stage、PyInstaller 输出和工作目录，再执行 `mvn clean package`，以无控制台模式生成应用本体，最后编译 `dist\installer\MagicCat-Setup-<版本>.exe`；脚本从任意当前目录启动都使用仓库根目录，不要直接对旧的 `dist\MagicCat` 目录运行 Inno Setup。
 
 运行日志默认位于 `%USERPROFILE%\Documents\MagicCat\logs\magiccat.log`（设置 `MAGICCAT_HOME` 时改为 `%MAGICCAT_HOME%\logs\magiccat.log`）。日志文件达到 5 MB 后最多保留 5 个滚动副本；后台任务、查询服务和未捕获异常会追加 Java `printStackTrace`（含 `Caused by`）及 Python traceback，界面仍只显示清理后的短错误。
+
+Windows 正式包的 Monaco 编辑器通过 `pywebview` 嵌入系统 WebView2，不携带 Chromium 运行时，因此安装包明显更小。开发排查时可设置 `MAGICCAT_WEBVIEW=qtwebengine` 回退 Qt WebEngine；无桌面测试继续使用 `MAGICCAT_EDITOR=plain`。
 
 macOS DMG 当前优先支持 Apple Silicon arm64，在 macOS arm64 主机或 GitHub Actions 的 `macos-14` runner 上执行：
 
