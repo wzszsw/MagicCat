@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
@@ -23,7 +24,9 @@ from magiccat.models.profile import ConnectionProfile
 from magiccat.services.connection_service import ConnectionService
 from magiccat.services.runtime import get_runtime
 from magiccat.services.sql_text import split_sql_statements
-from magiccat.utils.errors import format_exc
+from magiccat.utils.errors import format_exc, log_exception
+
+logger = logging.getLogger(__name__)
 
 
 class QueryService:
@@ -111,6 +114,7 @@ class QueryService:
                     if data["kind"] == "query":
                         data["truncated"] = len(data["rows"]) >= self.max_rows
                 except Exception as exc:  # noqa: BLE001 —— 单条错误需上报并可继续
+                    log_exception(logger, "SQL 语句执行失败", exc)
                     data = {
                         "kind": "error",
                         "sql": stmt,

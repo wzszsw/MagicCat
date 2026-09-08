@@ -484,6 +484,7 @@ MagicCat/
 | M154 | Windows 总构建固定仓库路径并清理旧 stage/dist/build，执行 `mvn clean package`，避免安装器复用旧内容 | ✅ | 从仓库外启动脚本；clean 后重新生成 exe/ZIP/安装器；自检通过 |
 | M155 | 启动阶段保持主窗口隐藏，等待首个 Monaco WebEngine 页面初始化完成后再显示，并复用预热工作区 | ✅ | 启动门闩/Monaco ready 信号 Qt 回归；全量 pytest；Ruff |
 | M156 | 增加独立启动 loading 画面：WebEngine 初始化期间显示产品标识和动态进度指示，完成后切换到主窗口 | ✅ | 启动画面 Qt 回归；全量 pytest；Ruff |
+| M157 | 正式包运行时日志保留 JPype Java 原生堆栈、Python 调用栈和未捕获线程异常，并启用日志滚动 | ✅ | Java-like `stacktrace()`/Caused by 日志回归；Ruff |
 
 - 自动化测试：`uv run pytest`（217 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

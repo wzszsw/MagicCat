@@ -10,12 +10,15 @@ fn 在工作线程执行（首次调用 Java 时 JPype 自动 attach），结果
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 
-from magiccat.utils.errors import format_exc
+from magiccat.utils.errors import format_exc, log_exception
+
+logger = logging.getLogger(__name__)
 
 
 class _Signals(QObject):
@@ -34,6 +37,7 @@ class _Task(QRunnable):
         try:
             result = self._fn()
         except Exception as exc:  # noqa: BLE001 —— 边界错误统一走 error 信号
+            log_exception(logger, "后台任务失败", exc)
             self._signals.error.emit(format_exc(exc))
         else:
             self._signals.done.emit(result)

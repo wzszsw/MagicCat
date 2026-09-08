@@ -39,7 +39,7 @@ Huawei、GaussDB、MySQL、PostgreSQL、MariaDB 及上述图标库名称和标�
 .\scripts\build_java.ps1
 
 # 2) 安装 Python 依赖（自动创建 .venv 并生成 uv.lock）
-uv sync --extra dev
+uv sync --group dev
 
 # 3) 运行 M1 技术验证 POC（连接本机 MySQL，需 127.0.0.1:3306 root/空密码）
 uv run python scripts/poc_m1.py
@@ -88,6 +88,7 @@ uv run python -m magiccat
 | M151 | Windows 完整发行构建：强制重建 bridge/应用，正式版 `--windowed`，自检后编译 Inno 安装器 | ✅ |
 | M153 | GitHub Actions 构建 Apple Silicon macOS arm64 DMG（重建 bridge/jlink/PyInstaller，正式版 `--windowed`） | ✅ |
 | M154 | Windows 总构建固定仓库路径并清理旧 stage/dist/build，执行 `mvn clean package`，避免安装器复用旧内容 | ✅ |
+| M157 | 正式包运行时日志保留 JPype Java 原生堆栈、Python 调用栈和未捕获线程异常，并启用日志滚动 | ✅ |
 | 剩余 | 计划任务/i18n、更多细节 | 后续 |
 
 ## 打包
@@ -102,6 +103,8 @@ uv run python -m magiccat
 ```
 
 完整发行构建会先清理旧的 stage、PyInstaller 输出和工作目录，再执行 `mvn clean package`，以无控制台模式生成应用本体，最后编译 `dist\installer\MagicCat-Setup-<版本>.exe`；脚本从任意当前目录启动都使用仓库根目录，不要直接对旧的 `dist\MagicCat` 目录运行 Inno Setup。
+
+运行日志默认位于 `%USERPROFILE%\Documents\MagicCat\logs\magiccat.log`（设置 `MAGICCAT_HOME` 时改为 `%MAGICCAT_HOME%\logs\magiccat.log`）。日志文件达到 5 MB 后最多保留 5 个滚动副本；后台任务、查询服务和未捕获异常会追加 Java `printStackTrace`（含 `Caused by`）及 Python traceback，界面仍只显示清理后的短错误。
 
 macOS DMG 当前优先支持 Apple Silicon arm64，在 macOS arm64 主机或 GitHub Actions 的 `macos-14` runner 上执行：
 
