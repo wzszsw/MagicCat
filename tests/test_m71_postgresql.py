@@ -1,4 +1,4 @@
-"""M71 测试：PostgreSQL 扩展（连接打开/自检 + 标准 JDBC 元数据）。需本机 PG 可达。"""
+"""M71 测试：PostgreSQL 扩展（Testcontainers 连接/自检 + 标准 JDBC 元数据）。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ def test_pg_connection_and_metadata(qtbot, pg_env, connection_service):
     profile = ConnectionProfile(name="PG1", group=DEFAULT_GROUP,
                                 host=pg_env["host"], port=pg_env["port"],
                                 username=pg_env["user"], password=pg_env["password"],
+                                database=str(pg_env["database"]),
                                 provider_key="PGSQL")
     connection_service.add(profile)
 

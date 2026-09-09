@@ -490,8 +490,9 @@ MagicCat/
 | M160 | 精简正式发行包：jlink 资源压缩、移除未用 Qt 可选插件及 pywebview 非 WebView2 平台后端，保留 Qt 翻译包 | ✅ | Windows 应用目录 128.47 MB（原约 191.7 MB，减少约 63.2 MB）；`--selftest`、WebView2/Monaco 实测；226 项回归 + Ruff |
 | M161 | 移除正式发行构建对本地 MySQL 的 `--selftest` 依赖；修复 M160 裁掉 `qmodernwindowsstyle.dll` 导致的经典主题回退 | ✅ | 发布包包含 Windows 原生样式插件；正式 exe 现代主题实测；Ruff |
 | M162 | Windows 正式包进一步瘦身：直接加载 WebView2 程序集、裁掉 Python OpenSSL/多余 pythonnet 门面，并对白名单 Python/PySide 二进制执行 UPX | ✅ | 应用目录 98.57 MB、便携 ZIP 55.07 MB、安装器 47.71 MB；JRE/Qt DLL/插件/翻译/Monaco 未裁剪；Defender 零检出；230 项回归 + Ruff |
+| M163 | 数据库集成测试改用 Testcontainers：Podman/Docker API 自动探测、随机端口、session 级 MySQL 8.4/PostgreSQL 16 容器，并保留外部数据库覆盖 | ✅ | Podman 5.8.1 实测 MySQL/PostgreSQL JDBC；容器关闭时 skip；248 项回归 + Ruff |
 
-- 自动化测试：`uv run pytest`（230 passed；数据库不可达时集成用例按 fixture 跳过，Qt offscreen GUI 回归保持执行）。
+- 自动化测试：`uv run pytest`（248 passed；数据库默认由 Testcontainers/Podman 按 session 管理；仅容器 API 不可用时集成用例跳过，Qt offscreen GUI 回归保持执行）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

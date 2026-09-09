@@ -2,11 +2,13 @@
 
 - 所有 Qt 测试以 offscreen 平台运行（无显示环境下可执行）。
 - 环境变量需在导入 PySide6 前设置。
+- 数据库集成测试默认由 Testcontainers 按 session 启动，产品链路仍走 JDBC。
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # QtWebEngine 需在 QApplication 前设置无沙箱/禁 GPU
@@ -17,51 +19,71 @@ os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 os.environ.setdefault("MAGICCAT_EDITOR", "plain")
 
 import pytest
-
-HOST = os.environ.get("MAGICCAT_TEST_HOST", "127.0.0.1")
-PORT = int(os.environ.get("MAGICCAT_TEST_PORT", "3306"))
-USER = os.environ.get("MAGICCAT_TEST_USER", "root")
-PASSWORD = os.environ.get("MAGICCAT_TEST_PASSWORD", "")
-
-
-def _mysql_reachable() -> bool:
-    import socket
-
-    try:
-        with socket.create_connection((HOST, PORT), timeout=2):
-            return True
-    except OSError:
-        return False
+from db_test_runtime import (
+    ContainerRuntimeInfo,
+    ContainerRuntimeUnavailable,
+    create_database_container,
+    ensure_container_runtime,
+    external_database_endpoint,
+    running_database_container,
+)
 
 
-PG_HOST = os.environ.get("MAGICCAT_TEST_PG_HOST", "127.0.0.1")
-PG_PORT = int(os.environ.get("MAGICCAT_TEST_PG_PORT", "5432"))
-PG_USER = os.environ.get("MAGICCAT_TEST_PG_USER", "postgres")
-PG_PASSWORD = os.environ.get("MAGICCAT_TEST_PG_PASSWORD", "123456")
-
-
-def _pg_reachable() -> bool:
-    import socket
+@pytest.fixture(scope="session")
+def _container_runtime() -> ContainerRuntimeInfo | ContainerRuntimeUnavailable:
+    """只做容器 API 预检；API 不可用由具体数据库 fixture 转为 skip。"""
 
     try:
-        with socket.create_connection((PG_HOST, PG_PORT), timeout=2):
-            return True
-    except OSError:
-        return False
+        return ensure_container_runtime()
+    except ContainerRuntimeUnavailable as exc:
+        return exc
+
+
+def _require_container_runtime(request: pytest.FixtureRequest) -> ContainerRuntimeInfo:
+    runtime = request.getfixturevalue("_container_runtime")
+    if isinstance(runtime, ContainerRuntimeUnavailable):
+        pytest.skip(f"容器环境不可用，跳过数据库集成用例：{runtime}")
+    return runtime
+
+
+@pytest.fixture(scope="session")
+def _mysql_session_env(request: pytest.FixtureRequest) -> Iterator[dict[str, str | int]]:
+    external = external_database_endpoint("mysql")
+    if external is not None:
+        yield external.fixture_dict()
+        return
+
+    _require_container_runtime(request)
+    container = create_database_container("mysql")
+    with running_database_container("mysql", container) as endpoint:
+        yield endpoint.fixture_dict()
+
+
+@pytest.fixture(scope="session")
+def _pg_session_env(request: pytest.FixtureRequest) -> Iterator[dict[str, str | int]]:
+    external = external_database_endpoint("postgresql")
+    if external is not None:
+        yield external.fixture_dict()
+        return
+
+    _require_container_runtime(request)
+    container = create_database_container("postgresql")
+    with running_database_container("postgresql", container) as endpoint:
+        yield endpoint.fixture_dict()
 
 
 @pytest.fixture()
-def mysql_env() -> dict:
-    if not _mysql_reachable():
-        pytest.skip(f"本机 MySQL {HOST}:{PORT} 不可达，跳过集成用例")
-    return {"host": HOST, "port": PORT, "user": USER, "password": PASSWORD}
+def mysql_env(_mysql_session_env: dict[str, str | int]) -> dict[str, str | int]:
+    """每个用例拿独立字典，底层 MySQL 容器在本次 pytest session 内复用。"""
+
+    return dict(_mysql_session_env)
 
 
 @pytest.fixture()
-def pg_env() -> dict:
-    if not _pg_reachable():
-        pytest.skip(f"本机 PostgreSQL {PG_HOST}:{PG_PORT} 不可达，跳过集成用例")
-    return {"host": PG_HOST, "port": PG_PORT, "user": PG_USER, "password": PG_PASSWORD}
+def pg_env(_pg_session_env: dict[str, str | int]) -> dict[str, str | int]:
+    """每个用例拿独立字典，底层 PostgreSQL 容器在本次 pytest session 内复用。"""
+
+    return dict(_pg_session_env)
 
 
 @pytest.fixture()

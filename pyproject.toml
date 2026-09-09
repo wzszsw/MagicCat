@@ -26,6 +26,7 @@ dev = [
     "pytest>=8",
     "pytest-qt>=4.4",
     "ruff>=0.5",
+    "testcontainers>=4.15,<5",
 ]
 
 [project.scripts]
@@ -50,4 +51,5 @@ dev = [
     "pytest>=8",
     "pytest-qt>=4.4",
     "ruff>=0.5",
+    "testcontainers>=4.15,<5",
 ]

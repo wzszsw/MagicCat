@@ -36,6 +36,7 @@ def test_other_menu_has_sequence_for_pg(qtbot, connection_service, pg_env):
     profile = ConnectionProfile(name="PG78", group=DEFAULT_GROUP,
                                 host=pg_env["host"], port=pg_env["port"],
                                 username=pg_env["user"], password=pg_env["password"],
+                                database=str(pg_env["database"]),
                                 provider_key="PGSQL")
     connection_service.add(profile)
     win = MainWindow(connection_service, MetadataService(connection_service))

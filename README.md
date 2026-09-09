@@ -31,6 +31,7 @@ Huawei、GaussDB、MySQL、PostgreSQL、MariaDB 及上述图标库名称和标�
 - Java 17（本机：Temurin 17，`JAVA_HOME` 已设置）
 - Maven 3.6+
 - uv（依赖/虚拟环境管理）
+- Podman 或 Docker（数据库集成测试由 Testcontainers 自动管理；仅运行应用时不需要）
 - Windows 正式版需要 Microsoft Edge WebView2 Evergreen Runtime（通常已随 Windows 10/11 或 Edge 安装）
 
 ## 快速开始
@@ -58,6 +59,29 @@ uv run ruff check .    # 静态检查
 uv run python -m magiccat
 ```
 
+## 数据库集成测试（Testcontainers）
+
+`uv run pytest` 默认通过 `testcontainers-python` 按需启动 MySQL 8.4 和 PostgreSQL 16；每种数据库在整次
+pytest session 中只启动一个容器，使用随机宿主端口，测试结束后自动删除。测试数据访问仍走 MagicCat 的
+JPype + JDBC 真实链路，不依赖 Python 数据库驱动。
+
+Windows 使用 Podman 时先启动 machine，随后直接运行测试即可：
+
+```powershell
+podman machine start
+uv run pytest
+```
+
+测试会先尊重现有 `DOCKER_HOST`、Testcontainers 配置和非默认 Docker context，再探测 Docker SDK 默认接口，
+并在 Windows 上回退到 `podman-machine-default` 命名管道。识别到 Podman 后会禁用 Ryuk，改由 pytest session 显式回收容器。
+容器 API 不可用时，仅依赖数据库的用例会 skip，单元/UI 测试继续执行；也可显式设置
+`MAGICCAT_TESTCONTAINERS=0`。容器 API 已可用后，镜像拉取、数据库就绪或 JDBC 验证失败均按测试失败处理。
+
+如需复用 CI service 或专用测试库，可设置现有的 `MAGICCAT_TEST_HOST/PORT/USER/PASSWORD`，PostgreSQL
+对应 `MAGICCAT_TEST_PG_HOST/PORT/USER/PASSWORD/DATABASE`；任一同组变量出现即切换为外部数据库模式，连接不可达会
+直接失败。集成测试会建删数据库对象和用户，外部连接必须指向允许破坏性测试的管理员环境。私有镜像仓库可用
+`MAGICCAT_TEST_MYSQL_IMAGE`、`MAGICCAT_TEST_POSTGRES_IMAGE` 覆盖默认镜像。
+
 ## openGauss 本机联调
 
 项目提供 Podman 助手脚本，默认使用 `magiccat-opengauss`、`docker.io/library/opengauss:6.0.3` 和宿主机 `15432` 端口：
@@ -75,7 +99,7 @@ uv run python -m magiccat
 
 ## 里程碑
 
-见设计方案 §10。当前进度（自动化测试 23+ 项）：
+见设计方案 §10。当前进度（自动化测试 248 项）：
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
@@ -91,6 +115,7 @@ uv run python -m magiccat
 | M154 | Windows 总构建固定仓库路径并清理旧 stage/dist/build，执行 `mvn clean package`，避免安装器复用旧内容 | ✅ |
 | M157 | 正式包运行时日志保留 JPype Java 原生堆栈、Python 调用栈和未捕获线程异常，并启用日志滚动 | ✅ |
 | M161 | 移除正式发行对本地 MySQL 的 `--selftest` 依赖；修复 M160 裁掉 Windows 样式插件导致的经典主题回退 | ✅ |
+| M163 | 数据库集成测试改用 Testcontainers，兼容 Podman、随机端口及 session 级 MySQL/PostgreSQL 容器 | ✅ |
 | 剩余 | 计划任务/i18n、更多细节 | 后续 |
 
 ## 打包

@@ -9,6 +9,7 @@ from magiccat.models.profile import ConnectionProfile
 def _profile(pg_env, name="M82pg"):
     return ConnectionProfile(name=name, host=pg_env["host"], port=pg_env["port"],
                              username=pg_env["user"], password=pg_env["password"],
+                             database=str(pg_env["database"]),
                              provider_key="PGSQL")
 
 

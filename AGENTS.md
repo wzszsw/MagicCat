@@ -184,6 +184,10 @@
 - 改 Java 后需重新 `mvn package` 构建 jar（开发态走 `java-bridge/target/`）。
 - **运行时日志**：界面错误继续显示清理后的短文本；日志必须保留 JPype Java `stacktrace()` 原文（包括 `Caused by`）和 Python traceback。后台任务、查询服务和主/线程未捕获异常统一写入 `%USERPROFILE%\Documents\MagicCat\logs\magiccat.log`（`MAGICCAT_HOME` 可覆盖），文件按 5 MB、5 个副本滚动。
 - **打包**（exe + 便携 zip + `--selftest`）：仅在用户**明确要求**时执行；否则只 commit，不打包。
+- **数据库集成测试**：默认使用 `testcontainers-python` 按 session 惰性启动 MySQL/PostgreSQL，使用随机宿主端口，
+  产品验证链路仍走 JPype + JDBC；兼容 Docker API 与 Podman，禁止重新依赖固定本机 3306/5432 端口。
+  显式 `MAGICCAT_TEST_*` 外部连接配置优先；外部数据库不可达、容器已启动后的就绪/JDBC 错误必须失败。
+  仅容器 API 不可用或 `MAGICCAT_TESTCONTAINERS=0` 时跳过数据库集成用例并视为通过，skip 原因必须明确。
 - Windows 正式包直接加载 `pywebview` 随附的 WebView2 .NET 程序集承载 Monaco，不导入其 HTTP/UI 运行栈，依赖系统 Evergreen WebView2 Runtime；源码开发或非 Windows 环境可设置 `MAGICCAT_WEBVIEW=qtwebengine` 回退 Qt WebEngine，避免把 Chromium 依赖重新带入 Windows 发行包。调试/测试可继续使用 `MAGICCAT_EDITOR=plain`。
 - **发行包瘦身**：Windows 构建使用 `jlink --compress=2`；PyInstaller 仅收集 Widgets 实际需要的 Windows Qt 平台插件和 WebView2 程序集。Qt 翻译包与 Monaco 本地资源必须完整保留。正式版用固定校验的 UPX 白名单压缩 Python DLL、`.pyd` 与 SQLite，禁止压缩 JRE、Qt DLL 和 Qt 插件；代码签名必须在压缩之后执行。
 - 调试构建可使用 PyInstaller `--console` 以便查看异常栈；正式发行构建必须使用 `--windowed`，Windows 统一通过 `scripts/build_windows.ps1` 清理旧 stage/dist/build 后执行 `mvn clean package`，重建 bridge/应用、自检、便携包和 Inno 安装器，macOS arm64 通过 `scripts/build_macos.sh` 重建 bridge/jlink/应用并生成 DMG，避免复用旧 `dist` 产物。
