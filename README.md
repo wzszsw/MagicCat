@@ -107,7 +107,7 @@ uv run python -m magiccat
 
 运行日志默认位于 `%USERPROFILE%\Documents\MagicCat\logs\magiccat.log`（设置 `MAGICCAT_HOME` 时改为 `%MAGICCAT_HOME%\logs\magiccat.log`）。日志文件达到 5 MB 后最多保留 5 个滚动副本；后台任务、查询服务和未捕获异常会追加 Java `printStackTrace`（含 `Caused by`）及 Python traceback，界面仍只显示清理后的短错误。
 
-Windows 正式包的 Monaco 编辑器通过 `pywebview` 嵌入系统 WebView2，不携带 Chromium 运行时，因此安装包明显更小。开发排查时可设置 `MAGICCAT_WEBVIEW=qtwebengine` 回退 Qt WebEngine；无桌面测试继续使用 `MAGICCAT_EDITOR=plain`。
+Windows 正式包的 Monaco 编辑器通过 `pywebview` 嵌入系统 WebView2，不携带 Chromium 运行时，因此安装包明显更小。构建会压缩内嵌 JRE，并只携带 Widgets 实际使用的 Qt 插件；Qt 翻译包保留供后续国际化。当前 Windows 应用目录约 128.5 MB，便携 ZIP 约 62 MB，安装器约 50 MB。开发源码环境可设置 `MAGICCAT_WEBVIEW=qtwebengine` 回退 Qt WebEngine；Windows 正式包为保持体积不包含该回退。无桌面测试继续使用 `MAGICCAT_EDITOR=plain`。
 
 macOS DMG 当前优先支持 Apple Silicon arm64，在 macOS arm64 主机或 GitHub Actions 的 `macos-14` runner 上执行：
 

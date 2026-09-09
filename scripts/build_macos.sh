@@ -87,7 +87,7 @@ echo "==> 2) 使用 Java 17 jlink 生成 arm64 内嵌 JRE"
 "$JAVA_HOME/bin/jlink" \
     --add-modules java.base,java.sql,java.naming,java.management,jdk.unsupported \
     --output "$STAGE/runtime" \
-    --strip-debug --no-header-files --no-man-pages
+    --strip-debug --no-header-files --no-man-pages --compress=2
 
 echo "==> 3) 生成 macOS 应用图标"
 ICONSET="$ICON_TMP/MagicCat.iconset"

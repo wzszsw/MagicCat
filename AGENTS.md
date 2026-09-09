@@ -184,7 +184,8 @@
 - 改 Java 后需重新 `mvn package` 构建 jar（开发态走 `java-bridge/target/`）。
 - **运行时日志**：界面错误继续显示清理后的短文本；日志必须保留 JPype Java `stacktrace()` 原文（包括 `Caused by`）和 Python traceback。后台任务、查询服务和主/线程未捕获异常统一写入 `%USERPROFILE%\Documents\MagicCat\logs\magiccat.log`（`MAGICCAT_HOME` 可覆盖），文件按 5 MB、5 个副本滚动。
 - **打包**（exe + 便携 zip + `--selftest`）：仅在用户**明确要求**时执行；否则只 commit，不打包。
-- Windows 正式包默认使用 `pywebview` 的 WebView2 后端承载 Monaco，依赖系统 Evergreen WebView2 Runtime；设置 `MAGICCAT_WEBVIEW=qtwebengine` 可回退 Qt WebEngine。调试/测试可继续使用 `MAGICCAT_EDITOR=plain`。
+- Windows 正式包仅使用 `pywebview` 的 WebView2 后端承载 Monaco，依赖系统 Evergreen WebView2 Runtime；源码开发或非 Windows 环境可设置 `MAGICCAT_WEBVIEW=qtwebengine` 回退 Qt WebEngine，避免把其 Chromium 依赖重新带入 Windows 发行包。调试/测试可继续使用 `MAGICCAT_EDITOR=plain`。
+- **发行包瘦身**：Windows 构建使用 `jlink --compress=2`；PyInstaller 仅收集 Widgets 实际需要的 Windows Qt 平台插件和 WebView2 后端。Qt 翻译包必须完整保留，为后续 i18n 做准备；不得为了体积删除。
 - 调试构建可使用 PyInstaller `--console` 以便查看异常栈；正式发行构建必须使用 `--windowed`，Windows 统一通过 `scripts/build_windows.ps1` 清理旧 stage/dist/build 后执行 `mvn clean package`，重建 bridge/应用、自检、便携包和 Inno 安装器，macOS arm64 通过 `scripts/build_macos.sh` 重建 bridge/jlink/应用并生成 DMG，避免复用旧 `dist` 产物。
 - 提交信息用中文、单引号包裹、避免 PowerShell 花括号/括号被吞的写法；每次改动一个里程碑语义，附修订记录（M编号）。
 - 里程碑进度记录在 `docs/MagicCat设计方案.md` 附录 B（持续更新，含回归数）。

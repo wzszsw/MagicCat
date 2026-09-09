@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $bridge = Join-Path $root "java-bridge\target"
 $stage = Join-Path $root "packaging\stage\jvm"
+$hookDir = Join-Path $root "packaging\pyinstaller_hooks"
 $pyi = Join-Path $root ".venv\Scripts\pyinstaller.exe"
 $python = Join-Path $root ".venv\Scripts\python.exe"
 $distDir = Join-Path $root "dist"
@@ -53,7 +54,7 @@ if (-not $SkipJlink -and -not $runtimeOk) {
     & (Join-Path $env:JAVA_HOME "bin\jlink.exe") `
         --add-modules java.base,java.sql,java.naming,java.management,jdk.unsupported `
         --output (Join-Path $stage "runtime") `
-        --strip-debug --no-header-files --no-man-pages
+        --strip-debug --no-header-files --no-man-pages --compress=2
     if ($LASTEXITCODE -ne 0) { throw "jlink 失败 (exit $LASTEXITCODE)" }
 } else {
     Write-Host "==> 2/3) 复用现有 jvm 资源（刷新 jar，保留 runtime）"
@@ -84,10 +85,19 @@ Write-Host "    Python DLL：$pythonDllDir"
     --workpath $workDir `
     --specpath $workDir `
     --paths $root `
+    --additional-hooks-dir $hookDir `
     --icon (Join-Path $root "magiccat\resources\app_icon.ico") `
     --collect-all jpype `
-    --collect-all webview `
     --hidden-import webview.platforms.edgechromium `
+    --exclude-module magiccat.ui.monaco_editor_qt `
+    --exclude-module webview.platforms.android `
+    --exclude-module webview.platforms.cef `
+    --exclude-module webview.platforms.cocoa `
+    --exclude-module webview.platforms.gtk `
+    --exclude-module webview.platforms.mshtml `
+    --exclude-module webview.platforms.qt `
+    --exclude-module webview.platforms.win32 `
+    --exclude-module webview.platforms.winforms `
     --add-binary $pythonCryptoBinary `
     --add-binary $pythonSslBinary `
     --add-data "$stage;jvm" `
