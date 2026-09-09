@@ -1,4 +1,4 @@
-# Windows 完整发行构建：Java bridge -> PyInstaller(windowed) -> selftest -> 便携 ZIP -> Inno Setup 安装器
+# Windows 完整发行构建：Java bridge -> PyInstaller(windowed) -> 便携 ZIP -> Inno Setup 安装器
 # 每次运行都会重新构建 Java bridge 和应用本体，避免把旧 dist 目录直接编译成安装器。
 # 用法：
 #   .\scripts\build_windows.ps1
@@ -57,37 +57,10 @@ if (-not (Test-Path -LiteralPath $exe)) {
     throw "PyInstaller 产物不存在：$exe"
 }
 
-Write-Host "==> 4) 执行打包自检"
-$selftestOutput = Join-Path ([System.IO.Path]::GetTempPath()) "magiccat-selftest-$PID.json"
-$previousSelftestOutput = $env:MAGICCAT_SELFTEST_OUTPUT
-try {
-    $env:MAGICCAT_SELFTEST_OUTPUT = $selftestOutput
-    # windowed 子系统不会让 PowerShell 的直接调用可靠等待进程结束。
-    $selftestProcess = Start-Process -FilePath $exe -ArgumentList @("--selftest") -Wait -PassThru -WindowStyle Hidden
-    $selftestExit = $selftestProcess.ExitCode
-    if ($selftestExit -ne 0) {
-        throw "打包自检失败 (exit $selftestExit)"
-    }
-    if (-not (Test-Path -LiteralPath $selftestOutput)) {
-        throw "打包自检未生成结果文件：$selftestOutput"
-    }
-    Write-Host ("    结果：" + (Get-Content -LiteralPath $selftestOutput -Raw).Trim())
-}
-finally {
-    if (Test-Path -LiteralPath $selftestOutput) {
-        Remove-Item -LiteralPath $selftestOutput -Force
-    }
-    if ($null -eq $previousSelftestOutput) {
-        Remove-Item Env:MAGICCAT_SELFTEST_OUTPUT -ErrorAction SilentlyContinue
-    } else {
-        $env:MAGICCAT_SELFTEST_OUTPUT = $previousSelftestOutput
-    }
-}
-
-Write-Host "==> 5) 生成便携版 ZIP"
+Write-Host "==> 4) 生成便携版 ZIP"
 Invoke-Step -FilePath $buildRelease -Arguments @()
 
-Write-Host "==> 6) 查找 Inno Setup 编译器"
+Write-Host "==> 5) 查找 Inno Setup 编译器"
 $isccCandidates = @(
     (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source,
     (Join-Path ${env:ProgramFiles} "Inno Setup 7\ISCC.exe"),

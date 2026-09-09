@@ -488,6 +488,7 @@ MagicCat/
 | M158 | Windows Monaco 改用 pywebview + 系统 Evergreen WebView2 原生子控件，保留 Qt WebEngine 显式回退；安装包移除 Qt WebEngine Chromium 运行时 | ✅ | WebView2 嵌入 Qt 主窗口/本地 Monaco/选区事件实测；PyInstaller 181.6 MB（较原 468 MB 减少约 286 MB）；224 项回归 + Ruff |
 | M159 | 收束 WebView2 适配层：共享 Monaco 页面与桥接实现，修正高 DPI 原生子窗口尺寸及隐藏标签可见性 | ✅ | 本机 125% DPI 与正式 Windows exe 截图验证；224 项回归 + Ruff；`--selftest` 返回 0 |
 | M160 | 精简正式发行包：jlink 资源压缩、移除未用 Qt 可选插件及 pywebview 非 WebView2 平台后端，保留 Qt 翻译包 | ✅ | Windows 应用目录 128.47 MB（原约 191.7 MB，减少约 63.2 MB）；`--selftest`、WebView2/Monaco 实测；226 项回归 + Ruff |
+| M161 | 移除正式发行构建对本地 MySQL 的 `--selftest` 依赖；修复 M160 裁掉 `qmodernwindowsstyle.dll` 导致的经典主题回退 | ✅ | 发布包包含 Windows 原生样式插件；正式 exe 现代主题实测；Ruff |
 
 - 自动化测试：`uv run pytest`（217 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
 - 每日开发命令与打包命令见 README。

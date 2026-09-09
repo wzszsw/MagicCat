@@ -4,7 +4,6 @@
 #       .\scripts\build_package.ps1 -Windowed          # 发布版（无控制台）
 #       .\scripts\build_package.ps1 -SkipJlink         # 跳过 jlink（复用已有 runtime）
 #       .\scripts\build_package.ps1 -Windowed -SkipJlink
-# 产出验证：.\dist\MagicCat\MagicCat.exe --selftest
 param(
     [switch]$SkipJlink,
     [switch]$Windowed,
@@ -106,4 +105,3 @@ Write-Host "    Python DLL：$pythonDllDir"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败 (exit $LASTEXITCODE)" }
 
 Write-Host "==> 完成：$root\dist\MagicCat\MagicCat.exe"
-Write-Host "   验证： .\dist\MagicCat\MagicCat.exe --selftest"
