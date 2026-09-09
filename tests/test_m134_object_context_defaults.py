@@ -50,9 +50,10 @@ def test_object_browse_does_not_fall_back_to_profile_database(
     assert calls[-1] == ("target_db", "target_db")
 
 
-def test_tree_double_click_toggles_expand_without_triangle(qtbot, connection_service):
+def test_tree_double_click_toggles_expand_without_triangle(qtbot, connection_service, monkeypatch):
     from magiccat.models.profile import ConnectionProfile
     from magiccat.services.metadata_service import MetadataService
+    from magiccat.ui import object_explorer as explorer_module
     from magiccat.ui.main_window import MainWindow
     from magiccat.ui.object_explorer import _make_item
 
@@ -60,6 +61,9 @@ def test_tree_double_click_toggles_expand_without_triangle(qtbot, connection_ser
     connection_service.add(profile)
     window = MainWindow(connection_service, MetadataService(connection_service))
     qtbot.addWidget(window)
+    monkeypatch.setattr(connection_service, "open", lambda _profile: None)
+    monkeypatch.setattr(window._metadata, "databases", lambda _profile: [{"name": "database"}])
+    monkeypatch.setattr(explorer_module, "run_async", lambda work, done, _error: done(work()))
     item = window.explorer.profile_item(profile.id)
     assert item is not None
     item.addChild(_make_item("database", "database", schema="database"))

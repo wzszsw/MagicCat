@@ -489,8 +489,9 @@ MagicCat/
 | M159 | 收束 WebView2 适配层：共享 Monaco 页面与桥接实现，修正高 DPI 原生子窗口尺寸及隐藏标签可见性 | ✅ | 本机 125% DPI 与正式 Windows exe 截图验证；224 项回归 + Ruff；`--selftest` 返回 0 |
 | M160 | 精简正式发行包：jlink 资源压缩、移除未用 Qt 可选插件及 pywebview 非 WebView2 平台后端，保留 Qt 翻译包 | ✅ | Windows 应用目录 128.47 MB（原约 191.7 MB，减少约 63.2 MB）；`--selftest`、WebView2/Monaco 实测；226 项回归 + Ruff |
 | M161 | 移除正式发行构建对本地 MySQL 的 `--selftest` 依赖；修复 M160 裁掉 `qmodernwindowsstyle.dll` 导致的经典主题回退 | ✅ | 发布包包含 Windows 原生样式插件；正式 exe 现代主题实测；Ruff |
+| M162 | Windows 正式包进一步瘦身：直接加载 WebView2 程序集、裁掉 Python OpenSSL/多余 pythonnet 门面，并对白名单 Python/PySide 二进制执行 UPX | ✅ | 应用目录 98.57 MB、便携 ZIP 55.07 MB、安装器 47.71 MB；JRE/Qt DLL/插件/翻译/Monaco 未裁剪；Defender 零检出；230 项回归 + Ruff |
 
-- 自动化测试：`uv run pytest`（217 passed，含真实 MySQL + PostgreSQL 集成 + Qt offscreen GUI）。
+- 自动化测试：`uv run pytest`（230 passed；数据库不可达时集成用例按 fixture 跳过，Qt offscreen GUI 回归保持执行）。
 - 每日开发命令与打包命令见 README。
 
 ## 附录 C：已确认/解决的问题记录（防回归）

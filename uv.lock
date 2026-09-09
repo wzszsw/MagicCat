@@ -149,6 +149,7 @@ dependencies = [
     { name = "jpype1" },
     { name = "openpyxl" },
     { name = "pyside6" },
+    { name = "pythonnet", marker = "sys_platform == 'win32'" },
     { name = "pywebview", marker = "sys_platform == 'win32'" },
     { name = "sqlparse" },
 ]
@@ -175,6 +176,7 @@ requires-dist = [
     { name = "pyside6", specifier = ">=6.8,<6.9" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-qt", marker = "extra == 'dev'", specifier = ">=4.4" },
+    { name = "pythonnet", marker = "sys_platform == 'win32'", specifier = ">=3.0" },
     { name = "pywebview", marker = "sys_platform == 'win32'", specifier = ">=6.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "sqlparse", specifier = ">=0.5" },

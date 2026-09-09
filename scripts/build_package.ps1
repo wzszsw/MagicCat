@@ -16,6 +16,7 @@ $stage = Join-Path $root "packaging\stage\jvm"
 $hookDir = Join-Path $root "packaging\pyinstaller_hooks"
 $pyi = Join-Path $root ".venv\Scripts\pyinstaller.exe"
 $python = Join-Path $root ".venv\Scripts\python.exe"
+$resolveUpx = Join-Path $root "scripts\resolve_upx.ps1"
 $distDir = Join-Path $root "dist"
 $workDir = Join-Path $root "build\MagicCat"
 
@@ -65,19 +66,20 @@ if (-not $SkipJlink -and -not $runtimeOk) {
 Write-Host "==> 4) PyInstaller 打包"
 $pyiMode = if ($Windowed) { "--windowed" } else { "--console" }
 Write-Host "    模式：$pyiMode"
-$pythonDllDir = (& $python -c "import sys; print(sys.base_prefix + r'\DLLs')" | Select-Object -First 1).Trim()
-$pythonSsl = Join-Path $pythonDllDir "libssl-3-x64.dll"
-$pythonCrypto = Join-Path $pythonDllDir "libcrypto-3-x64.dll"
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $pythonDllDir "_ssl.pyd")) -or
-    -not (Test-Path -LiteralPath $pythonSsl) -or -not (Test-Path -LiteralPath $pythonCrypto)) {
-    throw "无法定位 uv Python 的 DLL 目录：$pythonDllDir"
+$webviewLib = (& $python -c "from importlib.metadata import distribution; print(distribution('pywebview').locate_file('webview/lib'))" | Select-Object -First 1).Trim()
+$webviewCore = Join-Path $webviewLib "Microsoft.Web.WebView2.Core.dll"
+$webviewForms = Join-Path $webviewLib "Microsoft.Web.WebView2.WinForms.dll"
+$webviewLoader = Join-Path $webviewLib "runtimes\win-x64\native\WebView2Loader.dll"
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $webviewCore) -or
+    -not (Test-Path -LiteralPath $webviewForms) -or -not (Test-Path -LiteralPath $webviewLoader)) {
+    throw "无法定位 pywebview 的 WebView2 程序集：$webviewLib"
 }
-$pythonSslBinary = "$pythonSsl;."
-$pythonCryptoBinary = "$pythonCrypto;."
-Write-Host "    Python DLL：$pythonDllDir"
-# PyInstaller may otherwise resolve these names from PostgreSQL on PATH.
-# Python's _ssl.pyd must use the matching OpenSSL build from this interpreter.
+$webviewCoreData = "$webviewCore;webview/lib"
+$webviewFormsData = "$webviewForms;webview/lib"
+$webviewLoaderBinary = "$webviewLoader;webview/lib/runtimes/win-x64/native"
+Write-Host "    WebView2 程序集：$webviewLib"
 & $pyi --noconfirm --clean `
+    --noupx `
     --name MagicCat `
     $pyiMode `
     --distpath $distDir `
@@ -87,21 +89,40 @@ Write-Host "    Python DLL：$pythonDllDir"
     --additional-hooks-dir $hookDir `
     --icon (Join-Path $root "magiccat\resources\app_icon.ico") `
     --collect-all jpype `
-    --hidden-import webview.platforms.edgechromium `
     --exclude-module magiccat.ui.monaco_editor_qt `
-    --exclude-module webview.platforms.android `
-    --exclude-module webview.platforms.cef `
-    --exclude-module webview.platforms.cocoa `
-    --exclude-module webview.platforms.gtk `
-    --exclude-module webview.platforms.mshtml `
-    --exclude-module webview.platforms.qt `
-    --exclude-module webview.platforms.win32 `
-    --exclude-module webview.platforms.winforms `
-    --add-binary $pythonCryptoBinary `
-    --add-binary $pythonSslBinary `
+    --exclude-module ssl `
+    --exclude-module _ssl `
+    --exclude-module _hashlib `
+    --add-data $webviewCoreData `
+    --add-data $webviewFormsData `
+    --add-binary $webviewLoaderBinary `
     --add-data "$stage;jvm" `
     --add-data (Join-Path $root "magiccat\resources;magiccat\resources") `
     (Join-Path $root "packaging\magiccat_main.py")
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败 (exit $LASTEXITCODE)" }
+
+if ($Windowed) {
+    Write-Host "==> 5) 白名单压缩 Python/PySide 二进制"
+    $upx = (& $resolveUpx | Select-Object -Last 1).Trim()
+    $internal = Join-Path $distDir "MagicCat\_internal"
+    $upxTargets = @(
+        (Join-Path $internal "python312.dll"),
+        (Join-Path $internal "sqlite3.dll")
+    )
+    $upxTargets += (Get-ChildItem -LiteralPath $internal -File -Filter "*.pyd").FullName
+    $upxTargets += (Get-ChildItem -LiteralPath (Join-Path $internal "PySide6") -File -Filter "*.pyd").FullName
+    $upxTargets += (Get-ChildItem -LiteralPath (Join-Path $internal "shiboken6") -File -Filter "*.pyd").FullName
+    foreach ($target in ($upxTargets | Sort-Object -Unique)) {
+        $upxOutput = & $upx --best --lzma -qq -- $target 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "UPX 压缩失败：$target`n$upxOutput" }
+    }
+    $releaseBytes = (Get-ChildItem (Join-Path $distDir "MagicCat") -Recurse -File |
+        Measure-Object -Property Length -Sum).Sum
+    $releaseMb = [math]::Round($releaseBytes / 1MB, 2)
+    Write-Host "    应用目录：${releaseMb} MB（JRE、Qt DLL、插件与翻译包保持原样）"
+    if ($releaseBytes -gt 100MB) {
+        throw "Windows 正式应用超过 100 MB：${releaseMb} MB"
+    }
+}
 
 Write-Host "==> 完成：$root\dist\MagicCat\MagicCat.exe"

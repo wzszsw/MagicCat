@@ -13,7 +13,8 @@ import os
 import queue
 import sys
 import uuid
-from importlib import import_module
+from importlib.metadata import distribution
+from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFocusEvent
@@ -24,7 +25,8 @@ from magiccat.services.sql_text import split_sql_statements, statement_at_cursor
 from magiccat.storage import home_dir
 from magiccat.ui.monaco_editor_shared import _HTML_SOURCE, _Bridge
 
-_DLL_DIR_HANDLE = None
+_WEBVIEW2_DLL_DIR_HANDLE = None
+_WEBVIEW2_RUNTIME_LOADED = False
 _WS_CHILD = 0x40000000
 _WS_CAPTION_FRAME = 0x00C00000
 _SWP_NOZORDER_NOACTIVATE = 0x0014
@@ -38,18 +40,30 @@ class _Win32Rect(ctypes.Structure):
                 ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
 
-def _prepare_frozen_dll_search_path() -> None:
-    """Make Python's OpenSSL DLLs discoverable before pywebview imports ssl."""
-    global _DLL_DIR_HANDLE
-    if not getattr(sys, "frozen", False) or os.name != "nt":
+def _webview2_lib_dir() -> Path:
+    """Locate the WebView2 interop assemblies supplied by pywebview."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "webview" / "lib"
+    return Path(distribution("pywebview").locate_file("webview/lib"))
+
+
+def _load_webview2_runtime() -> None:
+    """Load only pywebview's Microsoft interop assemblies, not its HTTP/UI stack."""
+    global _WEBVIEW2_DLL_DIR_HANDLE, _WEBVIEW2_RUNTIME_LOADED
+    if _WEBVIEW2_RUNTIME_LOADED:
         return
-    root = str(sys._MEIPASS)
-    if hasattr(os, "add_dll_directory") and _DLL_DIR_HANDLE is None:
-        _DLL_DIR_HANDLE = os.add_dll_directory(root)
-    for name in ("libcrypto-3-x64.dll", "libssl-3-x64.dll"):
-        path = os.path.join(root, name)
-        if os.path.exists(path):
-            ctypes.WinDLL(path)
+    import clr
+
+    lib_dir = _webview2_lib_dir()
+    loader_dir = lib_dir / "runtimes" / "win-x64" / "native"
+    if hasattr(os, "add_dll_directory") and _WEBVIEW2_DLL_DIR_HANDLE is None:
+        _WEBVIEW2_DLL_DIR_HANDLE = os.add_dll_directory(str(loader_dir))
+    os.environ["PATH"] = f"{loader_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+    for assembly in ("System.Windows.Forms", "System.Collections", "System.Threading"):
+        clr.AddReference(assembly)
+    clr.AddReference(str(lib_dir / "Microsoft.Web.WebView2.Core.dll"))
+    clr.AddReference(str(lib_dir / "Microsoft.Web.WebView2.WinForms.dll"))
+    _WEBVIEW2_RUNTIME_LOADED = True
 
 
 class _Relay(QObject):
@@ -78,10 +92,7 @@ class _NativeWebView2(QWidget):
         self._start_thread()
 
     def _start_thread(self) -> None:
-        # pywebview loads its bundled WebView2 .NET interop DLLs before the
-        # generated Microsoft.Web namespaces are imported.
-        _prepare_frozen_dll_search_path()
-        import_module("webview.platforms.edgechromium")
+        _load_webview2_runtime()
         from Microsoft.Web.WebView2.WinForms import CoreWebView2CreationProperties, WebView2
         from System import Action
         from System.Threading import ApartmentState, Thread, ThreadStart

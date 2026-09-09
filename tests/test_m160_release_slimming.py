@@ -15,8 +15,8 @@ def test_windows_release_keeps_translations_but_excludes_optional_qt_payloads():
     assert "--additional-hooks-dir $hookDir" in script
     assert "--collect-all webview" not in script
     assert "--exclude-module magiccat.ui.monaco_editor_qt" in script
-    assert "--exclude-module webview.platforms.qt" in script
-    assert "--exclude-module webview.platforms.winforms" in script
+    assert "Microsoft.Web.WebView2.Core.dll" in script
+    assert "--exclude-module ssl" in script
     assert "qwindows.dll" in gui_hook
     assert "qmodernwindowsstyle.dll" in gui_hook
     # No custom QtCore hook: the standard hook keeps all framework translations

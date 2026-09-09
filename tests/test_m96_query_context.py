@@ -154,6 +154,7 @@ def test_workspace_context_combos_use_icons_without_text_labels(qtbot):
 def test_new_query_from_database_or_schema_keeps_requested_location(
     qtbot, connection_service, monkeypatch
 ):
+    from magiccat.ui import connection_info_panel as info_panel_module
     from magiccat.ui import main_window as main_window_module
     from magiccat.ui.main_window import MainWindow
 
@@ -183,6 +184,7 @@ def test_new_query_from_database_or_schema_keeps_requested_location(
         done(work())
 
     monkeypatch.setattr(main_window_module, "run_async", immediate)
+    monkeypatch.setattr(info_panel_module, "run_async", lambda *_args: None)
     win = MainWindow(connection_service, _Metadata())
     qtbot.addWidget(win)
 
@@ -203,6 +205,7 @@ def test_new_query_from_database_or_schema_keeps_requested_location(
 def test_plain_new_query_inherits_tree_context_only_at_creation(
     qtbot, connection_service, monkeypatch
 ):
+    from magiccat.ui import connection_info_panel as info_panel_module
     from magiccat.ui import main_window as main_window_module
     from magiccat.ui.main_window import MainWindow
     from magiccat.ui.object_explorer import _make_item
@@ -233,6 +236,7 @@ def test_plain_new_query_inherits_tree_context_only_at_creation(
         done(work())
 
     monkeypatch.setattr(main_window_module, "run_async", immediate)
+    monkeypatch.setattr(info_panel_module, "run_async", lambda *_args: None)
     win = MainWindow(connection_service, _Metadata())
     qtbot.addWidget(win)
     profile_item = win.explorer.profile_item(profile.id)
